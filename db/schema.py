@@ -2,7 +2,7 @@
 Defines and creates all database tables.
  
 This module is run once on startup (via apply_schema). All statements use
-CREATE TABLE IF NOT EXISTS, so re-running on an existing database is safe —
+CREATE TABLE IF NOT EXISTS, so re-running on an existing database is safe -
 it simply does nothing if the tables are already there.
  
 Table overview:
@@ -26,6 +26,7 @@ _CREATE_CHATS = """
 CREATE TABLE IF NOT EXISTS chats (
   chat_id       INTEGER PRIMARY KEY,
   name          TEXT,
+  username      TEXT,   -- @handle (groups/channels only; NULL for private chats and legacy groups)
   chat_type     TEXT    CHECK(chat_type IN ('group', 'supergroup', 'channel', 'private')),
   first_seen    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
