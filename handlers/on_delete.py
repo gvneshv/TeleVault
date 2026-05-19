@@ -77,17 +77,28 @@ def _flag_deleted_without_chat(conn, tg_message_id: int) -> None:
     Searches by tg_message_id alone and flags all matching rows. In practice
     the same numeric message ID rarely exists in multiple chats simultaneously,
     but it's theoretically possible since Telegram scopes IDs per chat.
+
+    When multiple matches are found, we cross-reference the chats table for
+    the stored name and @username. This doesn't resolve the ambiguity
+    automatically (the protocol gives us nothing to go on), but it makes the
+    log entry human-readable so you can tell at a glance which chats were
+    affected rather than staring at a list of raw IDs.
  
     If the message isn't in the DB at all (sent before TeleVault was running),
     queries.flag_deleted already logs a warning — nothing extra needed here.
     """
     from datetime import datetime, timezone
 
-    # Reach into SQLite directly for this non-standard query.
-    # It doesn't belong in queries.py because it's a fallback for a
-    # protocol limitation, not a normal operation.
+    # Join with chats so we get name + username alongside each match.
+    # Raw SQL here because this is a fallback for a protocol edge-case,
+    # not a general-purpose operation that belongs in queries.py.
     cursor = conn.execute(
-        "SELECT tg_message_id, chat_id FROM messages WHERE tg_message_id = ? AND is_deleted = FALSE",
+        """
+        SELECT m.tg_message_id, m.chat_id c.name AS chat_name, c.username AS chat_username
+        FROM messages m
+        LEFT JOIN chats c ON m.chat_id = c.chat_id
+        WHERE m.tg_message_id = ? AND m.is_deleted = FALSE
+        """,
         (tg_message_id,)
     )
     rows = cursor.fetchall()
@@ -100,10 +111,35 @@ def _flag_deleted_without_chat(conn, tg_message_id: int) -> None:
         return
     
     if len(rows) > 1:
+        # Build a readable description of each candidate chat.
+        candidates = ", ".join(
+            _format_chat(r["chat_id"], r["chat_name"], r["chat_username"])
+            for r in rows
+        )
         logger.warning(
             f"Deletion fallback: message ID {tg_message_id} matched {len(rows)} rows "
-            f"across different chats — flagging all of them."
+            f"({candidates}) - flagged all. Cannot determine which chat without "
+            f"a chat_id in the deletion event (MTProto limitation)."
         )
 
     for row in rows:
+        logger.info(
+            f"Deletion fallback: flagging message {tg_message_id} in "
+            f"{_format_chat(row['chat_id'], row['chat_name'], row['chat_username'])}."
+        )
         db.queries.flag_deleted(conn, tg_message_id=row["tg_message_id"], chat_id=row["chat_id"], deleted_at=datetime.now(timezone.utc))
+
+
+
+def _format_chat(chat_id: int, name: str | None, username: str | None) -> str:
+    """
+    Return a readable chat label like 'My Group (@mygroup, id=123456)'.
+    """
+    parts = []
+    if username:
+        parts.append(f"@{username}")
+    
+    parts.append(f"id={chat_id}")
+    label = name or "unnamed"
+    
+    return f"{label!r} ({', '.join(parts)})"
