@@ -14,7 +14,7 @@ Flow per event:
        c. Updates messages with the new text and sets is_edited = TRUE.
   3. Ensure the chat and sender are in the DB first, same as on_message.
      (Edge case: a message could be edited in a chat we somehow missed
-     archiving — the FK would fail without the upsert guard.)
+     archiving - the FK would fail without the upsert guard.)
 """
 
 import logging
@@ -38,7 +38,7 @@ def register(client) -> None:
         """
         message = event.message
 
-        # Same rationale as on_message — skip non-text edits for now.
+        # Same rationale as on_message - skip non-text edits for now.
         if not message.text:
             logger.debug(f"Skipping non-text edit for message {message.id} in chat {event.chat_id}.")
             return
@@ -49,6 +49,7 @@ def register(client) -> None:
 
             chat_type = get_chat_type(chat)
             chat_name = getattr(chat, "title", None) or getattr(chat, "first_name", None)
+            chat_username = (getattr(chat, "username", None) or "").lstrip("@") or None
             username, first_name, last_name = get_sender_fields(sender)
 
             conn = db.get_connection()
@@ -57,7 +58,7 @@ def register(client) -> None:
             # arrives for a message we never archived (e.g. TeleVault was
             # offline when it was sent), the upserts create the parent rows
             # so the FK constraints don't blow up.
-            db.queries.upsert_chat(conn, chat_id=event.chat_id, name=chat_name, chat_type=chat_type)
+            db.queries.upsert_chat(conn, chat_id=event.chat_id, name=chat_name, chat_type=chat_type, username=chat_username)
 
             if event.sender_id is None:
                 db.queries.upsert_sender(conn, sender_id=event.sender_id, username=username, first_name=first_name, last_name=last_name)
@@ -74,7 +75,7 @@ def register(client) -> None:
                 # having no record of this message at all.
                 logger.info(
                     f"Edit received for unknown message {message.id} in chat {event.chat_id} "
-                    f"— inserting current version as a new record."
+                    f"- inserting current version as a new record."
                 )
                 db.queries.insert_message(conn, tg_message_id=message.id, chat_id=event.chat_id, sender_id=event.sender_id, text=message.text, date=message.date)
         except Exception:

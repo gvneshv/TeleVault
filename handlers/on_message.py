@@ -1,5 +1,5 @@
 """
-Handles Telethon's NewMessage event — fired for every message that arrives
+Handles Telethon's NewMessage event - fired for every message that arrives
 on the account, both incoming and outgoing (including Saved Messages).
  
 Flow per event:
@@ -10,7 +10,7 @@ Flow per event:
 We call `await event.get_chat()` and `await event.get_sender()` rather than
 reading `event.chat` / `event.sender` directly. The direct attributes are
 only populated when Telegram includes the full entity in the update packet,
-which isn't guaranteed — the async getters always fetch from cache or the
+which isn't guaranteed - the async getters always fetch from cache or the
 server if needed.
 """
 
@@ -52,6 +52,8 @@ def register(client) -> None:
 
             chat_type = get_chat_type(chat)
             chat_name = getattr(chat, "title", None) or getattr(chat, "first_name", None)
+            # Strip leading '@' if Telegram includes it (it usually doesn't, but be safe).
+            chat_username = (getattr(chat, "username", None) or "").lstrip("@") or None
             username, first_name, last_name = get_sender_fields(sender)
 
             conn = db.get_connection()
@@ -63,6 +65,7 @@ def register(client) -> None:
                 chat_id=event.chat_id,
                 name=chat_name,
                 chat_type=chat_type,
+                username=chat_username,
             )
 
             if event.sender_id is not None:
