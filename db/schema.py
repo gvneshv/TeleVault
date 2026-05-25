@@ -113,6 +113,15 @@ _CREATE_MESSAGE_EDITS_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_message_edits_message_id ON message_edits(message_id);
 """
 
+_STATEMENTS = [
+        ("chats table",         _CREATE_CHATS),
+        ("senders table",       _CREATE_SENDERS),
+        ("messages table",      _CREATE_MESSAGES),
+        ("messages index",      _CREATE_MESSAGES_INDEX),
+        ("message_edits table", _CREATE_MESSAGE_EDITS),
+        ("message_edits index", _CREATE_MESSAGE_EDITS_INDEX),
+    ]
+
 
 def _clean(sql: str) -> str:
     """
@@ -134,19 +143,26 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     """
     Create all tables and indexes if they don't already exist.
     Safe to call on every startup
-    """
-    statements = [
-        ("chats table",         _CREATE_CHATS),
-        ("senders table",       _CREATE_SENDERS),
-        ("messages table",      _CREATE_MESSAGES),
-        ("messages index",      _CREATE_MESSAGES_INDEX),
-        ("message_edits table", _CREATE_MESSAGE_EDITS),
-        ("message_edits index", _CREATE_MESSAGE_EDITS_INDEX),
-    ]
 
-    with conn:      # 'with conn' is a transaction — all succeed or all roll back
-        for label, sql in statements:
-            logger.debug(f"Applying schema: {label}")
-            conn.execute(_clean(sql))
+    Each statement is executed individually and committed immediately.
+    Wrapping DDL in a transaction context manager (with conn:) can cause
+    failures on Python 3.12+ where the context manager starts an explicit
+    transaction - SQLite has constraints on DDL inside certain transaction
+    states. Explicit per-statement commits sidestep this entirely.
+    """
+    for label, sql in _STATEMENTS:
+        cleaned = _clean(sql)
+        logger.debug(f"Applying schema {label}")
+        try:
+            conn.execute(cleaned)
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            # Re-raise with context: which statement failed and its exact SQL,
+            # so the error message is actionable rather than just a line number.
+            raise sqlite3.OperationalError(
+                f"Schema error while applying '{label}'.\n"
+                f"SQL attempted:\n{cleaned}\n"
+                f"Original error: {exc}"
+            ) from exc
     
     logger.info("Schema applied successfully.")
