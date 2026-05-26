@@ -14,6 +14,7 @@ Table overview:
 Schema change log:
   v1 (initial) : chats, senders, messages, message_edits
   v2           : chats.username added for @handle cross-referencing
+  v3           : message_deletions table added (mirrors message_edits)
 """
 
 import logging
@@ -27,14 +28,12 @@ logger = logging.getLogger(__name__)
 #
 # Rules for these strings:
 #   1. No inline SQL comments (-- ...) inside the DDL body.
-#      On Windows, CRLF line endings interact badly with SQLite's comment
-#      parser on some versions, producing spurious syntax errors.
+#      On Windows, Git's CRLF conversion can place a bare \r before a comment,
+#      which confuses SQLite's parser and produces "near ')': syntax error".
 #      All explanatory notes live here, above each string, as Python comments.
-#   2. BOOLEAN columns use INTEGER DEFAULT 0 / 1.
+#   2. BOOLEAN columns use INTEGER DEFAULT 0 / 1 - not FALSE / TRUE.
 #      TRUE/FALSE as SQL keywords were only made reliable in SQLite 3.23.0.
 #      INTEGER 0/1 works on every SQLite version.
-#   3. All strings are passed through _clean() in apply_schema() to strip
-#      any stray \r characters before execution.
 # ---------------------------------------------------------------------------
 
 # chat_type is restricted to four known values via a CHECK constraint.
@@ -113,6 +112,26 @@ _CREATE_MESSAGE_EDITS_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_message_edits_message_id ON message_edits(message_id);
 """
 
+# Mirrors message_edits but for deletions.
+# Stores a snapshot of the text at deletion time so the record is
+# self-contained - useful even if messages.text is later modified.
+# deleted_at is passed explicitly from Python (local time) rather than
+# relying on SQLite's DEFAULT CURRENT_TIMESTAMP, which is always UTC.
+_CREATE_MESSAGE_DELETIONS = """
+CREATE TABLE IF NOT EXISTS message_deletions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id      INTEGER NOT NULL,
+    text_snapshot   TEXT,
+    deleted_at      DATETIME,
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+"""
+
+# Index for quickly fetching all deletions for a given message.
+_CREATE_MESSAGE_DELETIONS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_message_deletions_message_id ON message_deletions(message_id);
+"""
+
 _STATEMENTS = [
         ("chats table",         _CREATE_CHATS),
         ("senders table",       _CREATE_SENDERS),
@@ -120,12 +139,14 @@ _STATEMENTS = [
         ("messages index",      _CREATE_MESSAGES_INDEX),
         ("message_edits table", _CREATE_MESSAGE_EDITS),
         ("message_edits index", _CREATE_MESSAGE_EDITS_INDEX),
+        ("message_deletions table", _CREATE_MESSAGE_DELETIONS),
+        ("message_deletions index", _CREATE_MESSAGE_DELETIONS_INDEX),
     ]
 
 
 def _clean(sql: str) -> str:
     """
-    Normalise line endings in a SQL string before passing it to SQLite.
+    Strip stray carriage returns before passing SQL to SQLite.
  
     On Windows, Python source files checked out via Git often contain CRLF
     line endings, which means triple-quoted string literals contain \\r\\n.
