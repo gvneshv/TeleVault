@@ -91,7 +91,7 @@ def _flag_deleted_without_chat(conn, tg_message_id: int) -> None:
     # after Git checkout, which SQLite's parser rejects mid-statement.
     # Also uses is_deleted = 0 (not FALSE) to match the INTEGER schema column.
     cursor = conn.execute(
-        "SELECT m.tg_message_id, m.chat_id c.name AS chat_name, c.username AS chat_username"
+        "SELECT m.tg_message_id, m.chat_id, c.name AS chat_name, c.username AS chat_username"
         " FROM messages m"
         " LEFT JOIN chats c ON m.chat_id = c.chat_id"
         " WHERE m.tg_message_id = ? AND m.is_deleted = 0",

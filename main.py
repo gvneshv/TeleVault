@@ -1,5 +1,5 @@
 """
-Application entry point — start TeleVault with: python main.py
+Application entry point - start TeleVault with: python main.py
  
 Startup sequence:
   1. Logging
@@ -89,7 +89,7 @@ async def main() -> None:
     logger.info("TeleVault is running. Press Ctrl-C to stop.")
 
     # Handle SIGTERM gracefully (sent by systemd or Docker on shutdown)
-    # add_signal_handler() is Unix-only — Windows raises NotImplementedError.
+    # add_signal_handler() is Unix-only - Windows raises NotImplementedError.
     # On Windows, Ctrl-C (SIGINT) via the KeyboardInterrupt except below is
     # the only shutdown path needed during local development anyway.
     loop = asyncio.get_running_loop()
@@ -101,8 +101,10 @@ async def main() -> None:
 
     try:
         await client.run_until_disconnected()
-    except KeyboardInterrupt:
-        # Ctrl-C — expected during local development; not an error
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # KeyboardInterrupt : Ctrl-C on all platforms.
+        # CancelledError    : Python 3.14 changed asyncio shutdown - the main task is now cancelled rather than allowed to return
+        # cleanly, so CancelledError surfaces here instead.
         pass
     
     # ------------------------------------------------------------------ #
@@ -115,4 +117,9 @@ async def main() -> None:
   
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Wrap asyncio.run() so that Ctrl-C or a SIGTERM-triggered CancelledError reaching this level exits silently rather than
+    # printing a traceback. The actual shutdown logic (disconnect, close_db) is inside main(), which handles both exceptions there.
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
