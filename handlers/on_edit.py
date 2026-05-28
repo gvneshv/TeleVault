@@ -37,6 +37,10 @@ def register(client) -> None:
         """
         message = event.message
 
+        if event.sender_id is None:
+            logger.warning(f"Edit event for message {message.id} in chat {event.chat_id} - no sender ID in event.")
+            return
+
         # Same rationale as on_message - skip non-text edits for now.
         if not message.text:
             logger.debug(f"Skipping non-text edit for message {message.id} in chat {event.chat_id}.")

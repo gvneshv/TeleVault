@@ -38,6 +38,12 @@ def register(client) -> None:
         """
         message = event.message
 
+        # Telethon can return None for chat_id on certain service messages or protocol edge-cases. 
+        # Without a valid chat_id we can't satisfy the FK constraint in messages, so skip rather than error.
+        if event.chat_id is None:
+            logger.warning(f"Skipping message {message.id} with no chat ID in event {event}.")
+            return
+
         # Skip non-text content. For now, we archive text only.
         # `message.text` is an empty string (not None) for media-only messages,
         # so we check for truthiness rather than `is not None`.
@@ -62,28 +68,28 @@ def register(client) -> None:
             # messages.chat_id and messages.sender_id are foreign keys.
             db.queries.upsert_chat(
                 conn,
-                chat_id=event.chat_id,
-                name=chat_name,
-                chat_type=chat_type,
-                username=chat_username,
+                chat_id     = event.chat_id,
+                name        = chat_name,
+                chat_type   = chat_type,
+                username    = chat_username,
             )
 
             if event.sender_id is not None:
                 db.queries.upsert_sender(
                     conn,
-                    sender_id=event.sender_id,
-                    username=username,
-                    first_name=first_name,
-                    last_name=last_name,
+                    sender_id   = event.sender_id,
+                    username    = username,
+                    first_name  = first_name,
+                    last_name   = last_name,
                 )
 
             db.queries.insert_message(
                 conn,
-                tg_message_id=message.id,
-                chat_id=event.chat_id,
-                sender_id=event.sender_id,
-                text=message.text,
-                date=message.date,
+                tg_message_id   = message.id,
+                chat_id         = event.chat_id,
+                sender_id       = event.sender_id,
+                text            = message.text,
+                date            = message.date,
             )
         except Exception:
             # Log and swallow - a single failed insert should never crash the listener.
