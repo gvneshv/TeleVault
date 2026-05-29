@@ -72,6 +72,7 @@ def register(client) -> None:
                 name        = chat_name,
                 chat_type   = chat_type,
                 username    = chat_username,
+                commit      = False,
             )
 
             if event.sender_id is not None:
@@ -81,6 +82,7 @@ def register(client) -> None:
                     username    = username,
                     first_name  = first_name,
                     last_name   = last_name,
+                    commit      = False,
                 )
 
             db.queries.insert_message(

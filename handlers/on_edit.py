@@ -66,7 +66,8 @@ def register(client) -> None:
                 chat_id     = event.chat_id, 
                 name        = chat_name,
                 chat_type   = chat_type, 
-                username    = chat_username
+                username    = chat_username,
+                commit      = False
             )
 
             if event.sender_id is None:
@@ -75,7 +76,8 @@ def register(client) -> None:
                     sender_id   = event.sender_id, 
                     username    = username, 
                     first_name  = first_name, 
-                    last_name   = last_name
+                    last_name   = last_name,
+                    commit      = False,
                 )
             
             # edit_date is set by Telegram when the message is edited.
