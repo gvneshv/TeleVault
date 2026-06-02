@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Planned — Phase 2 (Web UI)
+
 - REST API layer (`api/` package) built with FastAPI + Uvicorn
 - Read-only database query layer for the API (`get_messages`, `get_chats`, `get_deleted`, `get_stats`)
 - Pydantic v2 response schemas for all API endpoints
@@ -19,6 +20,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - PWA support: `manifest.json` + service worker for installable app on all platforms
 
 ### Planned — Phase 3 (Advanced Features)
+
 - Full-text search via SQLite FTS5 virtual table
 - Backfill: archive historical messages sent before TeleVault was running
 - Chat filter: allowlist/blocklist to control which chats are archived
@@ -31,6 +33,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TTL / retention policy: auto-delete archived messages older than N months
 
 ### Planned — Phase 4 (Infrastructure & Expansion)
+
 - Media archiving (photos, documents, voice notes) with disk management
 - PostgreSQL migration (swap SQLite for PostgreSQL + SQLAlchemy + Alembic)
 - Orphan cleanup scheduler: reconcile DB records vs files on disk
@@ -40,14 +43,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## Added
+
+- Pydantic v2 response schemas: `ChatOut`, `ChatSummary`, `MessageOut`,
+  `MessageDetail`, `SenderOut`, `EditOut`, `DeletionOut`, `StatsOut`,
+  `PaginatedResponse`, `HealthOut`
+
+---
+
 ## [1.0.0] — 2026-05-29
 
 ### Summary
+
 Phase 1 complete. Real-time text message archiving across all chat types.
 Deleted messages are flagged and preserved. Edit history is tracked.
 Stable enough for always-on deployment.
 
 ### Added
+
 - `main.py` — async entry point; graceful shutdown on Ctrl-C (all platforms) and SIGTERM (Unix)
 - `config.py` — frozen `Settings` dataclass loaded from `.env` via `python-dotenv`
 - `db/connection.py` — SQLite connection with WAL mode, FK enforcement, and ISO 8601 datetime adapter
@@ -65,6 +78,7 @@ Stable enough for always-on deployment.
 - `README.md` — setup guide, smoke test instructions, project structure, Telegram ToS note
 
 ### Schema (v3)
+
 ```
 chats          (chat_id PK, name, username, chat_type, first_seen)
 senders        (sender_id PK, username, first_name, last_name, first_seen)
@@ -76,12 +90,14 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at)
 ```
 
 ### Known Telegram protocol behaviours (documented)
+
 - `MessageDeleted` carries no `chat_id` in private/group chats — fallback searches by `tg_message_id` alone
 - Scheduled/auto-posted messages bypass `NewMessage`; arrive only as edit events — handled by defensive upsert
 - Anonymous admin posts use the group's own (negative) ID as `sender_id` — stored as-is
 - `MessageEdited` fires for link preview attachment, keyboard updates, view count increments — skipped when text is unchanged
 
 ### Technical decisions
+
 - All datetimes stored as local-timezone ISO 8601 strings without milliseconds
 - `detect_types` removed from SQLite connection — converter does not fire reliably in Python 3.14 module context
 - `with conn:` (context manager) replaced with explicit `commit` / `rollback` — Python 3.12+ changed context manager semantics, breaking FK visibility across sequential writes
