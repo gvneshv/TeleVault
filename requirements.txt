@@ -1,2 +1,11 @@
+# TeleVault dependencies
+# Pin major versions; update deliberately, not automatically.
+
+# --- Userbot (Phase 1) ---
 telethon>=1.36
 python-dotenv>=1.0
+
+# --- API server (Phase 2) ---
+fastapi
+uvicorn[standard]   # includes uvloop + httptools for production performance
+pydantic>=2.0       # schemas use Pydantic v2 model_config and field syntax
