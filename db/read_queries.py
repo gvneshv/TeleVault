@@ -226,9 +226,8 @@ def get_messages(
     params: list[Any] = []
 
     if q:
-        conditions.append("m.text LIKE ? ESCAPE '\\'")
-        # Escape any literal % or _ in the user's query so they're treated
-        # as characters, not wildcards.
+        conditions.append("LOWER_UNICODE(m.text) LIKE LOWER_UNICODE(?) ESCAPE '\\'")
+        # Escape any literal % or _ in the user's query so they're treated as characters, not wildcards.
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         params.append(f"%{escaped}%")
     if chat_id is not None:
@@ -277,7 +276,7 @@ def get_chat_messages(
     params: list[Any] = [chat_id]
 
     if q:
-        conditions.append("m.text LIKE ? ESCAPE '\\'")
+        conditions.append("LOWER_UNICODE(m.text) LIKE LOWER_UNICODE(?) ESCAPE '\\'")
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         params.append(f"%{escaped}%")
     if sender_id is not None:

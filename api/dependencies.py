@@ -46,6 +46,8 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(uri, uri=True)
         # Return rows as sqlite3.Row so columns are accessible by name, though _rows_to_dicts() in read_queries.py converts them to plain dicts before they reach here.
         conn.row_factory = sqlite3.Row
+        # Python's str.lower() is Unicode-aware (unlike SQLite's built-in LOWER()), so register it as a custom SQL function for case-insensitive search across all scripts, not just ASCII.
+        conn.create_function("LOWER_UNICODE", 1, lambda s: s.lower() if s is not None else None)
     except sqlite3.OperationalError as exc:
         raise HTTPException(
             status_code=503,
