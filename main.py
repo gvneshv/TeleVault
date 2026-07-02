@@ -9,8 +9,8 @@ Startup sequence:
   5. Run until interrupted (Ctrl-C or SIGTERM)
   6. Graceful shutdown
  
-Telethon uses asyncio internally, so the entry point is an async function
-run via asyncio.run(). Everything Telegram-related happens inside that loop.
+Telethon uses asyncio internally, so the entry point is an async function run via asyncio.run().
+Everything Telegram-related happens inside that loop.
 """
 
 import asyncio
@@ -32,16 +32,13 @@ def register_handlers(client: TelegramClient) -> None:
     """
     Attach all Telethon event handlers to the client.
  
-    Each handler module registers itself when imported (via @client.on(...)
-    decorators), but the client reference must be injected first. The pattern
-    used in each handler module is:
+    Each handler module registers itself when imported (via @client.on(...) decorators), but the client reference must be injected first.
+    The pattern used in each handler module is:
  
         def register(client): ...  <- called here
         # rather than a bare module-level decorator
  
-    This keeps the client out of module-level scope in the handler files and
-    makes unit testing easier - you can call register(mock_client) without
-    needing a real Telethon connection.
+    This keeps the client out of module-level scope in the handler files and makes unit testing easier - you can call register(mock_client) without needing a real Telethon connection.
     """
     on_message.register(client)
     on_delete.register(client)
@@ -88,10 +85,8 @@ async def main() -> None:
     # ------------------------------------------------------------------ #
     logger.info("TeleVault is running. Press Ctrl-C to stop.")
 
-    # Handle SIGTERM gracefully (sent by systemd or Docker on shutdown)
-    # add_signal_handler() is Unix-only - Windows raises NotImplementedError.
-    # On Windows, Ctrl-C (SIGINT) via the KeyboardInterrupt except below is
-    # the only shutdown path needed during local development anyway.
+    # Handle SIGTERM gracefully (sent by systemd or Docker on shutdown) add_signal_handler() is Unix-only - Windows raises NotImplementedError.
+    # On Windows, Ctrl-C (SIGINT) via the KeyboardInterrupt except below is the only shutdown path needed during local development anyway.
     loop = asyncio.get_running_loop()
     try:
         loop.add_signal_handler(signal.SIGTERM, lambda: loop.stop())
@@ -103,8 +98,7 @@ async def main() -> None:
         await client.run_until_disconnected()
     except (KeyboardInterrupt, asyncio.CancelledError):
         # KeyboardInterrupt : Ctrl-C on all platforms.
-        # CancelledError    : Python 3.14 changed asyncio shutdown - the main task is now cancelled rather than allowed to return
-        # cleanly, so CancelledError surfaces here instead.
+        # CancelledError    : Python 3.14 changed asyncio shutdown - the main task is now cancelled rather than allowed to return cleanly, so CancelledError surfaces here instead.
         pass
     
     # ------------------------------------------------------------------ #
@@ -117,8 +111,8 @@ async def main() -> None:
   
 
 if __name__ == "__main__":
-    # Wrap asyncio.run() so that Ctrl-C or a SIGTERM-triggered CancelledError reaching this level exits silently rather than
-    # printing a traceback. The actual shutdown logic (disconnect, close_db) is inside main(), which handles both exceptions there.
+    # Wrap asyncio.run() so that Ctrl-C or a SIGTERM-triggered CancelledError reaching this level exits silently rather than printing a traceback.
+    # The actual shutdown logic (disconnect, close_db) is inside main(), which handles both exceptions there.
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):

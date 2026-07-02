@@ -2,9 +2,9 @@
 Handles Telethon's MessageEdited event - fired when a message's text is changed by its sender.
  
 Why we bother archiving edits:
-  A common pattern is editing -> deleting. Someone writes something, edits it
-  (maybe to soften it), then deletes it. Without the edit history, the archive
-  shows only the final text before deletion. With it, you get the full picture.
+  A common pattern is editing -> deleting.
+  Someone writes something, edits it (maybe to soften it), then deletes it.
+  Without the edit history, the archive shows only the final text before deletion. With it, you get the full picture.
  
 Flow per event:
   1. Confirm the edited message has text (skip media caption changes for now).
@@ -57,10 +57,8 @@ def register(client) -> None:
 
             conn = db.get_connection()
 
-            # Guard: ensure the chat and sender rows exist. If this edit
-            # arrives for a message we never archived (e.g. TeleVault was
-            # offline when it was sent), the upserts create the parent rows
-            # so the FK constraints don't blow up.
+            # Guard: ensure the chat and sender rows exist.
+            # If this edit arrives for a message we never archived (e.g. TeleVault was offline when it was sent), the upserts create the parent rows so the FK constraints don't blow up.
             db.queries.upsert_chat(
                 conn, 
                 chat_id     = event.chat_id, 
@@ -93,9 +91,8 @@ def register(client) -> None:
             )
 
             if not found:
-                # The original message isn't in our DB - insert it now with
-                # the current (post-edit) text. Not ideal, but better than
-                # having no record of this message at all.
+                # The original message isn't in our DB - insert it now with the current (post-edit) text.
+                # Not ideal, but better than having no record of this message at all.
                 logger.info(
                     f"Edit received for unknown message {message.id} in chat {event.chat_id} - inserting current version as a new record."
                 )

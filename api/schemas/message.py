@@ -72,16 +72,14 @@ class DeletionOut(BaseModel):
     """
     Deletion record for a message, embedded in MessageDetail.
  
-    `deleted_by_inference` is a best-effort guess based on sender_id and
-    timing, valid only for private chats. Always treat it as informational.
+    `deleted_by_inference` is a best-effort guess based on sender_id and timing, valid only for private chats. Always treat it as informational.
  
     Possible values:
       'self'    - the authenticated TeleVault user likely deleted this message
       'other'   - the other party likely deleted it ("Delete for everyone")
       'unknown' - could not be inferred (group chat, or insufficient data)
  
-    `inference_confidence` gives a plain-language note shown in the UI tooltip
-    so the user understands why the inference may be wrong.
+    `inference_confidence` gives a plain-language note shown in the UI tooltip so the user understands why the inference may be wrong.
     """
 
     id: int

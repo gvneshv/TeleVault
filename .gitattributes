@@ -1,6 +1,5 @@
 # Force LF line endings for all text files on every OS.
-# Prevents Windows Git from converting LF -> CRLF in Python source,
-# which can silently corrupt SQL strings inside triple-quoted literals.
+# Prevents Windows Git from converting LF -> CRLF in Python source, which can silently corrupt SQL strings inside triple-quoted literals.
 * text=auto
 *.py  text eol=lf
 *.md  text eol=lf

@@ -7,8 +7,8 @@ The important protocol limitation documented here:
       - updateDeleteMessages        (private chats, legacy groups)
       - updateDeleteChannelMessages (channels, supergroups)
  
-    Only the channel variant includes the chat ID. For private chats and
-    groups, Telegram tells us WHICH messages were deleted but not WHERE.
+    Only the channel variant includes the chat ID.
+    For private chats and groups, Telegram tells us WHICH messages were deleted but not WHERE.
     This is not a Telethon bug - it's the raw MTProto protocol.
  
 Consequences and how we handle them:
@@ -54,8 +54,8 @@ def register(client) -> None:
                     logger.exception(f"Failed to flag deletion for message {msg_id} in chat {chat_id}.")
         else:
             # Degraded path: private chat or legacy group deletion.
-            # We have the message IDs but not the chat. Flag whatever we can
-            # find by ID alone and log the ambiguity.
+            # We have the message IDs but not the chat.
+            # Flag whatever we can find by ID alone and log the ambiguity.
             logger.debug(
                 f"Deletion event with no chat_id - attempting fallback for {len(deleted_ids)} message(s)."
             )
@@ -71,24 +71,17 @@ def _flag_deleted_without_chat(conn, tg_message_id: int) -> None:
     """
     Flag a message as deleted when the chat ID is unknown.
  
-    Searches by tg_message_id alone and flags all matching rows. In practice
-    the same numeric message ID rarely exists in multiple chats simultaneously,
-    but it's theoretically possible since Telegram scopes IDs per chat.
+    Searches by tg_message_id alone and flags all matching rows.
+    In practice the same numeric message ID rarely exists in multiple chats simultaneously, but it's theoretically possible since Telegram scopes IDs per chat.
 
-    When multiple matches are found, we cross-reference the chats table for
-    the stored name and @username. This doesn't resolve the ambiguity
-    automatically (the protocol gives us nothing to go on), but it makes the
-    log entry human-readable so you can tell at a glance which chats were
-    affected rather than staring at a list of raw IDs.
+    When multiple matches are found, we cross-reference the chats table for the stored name and @username.
+    This doesn't resolve the ambiguity automatically (the protocol gives us nothing to go on), but it makes the log entry human-readable so you can tell at a glance which chats were affected rather than staring at a list of raw IDs.
  
-    If the message isn't in the DB at all (sent before TeleVault was running),
-    queries.flag_deleted already logs a warning - nothing extra needed here.
+    If the message isn't in the DB at all (sent before TeleVault was running), queries.flag_deleted already logs a warning - nothing extra needed here.
     """
     from datetime import datetime, timezone
 
-    # Written as concatenated single-line strings to avoid CRLF issues on
-    # Windows - multi-line triple-quoted strings can contain \r characters
-    # after Git checkout, which SQLite's parser rejects mid-statement.
+    # Written as concatenated single-line strings to avoid CRLF issues on Windows - multi-line triple-quoted strings can contain \r characters after Git checkout, which SQLite's parser rejects mid-statement.
     # Also uses is_deleted = 0 (not FALSE) to match the INTEGER schema column.
     cursor = conn.execute(
         "SELECT m.tg_message_id, m.chat_id, c.name AS chat_name, c.username AS chat_username"

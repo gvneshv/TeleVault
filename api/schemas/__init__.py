@@ -1,8 +1,7 @@
 """
 Public re-exports for all Pydantic response models.
  
-Import from here rather than from individual submodules so callers are
-insulated from internal restructuring:
+Import from here rather than from individual submodules so callers are insulated from internal restructuring:
  
     from api.schemas import MessageOut, ChatSummary, StatsOut
 """

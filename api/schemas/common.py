@@ -21,8 +21,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
             "pages": 21
         }
  
-    The frontend uses `total` and `pages` to render pagination controls
-    without needing a separate count request.
+    The frontend uses `total` and `pages` to render pagination controls without needing a separate count request.
     """
 
     items: list[T]
@@ -37,8 +36,7 @@ class HealthOut(BaseModel):
     Liveness response from GET /api/health.
  
     `db_readable` confirms the SQLite file is accessible and returns rows.
-    `session_exists` confirms the Telethon .session file is present on disk
-    (it does NOT mean the userbot is currently connected - that would require IPC, which is out of scope for Phase 2).
+    `session_exists` confirms the Telethon .session file is present on disk (it does NOT mean the userbot is currently connected - that would require IPC, which is out of scope for Phase 2).
     """
 
     status: str = Field(..., description="'ok' or 'degraded'.")

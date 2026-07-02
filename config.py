@@ -1,15 +1,13 @@
 """
 Loads all runtime configuration from environment variables (via a .env file).
  
-The settings are exposed as a single frozen dataclass instance — `settings` —
-imported directly wherever needed:
+The settings are exposed as a single frozen dataclass instance — `settings` — imported directly wherever needed:
  
     from config import settings
     print(settings.db_path)
  
 Why a dataclass rather than reading os.environ inline?
-  - One import gives you everything; no hunting for os.getenv() calls scattered
-    around the codebase.
+  - One import gives you everything; no hunting for os.getenv() calls scattered around the codebase.
   - The frozen=True flag prevents accidental mutation after startup.
   - Type annotations document what each setting is supposed to be.
   - Missing required values fail loudly at startup, not halfway through a run.
@@ -25,8 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # python-dotenv reads the .env file and injects values into os.environ.
-# It does nothing if the variables are already set (e.g. in a real shell
-# environment on the VPS), so it's safe to leave this call in production.
+# It does nothing if the variables are already set (e.g. in a real shell environment on the VPS), so it's safe to leave this call in production.
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -74,12 +71,11 @@ class Settings:
     All runtime configuration for TeleVault.
  
     Frozen so nothing can accidentally overwrite a setting after startup.
-    Attributes map 1-to-1 with .env keys (lowercased and without the TG_ prefix
-    where they're Telegram-specific).
+    Attributes map 1-to-1 with .env keys (lowercased and without the TG_ prefix where they're Telegram-specific).
     """
 
     # --- Telegram credentials ---
-    # Obtain these from https://my.telegram.org → API development tools.
+    # Obtain these from https://my.telegram.org -> API development tools.
     # Treat them like passwords: never commit, never log.
     api_id: int
     api_hash: str

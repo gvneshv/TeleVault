@@ -5,11 +5,10 @@ Output goes to two places simultaneously:
   - stdout (console), so you can watch it live or pipe it to journald on the VPS
   - a rotating log file, so you keep history without the file growing forever
  
-The rotating file caps at 5 MB and keeps the last 3 files. That's enough to
-diagnose issues that surfaced hours ago without eating disk space.
+The rotating file caps at 5 MB and keeps the last 3 files.
+That's enough to diagnose issues that surfaced hours ago without eating disk space.
  
-Log level is read from config so you can switch to DEBUG in .env when needed
-without touching this file.
+Log level is read from config so you can switch to DEBUG in .env when needed without touching this file.
 """
 
 import logging
@@ -38,8 +37,7 @@ def setup_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
         log_level: Any standard level name — 'DEBUG', 'INFO', 'WARNING', etc.
                    Case-insensitive. Defaults to 'INFO'.
         log_file:  Path to the log file. Rotation is applied automatically.
-                   Pass None (or omit) to skip file logging entirely —
-                   useful during local development when console is enough.
+                   Pass None (or omit) to skip file logging entirely — useful during local development when console is enough.
     """
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
 
@@ -70,8 +68,7 @@ def setup_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
         handlers=handlers
     )
 
-    # Telethon is fairly verbose at DEBUG — keep it at WARNING unless you're
-    # actively debugging the Telegram connection itself.
+    # Telethon is fairly verbose at DEBUG — keep it at WARNING unless you're actively debugging the Telegram connection itself.
     logging.getLogger("telethon").setLevel(logging.WARNING)
 
     logging.getLogger(__name__).info(

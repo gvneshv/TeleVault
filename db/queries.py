@@ -4,22 +4,14 @@ All database read and write operations for the app.
 Design rules followed here:
   - Every function takes a connection as its first argument.
     No global state - callers control which connection is used.
-  - All writes use an explicit try/commit/except rollback pattern instead of
-    'with conn:'. Python 3.12 changed the behaviour of the connection context
-    manager (it now starts an explicit transaction), which can cause FK checks
-    to fail when a prior 'with conn:' block committed a parent row that the
-    next block's transaction can't yet see. Explicit commits are unambiguous on every Python version.
+  - All writes use an explicit try/commit/except rollback pattern instead of 'with conn:'. Python 3.12 changed the behaviour of the connection context manager (it now starts an explicit transaction), which can cause FK checks to fail when a prior 'with conn:' block committed a parent row that the next block's transaction can't yet see. Explicit commits are unambiguous on every Python version.
   - Timestamps are stored in the local system timezone, not UTC.
-    _now() returns local time; _localise() converts incoming UTC datetimes
-    (e.g. message.date from Telethon) to local time before storage.
-    Exception: chats.first_seen and senders.first_seen use SQLite's
-    DEFAULT CURRENT_TIMESTAMP (UTC) - they're metadata, not message times.
-  - archived_at in insert_message is passed explicitly so it uses local time
-    rather than falling back to SQLite's UTC DEFAULT CURRENT_TIMESTAMP.
+    _now() returns local time; _localise() converts incoming UTC datetimes (e.g. message.date from Telethon) to local time before storage.
+    Exception: chats.first_seen and senders.first_seen use SQLite's DEFAULT CURRENT_TIMESTAMP (UTC) - they're metadata, not message times.
+  - archived_at in insert_message is passed explicitly so it uses local time rather than falling back to SQLite's UTC DEFAULT CURRENT_TIMESTAMP.
   - INSERT OR IGNORE is used where duplicate arrivals are possible (e.g. Telegram sometimes re-delivers events on reconnect).
   - Functions return meaningful values (row ID, bool, fetched row) so callers can log or react without querying again.
-  - Boolean flags in the schema are INTEGER (0/1). Comparisons use 1/0
-    rather than TRUE/FALSE to stay consistent with the DDL and avoid any SQLite version dependency.
+  - Boolean flags in the schema are INTEGER (0/1). Comparisons use 1/0 rather than TRUE/FALSE to stay consistent with the DDL and avoid any SQLite version dependency.
 """
 
 import logging
@@ -78,25 +70,16 @@ def upsert_chat(
     """
     Insert a chat record if it doesn't exist yet.
     
-    The ``username`` is the @handle - present for public groups and channels,
-    None for private chats and legacy groups without a public link.
+    The ``username`` is the @handle - present for public groups and channels, None for private chats and legacy groups without a public link.
     Stored as-is without the leading '@' for cleaner querying.
  
-    Existing rows are left untouched (INSERT OR IGNORE). Name/username
-    changes over time are not tracked yet - that's a future feature.
+    Existing rows are left untouched (INSERT OR IGNORE). Name/username changes over time are not tracked yet - that's a future feature.
 
     commit=False
-        Skip the commit, leaving the INSERT as part of the caller's ongoing
-        transaction. Use this when upsert_chat and upsert_sender are called
-        immediately before insert_message - grouping all three into one
-        transaction lets the FK check in insert_message see the parent rows
-        within the same transaction, which solves a SQLite WAL snapshot
-        isolation issue that causes FK failures when each operation commits
-        separately.
+        Skip the commit, leaving the INSERT as part of the caller's ongoing transaction.
+        Use this when upsert_chat and upsert_sender are called immediately before insert_message - grouping all three into one transaction lets the FK check in insert_message see the parent rows within the same transaction, which solves a SQLite WAL snapshot isolation issue that causes FK failures when each operation commits separately.
  
-    When commit=True (the default), a RuntimeError is raised if INSERT OR
-    IGNORE silently dropped the row and it's still absent - which means the
-    chat_type value failed the CHECK constraint.
+    When commit=True (the default), a RuntimeError is raised if INSERT OR IGNORE silently dropped the row and it's still absent - which means the chat_type value failed the CHECK constraint.
 
     Note: first_seen uses SQLite's DEFAULT CURRENT_TIMESTAMP (UTC).
     This column is metadata about when TeleVault first saw the chat, not a message timestamp, so the UTC offset is acceptable here.
@@ -145,10 +128,7 @@ def upsert_sender(
     Insert a sender record if it doesn't exist yet.
     Same rationale as upsert_chat - we preserve the first-seen identity.
 
-    Note: for anonymous admin posts in supergroups, Telegram sets the
-    sender to the group itself, so sender_id may be a negative channel ID
-    rather than a user ID. These rows end up in the senders table with
-    whatever fields the channel entity exposes (usually just a name/username).
+    Note: for anonymous admin posts in supergroups, Telegram sets the sender to the group itself, so sender_id may be a negative channel ID rather than a user ID.These rows end up in the senders table with whatever fields the channel entity exposes (usually just a name/username).
     This is a Telegram protocol behaviour, not a bug.
 
     commit=False: same semantics as upsert_chat - see its docstring.
@@ -199,25 +179,20 @@ def insert_message(
     date (Telegram's send timestamp) is converted to local time before storage. 
     archived_at is set to the current local time explicitly so it doesn't fall back to SQLite's UTC DEFAULT CURRENT_TIMESTAMP.
 
-    `is_edited` should be True when this insert is a fallback from the edit
-    handler - the message wasn't in the DB yet, but we know it has been edited at least once.
+    `is_edited` should be True when this insert is a fallback from the edit handler - the message wasn't in the DB yet, but we know it has been edited at least once.
  
-    Returns the internal row ID (messages.id) on success, or None if the
-    message was already present (INSERT OR IGNORE - safe on re-delivery)
+    Returns the internal row ID (messages.id) on success, or None if the message was already present (INSERT OR IGNORE - safe on re-delivery)
     """
     local_date = _localise(date)
     local_archived_at = _now()
 
     try:
-        # Defensive FK upserts - ensure parent rows exist within this same
-        # transaction before the messages INSERT runs its FK check.
+        # Defensive FK upserts - ensure parent rows exist within this same transaction before the messages INSERT runs its FK check.
         #
-        # In the normal flow, the caller already ran upsert_chat/upsert_sender
-        # (with commit=False), so these are always-safe no-ops on existing PKs.
+        # In the normal flow, the caller already ran upsert_chat/upsert_sender (with commit=False), so these are always-safe no-ops on existing PKs.
         # They matter for edge cases where the parent rows weren't created first:
         #
-        #   - Scheduled / auto-posted messages that bypass NewMessage (Telegram
-        #     delivers them as updateShortSentMessage, which Telethon's NewMessage
+        #   - Scheduled / auto-posted messages that bypass NewMessage (Telegram delivers them as updateShortSentMessage, which Telethon's NewMessage
         #     handler doesn't receive, so the chat is never seen before the edit).
         #   - Messages sent while TeleVault was offline - we only see the edit.
         #   - Any Python 3.14 transaction-isolation quirk that breaks commit=False.
@@ -277,11 +252,9 @@ def flag_deleted(
     """
     Mark a message as deleted and record a deletion snapshot.
  
-    The snapshot (text at time of deletion) is written to message_deletions
-    atomically with the flag update - both succeed or both roll back.
+    The snapshot (text at time of deletion) is written to message_deletions atomically with the flag update - both succeed or both roll back.
  
-    Returns True if the row was found and flagged, False if the message
-    wasn't in the DB (may have been sent before TeleVault was running).
+    Returns True if the row was found and flagged, False if the message wasn't in the DB (may have been sent before TeleVault was running).
     """
     ts = _localise(deleted_at) if deleted_at else _now()
     row = get_message(conn, tg_message_id, chat_id)

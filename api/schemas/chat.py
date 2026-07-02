@@ -31,10 +31,8 @@ class ChatOut(BaseModel):
  
     `message_count`  - total archived messages in this chat.
     `deleted_count`  - how many of those are flagged as deleted.
-    `last_message_at` - ISO 8601 datetime of the most recent archived message,
-                        used to sort the chat list by recency (like Telegram itself).
-    `last_message_preview` - first 80 chars of the most recent message text,
-                             shown in the sidebar. Null if the message had no text.
+    `last_message_at` - ISO 8601 datetime of the most recent archived message, used to sort the chat list by recency (like Telegram itself).
+    `last_message_preview` - first 80 chars of the most recent message text, shown in the sidebar. Null if the message had no text.
     """
 
     chat_id: int

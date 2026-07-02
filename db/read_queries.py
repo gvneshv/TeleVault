@@ -1,8 +1,8 @@
 """
 Read-only query layer used exclusively by the API server.
 
-All functions accept a sqlite3.Connection opened in read-only mode (uri=True, "file:path?mode=ro") and return plain dicts or lists of dicts
-— no ORM, no Pydantic here. Pydantic validation happens in the route layer so this module stays dependency-free and easily testable.
+All functions accept a sqlite3.Connection opened in read-only mode (uri=True, "file:path?mode=ro") and return plain dicts or lists of dicts - no ORM, no Pydantic here.
+Pydantic validation happens in the route layer so this module stays dependency-free and easily testable.
 
 Pagination convention throughout:
     page     : 1-based page number
@@ -226,6 +226,9 @@ def get_messages(
     params: list[Any] = []
 
     if q:
+        # NOTE: LOWER_UNICODE() prevents SQLite from using an index on m.text.
+        # Acceptable at current scale (personal archive, no index on text today).
+        # Revisit once FTS5 lands (Phase 3 roadmap) — its tokenizer may handle Unicode case-folding natively, removing the need for this wrapper entirely.
         conditions.append("LOWER_UNICODE(m.text) LIKE LOWER_UNICODE(?) ESCAPE '\\'")
         # Escape any literal % or _ in the user's query so they're treated as characters, not wildcards.
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -276,6 +279,9 @@ def get_chat_messages(
     params: list[Any] = [chat_id]
 
     if q:
+        # NOTE: LOWER_UNICODE() prevents SQLite from using an index on m.text.
+        # Acceptable at current scale (personal archive, no index on text today).
+        # Revisit once FTS5 lands (Phase 3 roadmap) — its tokenizer may handle Unicode case-folding natively, removing the need for this wrapper entirely.
         conditions.append("LOWER_UNICODE(m.text) LIKE LOWER_UNICODE(?) ESCAPE '\\'")
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         params.append(f"%{escaped}%")

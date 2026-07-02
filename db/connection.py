@@ -2,18 +2,13 @@
 Manages the SQLite connection for the entire application.
  
 It uses a single shared connection rather than opening/closing one per query.
-SQLite handles this fine for a single-process app like TeleVault, and it
-avoids the overhead of reconnecting on every write event.
+SQLite handles this fine for a single-process app like TeleVault, and it avoids the overhead of reconnecting on every write event.
  
-WAL (Write-Ahead Logging) mode is enabled because it allows reads and writes
-to happen concurrently without blocking each other - important when Telethon's
-event loop is constantly firing while you might also be querying the DB manually.
+WAL (Write-Ahead Logging) mode is enabled because it allows reads and writes to happen concurrently without blocking each other - important when Telethon's event loop is constantly firing while you might also be querying the DB manually.
 
 Datetime handling
 -----------------
-Python 3.12 deprecated the built-in sqlite3 datetime adapters/converters and
-they are removed in later versions. Rather than rely on them, this module
-registers explicit ones that work on every Python version:
+Python 3.12 deprecated the built-in sqlite3 datetime adapters/converters and they are removed in later versions. Rather than rely on them, this module registers explicit ones that work on every Python version:
  
   - Adapter  (Python -> SQLite): datetime -> ISO 8601 TEXT string
   - Converter (SQLite -> Python): TEXT column declared DATETIME -> datetime
@@ -39,17 +34,15 @@ _connection: sqlite3.Connection | None = None
 def _adapt_datetime(dt: datetime) -> str:
     """
     Serialize a Python datetime to an ISO 8601 string for SQLite storage.
-    Timezone-aware datetimes keep their offset(e.g. '+02:00'), so stored
-    timestamps are unambiguous and human-readable when querying the DB directly.
+    Timezone-aware datetimes keep their offset(e.g. '+02:00'), so stored timestamps are unambiguous and human-readable when querying the DB directly.
     """
     return dt.isoformat(timespec="seconds")
 
 
 sqlite3.register_adapter(datetime, _adapt_datetime)
-# No register_converter - detect_types is intentionally omitted from the
-# connection (see init_db). Datetimes read from DATETIME columns come back
-# as ISO 8601 strings; that's correct for Phase 1 where we don't do any
-# datetime arithmetic on values retrieved from the DB.
+# No register_converter - detect_types is intentionally omitted from the connection (see init_db).
+# Datetimes read from DATETIME columns come back as ISO 8601 strings;
+# that's correct for Phase 1 where we don't do any datetime arithmetic on values retrieved from the DB.
 
 
 # ---------------------------------------------------------------------------
@@ -58,8 +51,8 @@ sqlite3.register_adapter(datetime, _adapt_datetime)
 
 def init_db(db_path: str) -> sqlite3.Connection:
     """
-    Open the SQLite database at the given path, apply performance settings,
-    and return the connection. Also stores it internally so get_connection() can retrieve it later without needing the path again.
+    Open the SQLite database at the given path, apply performance settings, and return the connection.
+    Also stores it internally so get_connection() can retrieve it later without needing the path again.
  
     Creates the file and any parent directories if they don't exist yet.
     """
@@ -75,8 +68,7 @@ def init_db(db_path: str) -> sqlite3.Connection:
     _connection = sqlite3.connect( # type: ignore
         db_path,
         # detect_types is intentionally omitted.
-        # In Python 3.14, PARSE_DECLTYPES|PARSE_COLNAMES changed behaviour and
-        # breaks any query that uses dot-notation table aliases (m.col, c.col), producing spurious "near '.': syntax error" at runtime.
+        # In Python 3.14, PARSE_DECLTYPES|PARSE_COLNAMES changed behaviour and breaks any query that uses dot-notation table aliases (m.col, c.col), producing spurious "near '.': syntax error" at runtime.
         # The datetime adapter below still serialises datetime -> ISO string on INSERT; 
         # on SELECT, DATETIME columns come back as plain strings, which is fine for Phase 1 where we don't do datetime arithmetic in Python.
         check_same_thread=False,
@@ -86,12 +78,11 @@ def init_db(db_path: str) -> sqlite3.Connection:
     # Much safer and more readable than positional indexing
     _connection.row_factory = sqlite3.Row
 
-    # WAL mode: writes go to a separate log file first, so readers are never
-    # blocked by a write in progress. Better performance for our use case
+    # WAL mode: writes go to a separate log file first, so readers are never blocked by a write in progress.
+    # Better performance for our use case
     _connection.execute("PRAGMA journal_mode=WAL;")
 
-    # Foreign key enforcement is OFF by default in SQLite - turn it on so our
-    # FK constraints (chat_id, sender_id) are actually enforced.
+    # Foreign key enforcement is OFF by default in SQLite - turn it on so our FK constraints (chat_id, sender_id) are actually enforced.
     _connection.execute("PRAGMA foreign_keys=ON;")
 
     logger.info("Database connection established.")
