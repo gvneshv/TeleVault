@@ -32,7 +32,7 @@ class PaginatedResponse(BaseModel):
     pages: int = Field(..., description="Total number of pages.")
 
 
-class Healthout(BaseModel):
+class HealthOut(BaseModel):
     """
     Liveness response from GET /api/health.
  

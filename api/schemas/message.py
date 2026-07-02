@@ -119,7 +119,7 @@ class MessageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class MessageDetails(BaseModel):
+class MessageDetail(BaseModel):
     """
     Full message record including edit history and deletion details. 
     Returned by GET /api/messages/{id}.
