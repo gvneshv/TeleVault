@@ -58,7 +58,8 @@
     <main class="app-main">
       <section class="app-view" data-view="chats">
         <h1 data-i18n="nav.chats">Chats</h1>
-        <div class="empty-state" data-i18n="common.comingSoon">This view isn't built yet.</div>
+        <!-- Populated by js/views/chats.js — loading/error/empty/list states all render here. -->
+        <div id="chats-root"></div>
       </section>
 
       <section class="app-view" data-view="messages" hidden>
@@ -87,6 +88,7 @@
   <script src="/js/i18n/uk.js"></script>
   <script src="/js/i18n.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/views/chats.js"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
