@@ -39,6 +39,15 @@ window.TELEVAULT_I18N.en = {
   "messages.searchPlaceholder": "Search message text…",
   "messages.onlyEditedLabel": "Edited only",
 
+  "deleted.empty": "No deleted messages found.",
+  "deleted.searchPlaceholder": "Search deleted message text…",
+  "deleted.viewDetails": "View details",
+  "deleted.hideDetails": "Hide details",
+  "deleted.noRecord": "No deletion record found.",
+  "deleted.actor.self": "Likely deleted by you",
+  "deleted.actor.other": "Likely deleted by the other party",
+  "deleted.actor.unknown": "Deleted by — unknown",
+
   "theme.toggleLabel": "Toggle theme",
   "lang.selectLabel": "Language",
 };

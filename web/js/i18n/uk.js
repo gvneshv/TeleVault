@@ -35,6 +35,15 @@ window.TELEVAULT_I18N.uk = {
   "messages.searchPlaceholder": "Пошук у тексті повідомлень…",
   "messages.onlyEditedLabel": "Лише змінені",
 
+  "deleted.empty": "Видалених повідомлень не знайдено.",
+  "deleted.searchPlaceholder": "Пошук у тексті видалених повідомлень…",
+  "deleted.viewDetails": "Показати деталі",
+  "deleted.hideDetails": "Сховати деталі",
+  "deleted.noRecord": "Запис про видалення не знайдено.",
+  "deleted.actor.self": "Ймовірно, видалили ви",
+  "deleted.actor.other": "Ймовірно, видалив співрозмовник",
+  "deleted.actor.unknown": "Хто видалив — невідомо",
+
   "theme.toggleLabel": "Змінити тему",
   "lang.selectLabel": "Мова",
 };
