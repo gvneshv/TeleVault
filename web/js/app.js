@@ -32,6 +32,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (viewName === "messages" && window.TeleVaultMessagesView) {
       window.TeleVaultMessagesView.init();
     }
+    if (viewName === "deleted" && window.TeleVaultDeletedView) {
+      window.TeleVaultDeletedView.init();
+    }
   }
 
   links.forEach((link) => {
