@@ -6,7 +6,7 @@
  * No bundler, no fetch: this keeps the app usable offline (relevant once the service worker caches it) and avoids a flash of untranslated content
  * while a JSON file loads.
  *
- * Adding a new language later: create js/i18n/<code>.js following the same window.TELEVAULT_I18N.<code> = {...} pattern, 
+ * Adding a new language later: create js/i18n/<code>.js following the same window.TELEVAULT_I18N.<code> = {...} pattern,
  * add a <script> tag for it in index.html, and add an <option> in the language <select>.
  */
 
@@ -52,10 +52,18 @@ function applyTranslations() {
   });
 }
 
+/**
+ * Switches the active language, re-applies static (data-i18n) translations, and notifies the rest of the app.
+ *
+ * Why the event: applyTranslations() only reaches elements marked with data-i18n in the static HTML.
+ * Views that build their own markup from fetched data (e.g. the Chats list rendering "{count} deleted" per row) aren't touched by it
+ * — those views listen for this event and re-render their already-fetched data in the new language, without a network re-fetch.
+ */
 function setLang(lang) {
   if (!SUPPORTED_LANGS.includes(lang)) return;
   localStorage.setItem(LANG_KEY, lang);
   applyTranslations();
+  document.dispatchEvent(new CustomEvent("televault:langchange"));
 }
 
 window.TeleVaultI18n = {

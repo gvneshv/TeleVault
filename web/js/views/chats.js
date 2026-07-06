@@ -16,11 +16,12 @@
 
 const CHATS_PER_PAGE = 50;
 
-/** Mutable view state.
- * Re-created fresh;
- * not persisted across reloads. */
+/** Mutable view state. Re-created fresh; not persisted across reloads. */
 const chatsViewState = {
   page: 1,
+  /** Last successfully fetched page from the API, kept so a language change can re-render without re-fetching.
+   * Null until the first load. */
+  lastData: null,
 };
 
 /**
@@ -131,22 +132,15 @@ function renderPagination(total, page, perPage, pages) {
   `;
 }
 
-/** Fetch one page of chats and render the view's current state. */
-async function loadChats(root) {
+/**
+ * Render the view's current state (rows + pagination) from already-fetched data.
+ * Pulled out of loadChats() so a language change can call this again with the cached page instead of hitting the API a second time.
+ *
+ * @param {HTMLElement} root
+ * @param {object} data - a PaginatedResponse<ChatOut> from the API.
+ */
+function renderChatsView(root, data) {
   const t = window.TeleVaultI18n.t;
-  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
-
-  let data;
-  try {
-    const res = await fetch(
-      `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}`,
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = await res.json();
-  } catch {
-    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
-    return;
-  }
 
   if (data.items.length === 0) {
     root.innerHTML = `<div class="empty-state">${t("chats.empty")}</div>`;
@@ -174,7 +168,36 @@ async function loadChats(root) {
   });
 }
 
+/** Fetch one page of chats, cache it, and render it. */
+async function loadChats(root) {
+  const t = window.TeleVaultI18n.t;
+  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+
+  let data;
+  try {
+    const res = await fetch(
+      `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}`,
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch {
+    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
+    return;
+  }
+
+  chatsViewState.lastData = data;
+  renderChatsView(root, data);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("chats-root");
   if (root) loadChats(root);
+});
+
+// Re-render the already-fetched page in the new language — no re-fetch needed, since only the labels change, not the underlying chat data.
+document.addEventListener("televault:langchange", () => {
+  const root = document.getElementById("chats-root");
+  if (root && chatsViewState.lastData) {
+    renderChatsView(root, chatsViewState.lastData);
+  }
 });
