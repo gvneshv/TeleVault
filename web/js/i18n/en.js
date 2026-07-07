@@ -44,8 +44,7 @@ window.TELEVAULT_I18N.en = {
   "deleted.viewDetails": "View details",
   "deleted.hideDetails": "Hide details",
   "deleted.noRecord": "No deletion record found.",
-  "deleted.actor.self": "Likely deleted by you",
-  "deleted.actor.other": "Likely deleted by the other party",
+  "deleted.actor.channel_admin": "Deleted by a channel admin",
   "deleted.actor.unknown": "Deleted by — unknown",
 
   "theme.toggleLabel": "Toggle theme",

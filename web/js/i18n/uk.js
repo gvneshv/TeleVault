@@ -40,8 +40,7 @@ window.TELEVAULT_I18N.uk = {
   "deleted.viewDetails": "Показати деталі",
   "deleted.hideDetails": "Сховати деталі",
   "deleted.noRecord": "Запис про видалення не знайдено.",
-  "deleted.actor.self": "Ймовірно, видалили ви",
-  "deleted.actor.other": "Ймовірно, видалив співрозмовник",
+  "deleted.actor.channel_admin": "Видалено адміністратором каналу",
   "deleted.actor.unknown": "Хто видалив — невідомо",
 
   "theme.toggleLabel": "Змінити тему",
