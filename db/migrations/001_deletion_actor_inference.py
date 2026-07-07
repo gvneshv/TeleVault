@@ -11,9 +11,12 @@ Run condition:
 
 Background on the inference logic:
     Telegram's API does not expose who deleted a message.
-    In private chats, TeleVault makes a best-effort guess based on `sender_id` relative to the authenticated user's own ID.
-    This is intentionally labelled 'inference' throughout — never presented to the user as fact.
-    See handlers/on_delete.py for the inference implementation.
+    This migration only adds the columns and their sentinel defaults ('unknown' / NULL) ahead of a planned inference feature — it does NOT itself compute anything,
+    and as of this writing nothing else in the codebase does either.
+    handlers/on_delete.py currently calls db.queries.flag_deleted() with no actor-inference logic;
+    every row gets 'unknown' purely from the column DEFAULT below.
+    (An earlier version of this comment pointed to on_delete.py as "the inference implementation" — that was aspirational, not accurate, and has been corrected here.)
+    See api/schemas/message.py's DeletionOut docstring for the current thinking on where such a guess would actually be reliable (channels) versus not (private/group chats).
 """
 
 import sqlite3
