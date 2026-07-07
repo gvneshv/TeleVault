@@ -18,7 +18,10 @@
  */
 
 const DELETED_PER_PAGE = 50;
-const SEARCH_DEBOUNCE_MS = 300;
+// Prefixed for the same reason as MESSAGES_PER_PAGE's sibling constant in messages.js:
+// no ES modules here, so all <script>-loaded files share one global lexical scope,
+// and a bare "SEARCH_DEBOUNCE_MS" in two files is a page-breaking SyntaxError, not a harmless naming coincidence.
+const DELETED_SEARCH_DEBOUNCE_MS = 300;
 
 /** Mutable view state. Re-created fresh; not persisted across reloads. */
 const deletedViewState = {
@@ -276,7 +279,7 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       deletedViewState.q = searchInput.value.trim();
       deletedViewState.page = 1;
       loadDeleted(listRoot);
-    }, SEARCH_DEBOUNCE_MS);
+    }, DELETED_SEARCH_DEBOUNCE_MS);
   });
 }
 

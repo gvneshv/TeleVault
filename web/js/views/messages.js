@@ -18,7 +18,10 @@
  */
 
 const MESSAGES_PER_PAGE = 50;
-const SEARCH_DEBOUNCE_MS = 300;
+// Prefixed (not just SEARCH_DEBOUNCE_MS) because none of web/js/*.js use ES modules — every <script> tag shares one global lexical scope,
+// so an identically-named top-level const in another view's file would be a SyntaxError at page load, not a harmless shadow.
+// Learned this the hard way once deleted.js declared the same unprefixed name.
+const MESSAGES_SEARCH_DEBOUNCE_MS = 300;
 
 /** Mutable view state. Re-created fresh; not persisted across reloads. */
 const messagesViewState = {
@@ -26,7 +29,7 @@ const messagesViewState = {
   q: "",
   onlyEdited: false,
   lastData: null,
-  /** True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once. */
+  /** True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more  than once. */
   initialized: false,
 };
 
@@ -112,7 +115,8 @@ function renderMessageRow(msg) {
 }
 
 /**
- * Render the view's current state (rows + pagination) from already-fetched data, without a network re-fetch — used both after loading and after a language change.
+ * Render the view's current state (rows + pagination) from already-fetched data,
+ * without a network re-fetch — used both after loading and after a language change.
  *
  * @param {HTMLElement} root
  * @param {object} data - a PaginatedResponse<MessageOut> from the API.
@@ -199,7 +203,7 @@ function initFilterBar(filterBarRoot, listRoot) {
       messagesViewState.q = searchInput.value.trim();
       messagesViewState.page = 1;
       loadMessages(listRoot);
-    }, SEARCH_DEBOUNCE_MS);
+    }, MESSAGES_SEARCH_DEBOUNCE_MS);
   });
 
   const editedCheckbox = filterBarRoot.querySelector("#messages-only-edited");
