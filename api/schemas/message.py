@@ -64,34 +64,25 @@ class EditOut(BaseModel):
 
 
 # Inference values for who deleted a message.
-# STATUS (as of this writing): not yet implemented.
-# Every row currently returns 'unknown' via message_deletions' column DEFAULT — no code computes 'self'/'other' anywhere in the backend
-# (checked: neither flag_deleted() in db/queries.py nor handlers/on_delete.py compute or write this value;
-# the older comment pointing to flag_deleted() for "the inference logic" was aspirational, not accurate).
-# If this is implemented later, treat it as a best-effort guess, never a reliable fact — Telegram's API does not expose who performed a deletion.
-DeletionActorInference = Literal["self", "other", "unknown"]
+# Implemented for channels only (see db/queries.py's flag_deleted()):
+# broadcast channels restrict deletion to admins, so it's a structural fact, not a guess.
+# Deliberately NOT implemented for private/group/supergroup chats — Telegram allows any party to delete a message for everyone with no time limit and no record of who did it,
+# so a sender_id/timing guess there would be closer to a coin flip than a signal.
+# Those always get 'unknown', which is also the column's own DEFAULT.
+DeletionActorInference = Literal["channel_admin", "unknown"]
 
 
 class DeletionOut(BaseModel):
     """
     Deletion record for a message, embedded in MessageDetail.
 
-    `deleted_by_inference` is currently always 'unknown' — see the STATUS note on DeletionActorInference above.
-    The field and the three possible values below describe a planned feature, not current behavior.
+    `deleted_by_inference` is 'channel_admin' when the message came from a broadcast channel (only admins can delete channel posts — see DeletionActorInference above), and 'unknown' for every other chat type,
+    where TeleVault deliberately does not attempt a guess.
+    This is not a partial implementation waiting to be finished — it's the intended final state;
+    a private/group guess was considered and rejected as unreliable.
 
-    Possible values (once/if implemented):
-      'self'    - the authenticated TeleVault user likely deleted this message
-      'other'   - the other party likely deleted it ("Delete for everyone")
-      'unknown' - could not be inferred, or not yet computed (current state for all rows)
-
-    Note on where any future inference would actually be reliable:
-    for channels, if the archiving account isn't an admin, only channel admins can delete posts — so any deletion there is deterministically 'other', not a guess.
-    Private/group chats are the opposite:
-    Telegram allows either party to delete a message for everyone with no time limit and no trace of who did it,
-    so a sender_id/timing-based guess there would be closer to a coin flip than a signal.
-    Worth keeping these cases separate rather than one shared "best-effort" implementation for all chat types.
-
-    `inference_confidence` gives a plain-language note shown in the UI so the user understands the basis (or absence) of the inference.
+    `inference_confidence` gives a short, fixed, human-readable note explaining the 'channel_admin' inference's basis.
+    Currently always null for 'unknown' rows, since there's nothing to explain about not guessing.
     """
 
     id: int
@@ -100,7 +91,7 @@ class DeletionOut(BaseModel):
     deleted_by_inference: DeletionActorInference = "unknown"
     inference_confidence: str | None = Field(
         None,
-        description="Human-readable note explaining the basis and limitations of the deletion actor inference. Currently always null — see DeletionOut's docstring."
+        description="Fixed explanatory note for the 'channel_admin' inference. Null for 'unknown' rows."
     )
 
     model_config = {"from_attributes": True}
