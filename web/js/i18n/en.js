@@ -47,6 +47,27 @@ window.TELEVAULT_I18N.en = {
   "deleted.actor.channel_admin": "Deleted by a channel admin",
   "deleted.actor.unknown": "Deleted by — unknown",
 
+  "stats.totalMessages": "Total messages",
+  "stats.totalDeleted": "Deleted",
+  "stats.totalEdited": "Edited",
+  "stats.totalChats": "Chats",
+  "stats.totalSenders": "Senders",
+  "stats.archivingSince": "Archiving since",
+  "stats.perChatTitle": "Per-chat breakdown",
+  "stats.empty": "No chat data yet.",
+  "stats.tableChat": "Chat",
+  "stats.tableMessages": "Messages",
+  "stats.tableDeleted": "Deleted",
+  "stats.tableEdited": "Edited",
+  "stats.tableLastSeen": "Last message",
+
+  "health.statusOk": "OK",
+  "health.statusDegraded": "Degraded",
+  "health.dbReadable": "Database readable",
+  "health.sessionExists": "Telegram session found",
+  "health.messageCount": "Archived messages",
+  "health.refresh": "Refresh",
+
   "theme.toggleLabel": "Toggle theme",
   "lang.selectLabel": "Language",
 };

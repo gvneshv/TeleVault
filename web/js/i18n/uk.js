@@ -43,6 +43,27 @@ window.TELEVAULT_I18N.uk = {
   "deleted.actor.channel_admin": "Видалено адміністратором каналу",
   "deleted.actor.unknown": "Хто видалив — невідомо",
 
+  "stats.totalMessages": "Усього повідомлень",
+  "stats.totalDeleted": "Видалено",
+  "stats.totalEdited": "Змінено",
+  "stats.totalChats": "Чатів",
+  "stats.totalSenders": "Відправників",
+  "stats.archivingSince": "Архівується з",
+  "stats.perChatTitle": "Розбивка по чатах",
+  "stats.empty": "Даних про чати ще немає.",
+  "stats.tableChat": "Чат",
+  "stats.tableMessages": "Повідомлень",
+  "stats.tableDeleted": "Видалено",
+  "stats.tableEdited": "Змінено",
+  "stats.tableLastSeen": "Останнє повідомлення",
+
+  "health.statusOk": "Гаразд",
+  "health.statusDegraded": "Є проблеми",
+  "health.dbReadable": "База даних доступна",
+  "health.sessionExists": "Сесію Telegram знайдено",
+  "health.messageCount": "Заархівовано повідомлень",
+  "health.refresh": "Оновити",
+
   "theme.toggleLabel": "Змінити тему",
   "lang.selectLabel": "Мова",
 };

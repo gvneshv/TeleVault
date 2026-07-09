@@ -79,12 +79,14 @@
 
       <section class="app-view" data-view="stats" hidden>
         <h1 data-i18n="nav.stats">Stats</h1>
-        <div class="empty-state" data-i18n="common.comingSoon">This view isn't built yet.</div>
+        <!-- Populated by js/views/stats.js -->
+        <div id="stats-root"></div>
       </section>
 
       <section class="app-view" data-view="health" hidden>
         <h1 data-i18n="nav.health">Health</h1>
-        <div class="empty-state" data-i18n="common.comingSoon">This view isn't built yet.</div>
+        <!-- Populated by js/views/health.js -->
+        <div id="health-root"></div>
       </section>
     </main>
   </div>
@@ -98,6 +100,8 @@
   <script src="/js/views/chats.js"></script>
   <script src="/js/views/messages.js"></script>
   <script src="/js/views/deleted.js"></script>
+  <script src="/js/views/stats.js"></script>
+  <script src="/js/views/health.js"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
