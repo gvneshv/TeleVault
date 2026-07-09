@@ -1,9 +1,12 @@
 # TeleVault
 
 A personal Telegram userbot that archives all your messages in real time and
-preserves deleted ones so you can retrieve them later.
+preserves deleted ones so you can retrieve them later — with a web UI to
+browse, search, and review what's been archived.
 
-**Phase 1 scope:** text messages only, all chat types, local SQLite storage.
+**Phase 1 (userbot):** text messages only, all chat types, local SQLite storage.
+**Phase 2 (web UI):** read-only REST API + installable PWA — Chats, Messages,
+Deleted, Stats, and Health views, with EN/UK language support and light/dark themes.
 
 ---
 
@@ -123,21 +126,69 @@ flushed and closed cleanly before the process exits.
 
 ---
 
+## 7. Launch the web UI
+
+The web UI is a separate process from the userbot — both can run at the same
+time, reading/writing the same SQLite file (the API only ever reads).
+
+```bash
+uvicorn api.server:app --host 127.0.0.1 --port 8000
+```
+
+Then open **http://localhost:8000** in a browser. You should see the Chats
+view load first, with Messages, Deleted, Stats, and Health in the nav rail.
+
+A few things worth knowing:
+
+- **Installable as an app:** most browsers will offer to install it (via the
+  address bar or browser menu) since it ships a PWA manifest and service
+  worker. Installed or not, it works the same.
+- **Offline behaviour:** the app shell (HTML/CSS/JS) is cached for offline
+  loading, but data always requires a live connection — `/api/*` is
+  deliberately excluded from the cache, since this is private data and a
+  stale cached result would be misleading, not just old.
+- **Theme and language:** toggle in the top-right of the nav rail (☀/☾ for
+  theme, EN/UK for language). Both persist across visits via `localStorage`.
+- **Interactive API docs:** available at `http://localhost:8000/api/docs`
+  (Swagger UI) if you want to explore the endpoints directly.
+- **Deployment note:** for always-on use, run this the same way as the
+  userbot (systemd, etc.), with Nginx proxying `/api/*` to this process and
+  serving `/` — see `api/server.py`'s docstring for the exact setup.
+
+---
+
 ## Project structure
 
 ```
 televault/
-├── main.py              # Entry point
+├── api/                 # REST API (FastAPI) — read-only, serves web/ as static files
+│   ├── routes/          # chats.py, messages.py, deleted.py, stats.py, health.py
+│   ├── schemas/         # Pydantic v2 response models
+│   ├── dependencies.py  # get_db() — read-only SQLite connection per request
+│   └── server.py        # FastAPI app + static file mount
+├── data/                # SQLite file lives here (gitignored)
+├── main.py              # Userbot entry point
 ├── config.py            # Settings loader (.env -> Settings dataclass)
 ├── db/
-│   ├── connection.py    # SQLite connection management
+│   ├── migrations/      # Idempotent schema migrations, run on every startup
+│   ├── connection.py    # SQLite connection management (write side)
 │   ├── schema.py        # Table definitions (run on every startup)
-│   └── queries.py       # All read/write operations
+│   ├── queries.py       # All write operations (used by the userbot)
+│   └── read_queries.py  # All read operations (used by the API)
 ├── handlers/
 │   ├── helpers.py       # Shared Telethon entity utilities
 │   ├── on_message.py    # NewMessage handler
 │   ├── on_delete.py     # MessageDeleted handler
 │   └── on_edit.py       # MessageEdited handler
+├── web/                 # Vanilla JS/HTML/CSS PWA — no build step
+│   ├── css/
+│   ├── js/
+│   │   ├── lib/         # Shared helpers (DOM escaping, pagination)
+│   │   ├── views/       # One controller per nav tab
+│   │   └── i18n/        # en.js, uk.js
+│   ├── index.html
+│   ├── sw.js
+│   └── manifest.webmanifest
 └── utils/
     └── logging_setup.py # Console + rotating file logging
 ```
@@ -155,3 +206,10 @@ televault/
 - **Media messages** (photos, stickers, voice notes) are silently skipped in
   Phase 1. The log will show a `DEBUG` line for each skipped message if you
   set `LOG_LEVEL=DEBUG` in `.env`.
+- **The web UI has no authentication.** `api/server.py` doesn't check any
+  credentials — anyone who can reach the port can read your entire archive,
+  including deleted messages. Fine for `127.0.0.1`-only local use; if you
+  deploy this on a VPS reachable from the internet, put it behind something
+  that authenticates first (e.g. Nginx with basic auth, a VPN, or an
+  SSH tunnel) rather than exposing the port directly. Login/auth for the web
+  UI itself isn't planned yet=.

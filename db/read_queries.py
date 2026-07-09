@@ -27,6 +27,56 @@ def _rows_to_dicts(cursor: sqlite3.Cursor) -> list[dict[str, Any]]:
     return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 
+def _shape_message_row(row: dict[str, Any], has_chat_columns: bool) -> dict[str, Any]:
+    """
+    Reshape a flat SQL row into the nested structure MessageOut/MessageDetail actually expect: {"chat": {...} | None, "sender": {...} | None, ...}.
+
+    BUG THIS FIXES: without this step, a flat row (e.g. with a top-level "sender_id" and "chat_name" key, as produced by dict(zip(cols, row)))
+    has no key literally named "chat" or "sender" at all.
+    FastAPI/Pydantic validates the dict against MessageOut, finds neither key,
+    and silently falls back to each field's declared default of None — for every row, always, regardless of the SQL join actually having the data.
+    This was invisible in testing because Optional[None] doesn't raise a validation error; it just quietly renders as "—" in the frontend.
+    Confirmed via testing that this affected 100% of rows in the Messages and Deleted views, not an occasional edge case.
+
+    Args:
+        row              : flat dict with message columns, sender_* columns, and chat_name/chat_type if has_chat_columns.
+        has_chat_columns : whether this row's SELECT joined the chats table.
+                           False for get_chat_messages() (chat is intentionally omitted there — see its docstring), True for get_messages() and get_message_detail().
+    """
+    sender = None
+    if row["sender_id"] is not None:
+        sender = {
+            "sender_id": row["sender_id"],
+            "username": row["sender_username"],
+            "first_name": row["sender_first_name"],
+            "last_name": row["sender_last_name"],
+            # Not stored yet — Phase 3 feature, see SenderOut's docstring.
+            "display_name": None,
+        }
+
+    chat = None
+    if has_chat_columns:
+        chat = {
+            "chat_id": row["chat_id"],
+            "name": row.get("chat_name"),
+            "chat_type": row.get("chat_type"),
+        }
+
+    return {
+        "id": row["id"],
+        "tg_message_id": row["tg_message_id"],
+        "chat": chat,
+        "sender": sender,
+        "text": row["text"],
+        "date": row["date"],
+        "archived_at": row["archived_at"],
+        "is_edited": row["is_edited"],
+        "edited_at": row["edited_at"],
+        "is_deleted": row["is_deleted"],
+        "deleted_at": row["deleted_at"],
+    }
+
+
 def _paginate(query: str, params: list, conn: sqlite3.Connection,
               page: int, per_page: int) -> dict[str, Any]:
     """
@@ -253,7 +303,9 @@ def get_messages(
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     sql = f"{select} {where} ORDER BY m.date DESC"
 
-    return _paginate(sql, params, conn, page, per_page)
+    result = _paginate(sql, params, conn, page, per_page)
+    result["items"] = [_shape_message_row(r, has_chat_columns=True) for r in result["items"]]
+    return result
 
 
 def get_chat_messages(
@@ -298,7 +350,9 @@ def get_chat_messages(
     where = "WHERE " + " AND ".join(conditions)
     sql = f"{select} {where} ORDER BY m.date DESC"
 
-    return _paginate(sql, params, conn, page, per_page)
+    result = _paginate(sql, params, conn, page, per_page)
+    result["items"] = [_shape_message_row(r, has_chat_columns=False) for r in result["items"]]
+    return result
 
 
 def get_message_detail(
@@ -314,15 +368,40 @@ def get_message_detail(
     Edits are attached as a list under the key 'edits'.
     Deletion record (if any) is attached under the key 'deletion'.
     """
-    # Base message row
-    select = _base_message_select()
+    # Base message row.
+    # Previously used _base_message_select() (sender-only, no chats join)
+    # — added the chats join explicitly here since this endpoint's response (MessageDetail) includes a chat field same as MessageOut,
+    # and there was no documented reason to omit it the way get_chat_messages() intentionally does.
+    select = """
+        SELECT
+            m.id,
+            m.tg_message_id,
+            m.chat_id,
+            c.name         AS chat_name,
+            c.chat_type    AS chat_type,
+            m.text,
+            m.date,
+            m.archived_at,
+            m.is_edited,
+            m.edited_at,
+            m.is_deleted,
+            m.deleted_at,
+            s.sender_id    AS sender_id,
+            s.username     AS sender_username,
+            s.first_name   AS sender_first_name,
+            s.last_name    AS sender_last_name
+        FROM messages m
+        LEFT JOIN senders s ON s.sender_id = m.sender_id
+        LEFT JOIN chats c   ON c.chat_id   = m.chat_id
+    """
     cursor = conn.execute(f"{select} WHERE m.id = ?", [message_id])
     row = cursor.fetchone()
     if row is None:
         return None
 
     cols = [col[0] for col in cursor.description]
-    result = dict(zip(cols, row))
+    flat = dict(zip(cols, row))
+    result = _shape_message_row(flat, has_chat_columns=True)
 
     # Edit history — oldest first so the UI can render a timeline
     edits_cursor = conn.execute(
