@@ -3,8 +3,7 @@
  * Keep keys in sync with en.js — see the note there.
  */
 
-window.TELEVAULT_I18N = window.TELEVAULT_I18N || {};
-window.TELEVAULT_I18N.uk = {
+export const uk = {
   "app.wordmark": "TeleVault",
 
   "nav.chats": "Чати",
@@ -43,6 +42,10 @@ window.TELEVAULT_I18N.uk = {
   "deleted.actor.channel_admin": "Видалено адміністратором каналу",
   "deleted.actor.self": "Видалили ви",
   "deleted.actor.unknown": "Хто видалив — невідомо",
+  "deleted.confidence.channel_admin":
+    "Лише адміністратор каналу може видалити допис у каналі — звичайні підписники не можуть видаляти дописи.",
+  "deleted.confidence.self":
+    "Збережені повідомлення доступні лише вам — ніхто інший їх не бачить, а тим паче не може щось із них видалити.",
 
   "stats.totalMessages": "Усього повідомлень",
   "stats.totalDeleted": "Видалено",

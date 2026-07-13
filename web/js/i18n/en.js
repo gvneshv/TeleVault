@@ -2,13 +2,12 @@
  * English (en) translation strings.
  *
  * Keys are namespaced by area (nav.*, health.*, common.*) so this stays organized as views are added in later steps.
- * Add new keys here AND in uk.js together — TeleVaultI18n.t() falls back to the key itself if a translation is missing,
+ * Add new keys here AND in uk.js together — TeleVaultI18n's t() falls back to the key itself if a translation is missing,
  * so a mismatch won't crash the UI, but it will silently show English/raw keys in the Ukrainian UI.
  * Keep both files in sync as a habit, not just when convenient.
  */
 
-window.TELEVAULT_I18N = window.TELEVAULT_I18N || {};
-window.TELEVAULT_I18N.en = {
+export const en = {
   "app.wordmark": "TeleVault",
 
   "nav.chats": "Chats",
@@ -47,6 +46,10 @@ window.TELEVAULT_I18N.en = {
   "deleted.actor.channel_admin": "Deleted by a channel admin",
   "deleted.actor.self": "Deleted by you",
   "deleted.actor.unknown": "Deleted by — unknown",
+  "deleted.confidence.channel_admin":
+    "Only a channel admin can delete a channel post — regular subscribers cannot delete posts.",
+  "deleted.confidence.self":
+    "Saved Messages is only accessible to you — no one else can see it, let alone delete from it.",
 
   "stats.totalMessages": "Total messages",
   "stats.totalDeleted": "Deleted",

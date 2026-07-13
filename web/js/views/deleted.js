@@ -7,21 +7,29 @@
  *
  * The detail panel is fetched lazily via GET /api/messages/{id} the first time a row is expanded,
  * then cached in detailCache for the session — there's no reason to re-fetch a deletion record that can't change.
+ * Expanded rows also survive pagination and language-switch re-renders (see expandedIds / restoreExpandedRows()), reopening from cache rather than collapsing.
  *
  * Deliberately does NOT repeat the seal-badge pill per row:
  * every row here is deleted by definition, so the badge would carry no signal
  * (it marks something notable among non-deleted items elsewhere — Chats, Messages — not "all of these," which is just the view's premise).
  * The timestamp is tinted in the seal color instead, a quieter nod to the same meaning.
  *
- * Depends on js/lib/dom.js and js/lib/pagination.js — see index.html for load order.
+ * Imports js/lib/dom.js and js/lib/pagination.js as ES modules.
  * Lazy-initialized by app.js on first tab open, same pattern as messages.js.
  */
 
+import { t, getCurrentLang } from "../i18n.js";
+import { escapeHtml, highlightMatches } from "../lib/dom.js";
+import {
+  render as renderPagination,
+  attach as attachPagination,
+} from "../lib/pagination.js";
+
 const DELETED_PER_PAGE = 50;
-// Prefixed for the same reason as MESSAGES_PER_PAGE's sibling constant in messages.js:
-// no ES modules here, so all <script>-loaded files share one global lexical scope,
-// and a bare "SEARCH_DEBOUNCE_MS" in two files is a page-breaking SyntaxError, not a harmless naming coincidence.
-const DELETED_SEARCH_DEBOUNCE_MS = 300;
+// Previously prefixed (DELETED_SEARCH_DEBOUNCE_MS) to dodge a real page-breaking SyntaxError:
+// without ES modules, this and messages.js's identical constant name shared one global lexical scope.
+// Reverted to a plain name now that this file is a proper ES module with its own scope.
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Mutable view state. Re-created fresh; not persisted across reloads. */
 const deletedViewState = {
@@ -30,33 +38,21 @@ const deletedViewState = {
   lastData: null,
   initialized: false,
   /** message_id -> DeletionOut-shaped detail object, or "error".
-   * Populated lazily on first expand; avoids re-fetching a record that can't change. */
+   *  Populated lazily on first expand; avoids re-fetching a record that can't change.
+   * */
   detailCache: new Map(),
+  /** Set of message_ids whose detail panel is currently expanded.
+   *  Persists across re-renders (pagination, language change) so a row that was open reopens automatically if it's rendered again — see restoreExpandedRows().
+   * */
+  expandedIds: new Set(),
 };
 
 let deletedSearchDebounceTimer = null;
 
-/**
- * Resolve the best human-readable sender name available.
- * Duplicates SenderOut.resolved_name logic in api/schemas/message.py — see the same note in messages.js's resolveSenderName() about keeping the two in sync.
- *
- * @param {object | null} sender
- * @returns {string}
- */
-function resolveDeletedSenderName(sender) {
-  if (!sender) return "—";
-  if (sender.display_name) return sender.display_name;
-  const full = [sender.first_name, sender.last_name].filter(Boolean).join(" ");
-  if (full) return full;
-  if (sender.username) return `@${sender.username}`;
-  return String(sender.sender_id);
-}
-
 /** @param {string | null} iso @returns {string} */
 function formatDeletedTimestamp(iso) {
   if (!iso) return "—";
-  const locale =
-    window.TeleVaultI18n.getCurrentLang() === "uk" ? "uk-UA" : "en-US";
+  const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleString(locale, {
       dateStyle: "medium",
@@ -76,8 +72,6 @@ function formatDeletedTimestamp(iso) {
  * @returns {string}
  */
 function renderDeletionDetail(detail) {
-  const t = window.TeleVaultI18n.t;
-
   if (detail === "error") {
     return `<div class="deleted-row__detail-error">${t("common.error")}</div>`;
   }
@@ -88,9 +82,15 @@ function renderDeletionDetail(detail) {
   }
 
   const actorLabel = t(`deleted.actor.${detail.deleted_by_inference}`);
-  const confidenceNote = detail.inference_confidence
-    ? `<p class="deleted-row__confidence">${window.TeleVaultDom.escapeHtml(detail.inference_confidence)}</p>`
-    : "";
+  // The confidence note is translated client-side from deleted_by_inference,
+  // NOT read from detail.inference_confidence — that field is a fixed English string written by the backend (db/queries.py's flag_deleted())
+  // and can't respond to the UI's language setting.
+  // It's still returned by the API for anyone consuming it directly; the web UI just doesn't display it.
+  // "unknown" has no confidence key — nothing to explain about not guessing.
+  const confidenceNote =
+    detail.deleted_by_inference !== "unknown"
+      ? `<p class="deleted-row__confidence">${escapeHtml(t(`deleted.confidence.${detail.deleted_by_inference}`))}</p>`
+      : "";
 
   return `
     <div class="deleted-row__detail-body">
@@ -102,24 +102,44 @@ function renderDeletionDetail(detail) {
 
 /**
  * Toggle a row's detail panel open/closed, fetching the deletion record on first open only (see detailCache).
+ * Updates expandedIds so the panel can reopen automatically if this row is re-rendered later (pagination, language change) — see restoreExpandedRows().
  *
  * @param {HTMLElement} row - the <li class="deleted-row"> element.
  * @param {number} messageId
  */
 async function toggleDeletedRowDetail(row, messageId) {
-  const t = window.TeleVaultI18n.t;
   const panel = row.querySelector(".deleted-row__detail");
-  const toggleBtn = row.querySelector(".deleted-row__toggle");
   const isOpen = !panel.hidden;
 
   if (isOpen) {
     panel.hidden = true;
-    toggleBtn.textContent = t("deleted.viewDetails");
+    row.querySelector(".deleted-row__toggle").textContent = t(
+      "deleted.viewDetails",
+    );
+    deletedViewState.expandedIds.delete(messageId);
     return;
   }
 
+  deletedViewState.expandedIds.add(messageId);
+  await openDeletedRowDetail(row, messageId);
+}
+
+/**
+ * Open a row's detail panel and populate it — from detailCache if already fetched, otherwise via GET /api/messages/{id}.
+ * Does NOT touch expandedIds;
+ * callers decide whether this open should be tracked (toggleDeletedRowDetail always does; restoreExpandedRows doesn't need to,
+ * since the id is already in the set it's iterating).
+ *
+ * @param {HTMLElement} row
+ * @param {number} messageId
+ */
+async function openDeletedRowDetail(row, messageId) {
+  const panel = row.querySelector(".deleted-row__detail");
+
   panel.hidden = false;
-  toggleBtn.textContent = t("deleted.hideDetails");
+  row.querySelector(".deleted-row__toggle").textContent = t(
+    "deleted.hideDetails",
+  );
 
   if (deletedViewState.detailCache.has(messageId)) {
     panel.innerHTML = renderDeletionDetail(
@@ -141,12 +161,38 @@ async function toggleDeletedRowDetail(row, messageId) {
   }
 
   deletedViewState.detailCache.set(messageId, detail);
-  // The row may have been re-rendered (pagination, language change)
-  // while the fetch was in flight — re-query the panel rather than trust the closed-over `panel` reference.
+  // The row may have been re-rendered (pagination, language change) while the fetch was in flight — re-query the panel rather than trust the closed-over `panel` reference.
   const currentPanel = row.isConnected
     ? row.querySelector(".deleted-row__detail")
     : null;
   if (currentPanel) currentPanel.innerHTML = renderDeletionDetail(detail);
+}
+
+/**
+ * After a render, reopen any row whose id is in expandedIds — restoring expansion state across pagination and language-change re-renders.
+ * Only matches rows actually present on the current page;
+ * a message expanded on a different page simply has no matching row here;
+ * harmless no-op.
+ *
+ * Every id in expandedIds must already be in detailCache (you can only add to expandedIds via a completed open),
+ * so this never triggers a fetch — purely synchronous re-population from cache.
+ *
+ * Edge case, not handled:
+ * if a re-render happens while a just-opened row's first fetch is still in flight (id added to expandedIds, but detailCache doesn't have it yet),
+ * this can trigger a second concurrent fetch for the same id.
+ * Harmless — both writes the same result to detailCache — not worth de-duplication logic for how rarely a re-render and an in-flight fetch would overlap in a single-user tool.
+ *
+ * @param {HTMLElement} root
+ */
+function restoreExpandedRows(root) {
+  if (deletedViewState.expandedIds.size === 0) return;
+
+  root.querySelectorAll(".deleted-row").forEach((row) => {
+    const messageId = Number(row.dataset.messageId);
+    if (deletedViewState.expandedIds.has(messageId)) {
+      openDeletedRowDetail(row, messageId);
+    }
+  });
 }
 
 /**
@@ -155,9 +201,6 @@ async function toggleDeletedRowDetail(row, messageId) {
  * @returns {string}
  */
 function renderDeletedRow(msg) {
-  const t = window.TeleVaultI18n.t;
-  const escapeHtml = window.TeleVaultDom.escapeHtml;
-
   const chatTypeLabel = msg.chat?.chat_type
     ? t(`common.type.${msg.chat.chat_type}`)
     : "";
@@ -166,16 +209,13 @@ function renderDeletedRow(msg) {
     : "—";
 
   const text = msg.text
-    ? window.TeleVaultDom.highlightMatches(
-        escapeHtml(msg.text),
-        deletedViewState.q,
-      )
+    ? highlightMatches(escapeHtml(msg.text), deletedViewState.q)
     : `<span class="message-row__text--empty">${t("messages.noText")}</span>`;
 
   return `
     <li class="deleted-row message-row" data-message-id="${msg.id}">
       <div class="message-row__meta">
-        <span class="message-row__sender">${escapeHtml(resolveDeletedSenderName(msg.sender))}</span>
+        <span class="message-row__sender">${escapeHtml(msg.sender?.resolved_name ?? "—")}</span>
         <span class="message-row__chat">
           ${chatName}
           ${chatTypeLabel ? `<span class="info-badge">${chatTypeLabel}</span>` : ""}
@@ -190,27 +230,20 @@ function renderDeletedRow(msg) {
 }
 
 /**
- * Render the view's current state (rows + pagination) from already-fetched data,
- * without a network re-fetch — used both after loading and after a language change.
- * Note: expanding a row always re-fetches nothing (cache persists across re-renders),
- * but any currently-open panel collapses on re-render, since panel open/closed state isn't part of the cached data.
+ * Render the view's current state (rows + pagination) from already-fetched data, without a network re-fetch — used both after loading and after a language change.
+ * Previously-expanded rows (see expandedIds) reopen automatically from cache — no re-fetch needed for that either.
  *
  * @param {HTMLElement} root
  * @param {object} data - a PaginatedResponse<MessageOut> from the API.
  */
 function renderDeletedView(root, data) {
-  const t = window.TeleVaultI18n.t;
-
   if (data.items.length === 0) {
     root.innerHTML = `<div class="empty-state">${t("deleted.empty")}</div>`;
     return;
   }
 
   const rowsHtml = data.items.map(renderDeletedRow).join("");
-  const paginationHtml = window.TeleVaultPagination.render(
-    data.page,
-    data.pages,
-  );
+  const paginationHtml = renderPagination(data.page, data.pages);
 
   root.innerHTML = `
     <ul class="message-list">${rowsHtml}</ul>
@@ -223,7 +256,9 @@ function renderDeletedView(root, data) {
     btn.addEventListener("click", () => toggleDeletedRowDetail(row, messageId));
   });
 
-  window.TeleVaultPagination.attach(root, (delta) => {
+  restoreExpandedRows(root);
+
+  attachPagination(root, (delta) => {
     deletedViewState.page += delta;
     loadDeleted(root);
   });
@@ -231,7 +266,6 @@ function renderDeletedView(root, data) {
 
 /** Fetch one page of deleted messages (with current search applied), cache it, and render it. */
 async function loadDeleted(root) {
-  const t = window.TeleVaultI18n.t;
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
   const params = new URLSearchParams({
@@ -261,8 +295,6 @@ async function loadDeleted(root) {
  * @param {HTMLElement} listRoot
  */
 function initDeletedFilterBar(filterBarRoot, listRoot) {
-  const t = window.TeleVaultI18n.t;
-
   filterBarRoot.innerHTML = `
     <input
       type="search"
@@ -279,7 +311,7 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       deletedViewState.q = searchInput.value.trim();
       deletedViewState.page = 1;
       loadDeleted(listRoot);
-    }, DELETED_SEARCH_DEBOUNCE_MS);
+    }, SEARCH_DEBOUNCE_MS);
   });
 }
 
@@ -296,12 +328,10 @@ function initDeletedView() {
   loadDeleted(listRoot);
 }
 
-window.TeleVaultDeletedView = { init: initDeletedView };
+export { initDeletedView };
 
 // Re-render the already-fetched page in the new language.
-// Any open detail panel collapses (see renderDeletedView's note) — a minor,
-// rare-case UX trade-off against the complexity of preserving per-row expand state across a full re-render,
-// not worth it for how infrequently someone switches language mid-expand.
+// Expanded rows (see expandedIds) reopen automatically via renderDeletedView's call to restoreExpandedRows() — no special handling needed here.
 document.addEventListener("televault:langchange", () => {
   if (!deletedViewState.initialized) return;
 
