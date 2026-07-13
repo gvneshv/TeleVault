@@ -1,8 +1,8 @@
 /**
  * Shared DOM helpers used across views.
  *
- * Kept dependency-free and framework-free, same as the rest of web/js/ — no bundler here,
- * so this is loaded via a plain <script> tag and exposes itself on window, same pattern as TeleVaultI18n.
+ * Kept dependency-free and framework-free, same as the rest of web/js/ — no bundler here;
+ * these are plain ES modules, imported directly by whichever view needs them (see index.html's <script type="module">).
  */
 
 /**
@@ -45,4 +45,4 @@ function highlightMatches(escapedText, query) {
   return escapedText.replace(regex, "<mark>$1</mark>");
 }
 
-window.TeleVaultDom = { escapeHtml, highlightMatches };
+export { escapeHtml, highlightMatches };

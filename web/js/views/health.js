@@ -13,6 +13,8 @@
  * Lazy-initialized by app.js on first tab open, same pattern as the other non-landing views.
  */
 
+import { t } from "../i18n.js";
+
 const healthViewState = {
   initialized: false,
 };
@@ -23,8 +25,6 @@ const healthViewState = {
  * @returns {string}
  */
 function renderHealthReport(data) {
-  const t = window.TeleVaultI18n.t;
-
   const statusLabel =
     data.status === "ok" ? t("health.statusOk") : t("health.statusDegraded");
 
@@ -50,14 +50,13 @@ function renderHealthReport(data) {
 
 /** Fetch and render the current health report. */
 async function loadHealth(root) {
-  const t = window.TeleVaultI18n.t;
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
   let data;
   try {
     const res = await fetch("/api/health");
-    // Not using res.ok here — health.py always returns 200, even when status is "degraded"
-    // (that's the point: the body carries the real state, not the HTTP status — see its docstring).
+    // Not using res.ok here — health.py always returns 200,
+    // even when status is "degraded" (that's the point: the body carries the real state, not the HTTP status — see its docstring).
     // A non-200 here means something is more seriously wrong (e.g. 503 if the DB file can't be opened at all), which the catch block below handles.
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
@@ -81,7 +80,7 @@ function initHealthView() {
   if (root) loadHealth(root);
 }
 
-window.TeleVaultHealthView = { init: initHealthView };
+export { initHealthView };
 
 // Re-render on language change.
 // Re-fetches (rather than caching like the other views) since this is a live diagnostic — the whole point of a health check is that it reflects the current moment,

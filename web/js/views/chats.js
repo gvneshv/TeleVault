@@ -4,10 +4,9 @@
  * Fetches GET /api/chats (paginated) and renders each chat as a row: name, chat-type badge, message/deleted counts, and a preview of the most recent message.
  * This is the landing view, so it self-initializes on DOMContentLoaded rather than waiting for a nav click.
  *
- * Depends on js/lib/dom.js (escapeHtml) and js/lib/pagination.js (render/attach) — see index.html for load order.
+ * Imports js/lib/dom.js (escapeHtml) and js/lib/pagination.js (render/attach) as ES modules.
  *
- * Scope, deliberately: list + pagination only.
- * Clicking a row does nothing yet — there's no single-chat or filtered-messages view to send it to.
+ * Scope, deliberately: list + pagination only. Clicking a row does nothing yet — there's no single-chat or filtered-messages view to send it to.
  * Each row still carries `data-chat-id` so that wiring is a one-line addition once a per-chat view exists, instead of a re-render change here.
  *
  * State is kept minimal and re-fetched fresh on every page change;
@@ -16,13 +15,20 @@
  * so the extra request per page turn is not a real cost — and it keeps this file free of cache-invalidation logic it doesn't need yet.
  */
 
+import { t, getCurrentLang } from "../i18n.js";
+import { escapeHtml } from "../lib/dom.js";
+import {
+  render as renderPagination,
+  attach as attachPagination,
+} from "../lib/pagination.js";
+
 const CHATS_PER_PAGE = 50;
 
 /** Mutable view state. Re-created fresh; not persisted across reloads. */
 const chatsViewState = {
   page: 1,
-  /** Last successfully fetched page from the API, kept so a language change can re-render without re-fetching.
-   * Null until the first load. */
+  /** Last successfully fetched page from the API, kept so a language
+   *  change can re-render without re-fetching. Null until the first load. */
   lastData: null,
 };
 
@@ -35,8 +41,7 @@ const chatsViewState = {
  */
 function formatChatTimestamp(iso) {
   if (!iso) return "—";
-  const locale =
-    window.TeleVaultI18n.getCurrentLang() === "uk" ? "uk-UA" : "en-US";
+  const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleString(locale, {
       dateStyle: "medium",
@@ -67,8 +72,6 @@ function chatInitials(name) {
  * @returns {string}
  */
 function renderChatRow(chat) {
-  const t = window.TeleVaultI18n.t;
-  const escapeHtml = window.TeleVaultDom.escapeHtml;
   const typeKey = `common.type.${chat.chat_type}`;
   const typeLabel = chat.chat_type ? t(typeKey) : "";
 
@@ -101,32 +104,27 @@ function renderChatRow(chat) {
 }
 
 /**
- * Render the view's current state (rows + pagination) from already-fetched data.
- * Pulled out of loadChats() so a language change can call this again with the cached page instead of hitting the API a second time.
+ * Render the view's current state (rows + pagination) from already-fetched data. Pulled out of loadChats() so a language change can call this again
+ * with the cached page instead of hitting the API a second time.
  *
  * @param {HTMLElement} root
  * @param {object} data - a PaginatedResponse<ChatOut> from the API.
  */
 function renderChatsView(root, data) {
-  const t = window.TeleVaultI18n.t;
-
   if (data.items.length === 0) {
     root.innerHTML = `<div class="empty-state">${t("chats.empty")}</div>`;
     return;
   }
 
   const rowsHtml = data.items.map(renderChatRow).join("");
-  const paginationHtml = window.TeleVaultPagination.render(
-    data.page,
-    data.pages,
-  );
+  const paginationHtml = renderPagination(data.page, data.pages);
 
   root.innerHTML = `
     <ul class="chat-list">${rowsHtml}</ul>
     ${paginationHtml}
   `;
 
-  window.TeleVaultPagination.attach(root, (delta) => {
+  attachPagination(root, (delta) => {
     chatsViewState.page += delta;
     loadChats(root);
   });
@@ -134,7 +132,6 @@ function renderChatsView(root, data) {
 
 /** Fetch one page of chats, cache it, and render it. */
 async function loadChats(root) {
-  const t = window.TeleVaultI18n.t;
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
   let data;

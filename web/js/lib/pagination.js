@@ -6,6 +6,8 @@
  * Pulled out here after the second view needed it verbatim — a single bug fix or style change now applies everywhere instead of needing to be repeated per view.
  */
 
+import { t } from "../i18n.js";
+
 /**
  * Build the HTML for a pagination control.
  * Returns an empty string when there's only one page — nothing to paginate, nothing to show.
@@ -15,7 +17,6 @@
  * @returns {string}
  */
 function renderPagination(page, pages) {
-  const t = window.TeleVaultI18n.t;
   if (pages <= 1) return "";
 
   const pageOfText = t("common.pageOf")
@@ -50,7 +51,4 @@ function attachPaginationHandlers(root, onPageChange) {
   });
 }
 
-window.TeleVaultPagination = {
-  render: renderPagination,
-  attach: attachPaginationHandlers,
-};
+export { renderPagination as render, attachPaginationHandlers as attach };

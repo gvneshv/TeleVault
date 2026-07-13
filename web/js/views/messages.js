@@ -37,7 +37,7 @@ const messagesViewState = {
   q: "",
   onlyEdited: false,
   lastData: null,
-  /** True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more  than once. */
+  // True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
   initialized: false,
 };
 

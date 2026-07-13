@@ -1,14 +1,18 @@
 /**
  * Minimal i18n helper.
  *
- * Translation tables are plain objects loaded via <script> tags (js/i18n/en.js, js/i18n/uk.js) onto window.TELEVAULT_I18N before this file runs
- * — see index.html for load order.
+ * Translation tables are imported directly from js/i18n/en.js and js/i18n/uk.js (ES modules) — see the TRANSLATIONS table below.
  * No bundler, no fetch: this keeps the app usable offline (relevant once the service worker caches it) and avoids a flash of untranslated content
  * while a JSON file loads.
  *
- * Adding a new language later: create js/i18n/<code>.js following the same window.TELEVAULT_I18N.<code> = {...} pattern,
- * add a <script> tag for it in index.html, and add an <option> in the language <select>.
+ * Adding a new language later: create js/i18n/<code>.js exporting a named object (following en.js/uk.js's pattern), import it below,
+ * add it to TRANSLATIONS and SUPPORTED_LANGS, and add an <option> in the language <select>.
  */
+
+import { en } from "./i18n/en.js";
+import { uk } from "./i18n/uk.js";
+
+const TRANSLATIONS = { en, uk };
 
 const LANG_KEY = "televault:lang";
 const DEFAULT_LANG = "en";
@@ -36,8 +40,8 @@ function getCurrentLang() {
  */
 function t(key) {
   const lang = getCurrentLang();
-  const table = window.TELEVAULT_I18N?.[lang];
-  const fallback = window.TELEVAULT_I18N?.[DEFAULT_LANG];
+  const table = TRANSLATIONS[lang];
+  const fallback = TRANSLATIONS[DEFAULT_LANG];
   return table?.[key] ?? fallback?.[key] ?? key;
 }
 
@@ -66,14 +70,6 @@ function setLang(lang) {
   document.dispatchEvent(new CustomEvent("televault:langchange"));
 }
 
-window.TeleVaultI18n = {
-  t,
-  applyTranslations,
-  setLang,
-  getCurrentLang,
-  SUPPORTED_LANGS,
-};
-
 document.addEventListener("DOMContentLoaded", () => {
   applyTranslations();
   const select = document.getElementById("lang-select");
@@ -82,3 +78,5 @@ document.addEventListener("DOMContentLoaded", () => {
     select.addEventListener("change", (e) => setLang(e.target.value));
   }
 });
+
+export { t, applyTranslations, setLang, getCurrentLang, SUPPORTED_LANGS };

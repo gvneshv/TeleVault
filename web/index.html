@@ -91,17 +91,16 @@
     </main>
   </div>
 
-  <script src="/js/i18n/en.js"></script>
-  <script src="/js/i18n/uk.js"></script>
-  <script src="/js/i18n.js"></script>
-  <script src="/js/lib/dom.js"></script>
-  <script src="/js/lib/pagination.js"></script>
-  <script src="/js/app.js"></script>
-  <script src="/js/views/chats.js"></script>
-  <script src="/js/views/messages.js"></script>
-  <script src="/js/views/deleted.js"></script>
-  <script src="/js/views/stats.js"></script>
-  <script src="/js/views/health.js"></script>
+  <!--
+    Everything except theme.js is now a single ES module entry point.
+    app.js imports every view/lib/i18n module it needs (see its own header comment) — the browser resolves the whole dependency graph from this one tag,
+    so listing each file here individually is no longer needed.
+
+    theme.js stays a separate, classic (non-module) script, deliberately:
+    it must run synchronously in <head>, before first paint, to avoid a flash of the wrong theme.
+    ES modules are always deferred (like `defer`), which would reintroduce that flash, so it's excluded from the module graph on purpose, not an oversight.
+  -->
+  <script type="module" src="/js/app.js"></script>
 
   <script>
     if ("serviceWorker" in navigator) {

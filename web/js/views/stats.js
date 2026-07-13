@@ -12,6 +12,9 @@
  * Lazy-initialized by app.js on first tab open, same pattern as the other non-landing views.
  */
 
+import { t, getCurrentLang } from "../i18n.js";
+import { escapeHtml } from "../lib/dom.js";
+
 const statsViewState = {
   initialized: false,
   lastData: null,
@@ -31,8 +34,7 @@ function formatPercent(part, total) {
 /** @param {string | null} iso @returns {string} */
 function formatStatsDate(iso) {
   if (!iso) return "—";
-  const locale =
-    window.TeleVaultI18n.getCurrentLang() === "uk" ? "uk-UA" : "en-US";
+  const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleDateString(locale, { dateStyle: "medium" });
   } catch {
@@ -46,8 +48,6 @@ function formatStatsDate(iso) {
  * @returns {string}
  */
 function renderStatCards(data) {
-  const t = window.TeleVaultI18n.t;
-
   const card = (label, value) => `
     <div class="stat-card">
       <span class="stat-card__value">${value}</span>
@@ -73,9 +73,6 @@ function renderStatCards(data) {
  * @returns {string}
  */
 function renderPerChatTable(perChat) {
-  const t = window.TeleVaultI18n.t;
-  const escapeHtml = window.TeleVaultDom.escapeHtml;
-
   if (perChat.length === 0) {
     return `<div class="empty-state">${t("stats.empty")}</div>`;
   }
@@ -124,8 +121,6 @@ function renderPerChatTable(perChat) {
  * @param {object} data - a StatsOut record from the API.
  */
 function renderStatsView(root, data) {
-  const t = window.TeleVaultI18n.t;
-
   root.innerHTML = `
     ${renderStatCards(data)}
     <h2 class="stats-section-title">${t("stats.perChatTitle")}</h2>
@@ -135,7 +130,6 @@ function renderStatsView(root, data) {
 
 /** Fetch stats once, cache, and render. */
 async function loadStats(root) {
-  const t = window.TeleVaultI18n.t;
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
   let data;
@@ -161,7 +155,7 @@ function initStatsView() {
   if (root) loadStats(root);
 }
 
-window.TeleVaultStatsView = { init: initStatsView };
+export { initStatsView };
 
 document.addEventListener("televault:langchange", () => {
   if (!statsViewState.initialized) return;
