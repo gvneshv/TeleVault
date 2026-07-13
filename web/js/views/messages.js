@@ -12,16 +12,24 @@
  * chat_id/sender_id/date_from/date_to are in the API already but have no UI here yet — there's no per-chat or per-sender entry point to populate them from.
  * Wiring chat_id is a small addition once chat rows become clickable (see the `data-chat-id` note in chats.js).
  *
- * Depends on js/lib/dom.js and js/lib/pagination.js — see index.html for load order.
+ * Imports js/lib/dom.js and js/lib/pagination.js as ES modules.
  * Does not self-initialize on DOMContentLoaded like chats.js does,
  * since this isn't the landing view — app.js's showView() calls initMessagesView() the first time the Messages tab is opened.
  */
 
+import { t, getCurrentLang } from "../i18n.js";
+import { escapeHtml, highlightMatches } from "../lib/dom.js";
+import {
+  render as renderPagination,
+  attach as attachPagination,
+} from "../lib/pagination.js";
+
 const MESSAGES_PER_PAGE = 50;
-// Prefixed (not just SEARCH_DEBOUNCE_MS) because none of web/js/*.js use ES modules — every <script> tag shares one global lexical scope,
-// so an identically-named top-level const in another view's file would be a SyntaxError at page load, not a harmless shadow.
-// Learned this the hard way once deleted.js declared the same unprefixed name.
-const MESSAGES_SEARCH_DEBOUNCE_MS = 300;
+// Previously prefixed (MESSAGES_SEARCH_DEBOUNCE_MS) to dodge a real SyntaxError:
+// without ES modules, every <script>-loaded file shared one global lexical scope, so this and deleted.js's identical constant name broke the whole page at parse time.
+// Reverted to a plain name now that this file is a proper ES module with its own scope — the collision class is structurally impossible now,
+// not just avoided by naming discipline.
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Mutable view state. Re-created fresh; not persisted across reloads. */
 const messagesViewState = {
@@ -36,31 +44,13 @@ const messagesViewState = {
 let searchDebounceTimer = null;
 
 /**
- * Resolve the best human-readable sender name available, mirroring the priority order documented on SenderOut.resolved_name in api/schemas/message.py:
- * display_name -> first+last -> first -> @username -> str(sender_id).
- * Kept in sync with that backend logic; if it changes there, change here too.
- *
- * @param {object | null} sender - a SenderOut record, or null.
- * @returns {string}
- */
-function resolveSenderName(sender) {
-  if (!sender) return "—";
-  if (sender.display_name) return sender.display_name;
-  const full = [sender.first_name, sender.last_name].filter(Boolean).join(" ");
-  if (full) return full;
-  if (sender.username) return `@${sender.username}`;
-  return String(sender.sender_id);
-}
-
-/**
  * Format an ISO 8601 datetime using the current UI language's locale.
  * @param {string | null} iso
  * @returns {string}
  */
 function formatMessageTimestamp(iso) {
   if (!iso) return "—";
-  const locale =
-    window.TeleVaultI18n.getCurrentLang() === "uk" ? "uk-UA" : "en-US";
+  const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleString(locale, {
       dateStyle: "medium",
@@ -77,9 +67,6 @@ function formatMessageTimestamp(iso) {
  * @returns {string}
  */
 function renderMessageRow(msg) {
-  const t = window.TeleVaultI18n.t;
-  const escapeHtml = window.TeleVaultDom.escapeHtml;
-
   const chatTypeLabel = msg.chat?.chat_type
     ? t(`common.type.${msg.chat.chat_type}`)
     : "";
@@ -92,16 +79,13 @@ function renderMessageRow(msg) {
     : "";
 
   const text = msg.text
-    ? window.TeleVaultDom.highlightMatches(
-        escapeHtml(msg.text),
-        messagesViewState.q,
-      )
+    ? highlightMatches(escapeHtml(msg.text), messagesViewState.q)
     : `<span class="message-row__text--empty">${t("messages.noText")}</span>`;
 
   return `
     <li class="message-row" data-chat-id="${msg.chat?.chat_id ?? ""}">
       <div class="message-row__meta">
-        <span class="message-row__sender">${escapeHtml(resolveSenderName(msg.sender))}</span>
+        <span class="message-row__sender">${escapeHtml(msg.sender?.resolved_name ?? "—")}</span>
         <span class="message-row__chat">
           ${chatName}
           ${chatTypeLabel ? `<span class="info-badge">${chatTypeLabel}</span>` : ""}
@@ -115,32 +99,26 @@ function renderMessageRow(msg) {
 }
 
 /**
- * Render the view's current state (rows + pagination) from already-fetched data,
- * without a network re-fetch — used both after loading and after a language change.
+ * Render the view's current state (rows + pagination) from already-fetched data, without a network re-fetch — used both after loading and after a language change.
  *
  * @param {HTMLElement} root
  * @param {object} data - a PaginatedResponse<MessageOut> from the API.
  */
 function renderMessagesView(root, data) {
-  const t = window.TeleVaultI18n.t;
-
   if (data.items.length === 0) {
     root.innerHTML = `<div class="empty-state">${t("messages.empty")}</div>`;
     return;
   }
 
   const rowsHtml = data.items.map(renderMessageRow).join("");
-  const paginationHtml = window.TeleVaultPagination.render(
-    data.page,
-    data.pages,
-  );
+  const paginationHtml = renderPagination(data.page, data.pages);
 
   root.innerHTML = `
     <ul class="message-list">${rowsHtml}</ul>
     ${paginationHtml}
   `;
 
-  window.TeleVaultPagination.attach(root, (delta) => {
+  attachPagination(root, (delta) => {
     messagesViewState.page += delta;
     loadMessages(root);
   });
@@ -148,7 +126,6 @@ function renderMessagesView(root, data) {
 
 /** Fetch one page of messages (with current filters applied), cache it, and render it. */
 async function loadMessages(root) {
-  const t = window.TeleVaultI18n.t;
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
   const params = new URLSearchParams({
@@ -180,8 +157,6 @@ async function loadMessages(root) {
  * @param {HTMLElement} listRoot - passed through to loadMessages() on filter change.
  */
 function initFilterBar(filterBarRoot, listRoot) {
-  const t = window.TeleVaultI18n.t;
-
   filterBarRoot.innerHTML = `
     <input
       type="search"
@@ -203,7 +178,7 @@ function initFilterBar(filterBarRoot, listRoot) {
       messagesViewState.q = searchInput.value.trim();
       messagesViewState.page = 1;
       loadMessages(listRoot);
-    }, MESSAGES_SEARCH_DEBOUNCE_MS);
+    }, SEARCH_DEBOUNCE_MS);
   });
 
   const editedCheckbox = filterBarRoot.querySelector("#messages-only-edited");
@@ -230,7 +205,7 @@ function initMessagesView() {
   loadMessages(listRoot);
 }
 
-window.TeleVaultMessagesView = { init: initMessagesView };
+export { initMessagesView };
 
 // Re-render the already-fetched page in the new language — no re-fetch needed for the list,
 // but the filter bar's static labels (placeholder, checkbox text) need rebuilding since they aren't data-i18n elements either.
