@@ -15,10 +15,9 @@ The direct attributes are only populated when Telegram includes the full entity 
 import logging
 
 from telethon import events
-from telethon.tl.types import MessageActionPhoneCall
 
 import db
-from .helpers import get_chat_type, get_sender_fields, format_call_text
+from .helpers import get_chat_type, get_sender_fields, resolve_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +38,8 @@ def register(client) -> None:
         message = event.message
 
         # --- Resolve the text to archive -----------------------------------
-        # Call service messages have no `.message` text — their payload is in `.action` (a MessageActionPhoneCall).
-        # We synthesize a readable label for those.
-        # Everything else falls through to the raw message body.
-        action = getattr(message, "action", None)
-        if isinstance(action, MessageActionPhoneCall):
-            text = format_call_text(action)
-        else:
-            # `message.message` is the raw text body; empty string for media-only messages, None for other service message types.
-            text = message.message
+        # See handlers/helpers.py's resolve_message_text() - shared with backfill.py so both apply the same archiving rules.
+        text = resolve_message_text(message)
 
         # --- Pre-flight guards ---------------------------------------------
 

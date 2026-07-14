@@ -57,6 +57,23 @@ def get_sender_fields(sender: object | None) -> tuple[str | None, str | None, st
     return username, first_name, last_name
 
 
+def resolve_message_text(message: object) -> str | None:
+    """
+    Resolve the text worth archiving for a message,
+    or None/empty if there is nothing worth storing (media-only, stickers, unsupported service messages).
+
+    Call service messages (MessageActionPhoneCall) have no `.message` text - their payload is in `.action`
+    - so we synthesize a readable label via format_call_text() for those.
+    Everything else falls through to the raw message body.
+
+    Shared by handlers/on_message.py (live archiving) and backfill.py (historical archiving) so both apply the exact same rules for what counts as archivable text.
+    """
+    action = getattr(message, "action", None)
+    if isinstance(action, MessageActionPhoneCall):
+        return format_call_text(action)
+    return message.message
+
+
 def format_call_text(action: MessageActionPhoneCall) -> str:
     """
     Produce a human-readable archive label for a phone/video call service message, used as the stored `text` value in the messages table.
