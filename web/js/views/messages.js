@@ -118,8 +118,8 @@ function renderMessagesView(root, data) {
     ${paginationHtml}
   `;
 
-  attachPagination(root, (delta) => {
-    messagesViewState.page += delta;
+  attachPagination(root, data.page, data.pages, (page) => {
+    messagesViewState.page = page;
     loadMessages(root);
   });
 }

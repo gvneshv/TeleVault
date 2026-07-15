@@ -258,8 +258,8 @@ function renderDeletedView(root, data) {
 
   restoreExpandedRows(root);
 
-  attachPagination(root, (delta) => {
-    deletedViewState.page += delta;
+  attachPagination(root, data.page, data.pages, (page) => {
+    deletedViewState.page = page;
     loadDeleted(root);
   });
 }

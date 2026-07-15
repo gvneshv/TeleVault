@@ -124,8 +124,8 @@ function renderChatsView(root, data) {
     ${paginationHtml}
   `;
 
-  attachPagination(root, (delta) => {
-    chatsViewState.page += delta;
+  attachPagination(root, data.page, data.pages, (page) => {
+    chatsViewState.page = page;
     loadChats(root);
   });
 }
