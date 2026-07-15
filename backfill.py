@@ -1,5 +1,5 @@
 """
-One-off / on-demand script to archive historical messages - the ones sent before TeleVault was running, or before a chat has ever been seen by it.
+One-off / on-demand script to archive historical messages - the ones sent before TeleVault was running, or before a chat was ever seen by it.
 
 Run with:
     python backfill.py                      # every chat you're in
@@ -28,6 +28,7 @@ import asyncio
 import logging
 
 from telethon import TelegramClient
+from telethon.errors import FloodWaitError
 
 import db
 from config import settings
@@ -143,13 +144,41 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
     for chat in chats:
         name = getattr(chat, "title", None) or getattr(chat, "first_name", None) or str(chat.id)
         logger.info(f"Backfilling '{name}'...")
-        try:
-            stored, skipped = await backfill_chat(client, conn, chat, limit)
-        except Exception:
-            # One chat failing (permissions, a weird entity type, a flood
-            # wait that exceeded Telethon's own retry budget) shouldn't stop
-            # the rest of the run.
-            logger.exception(f"Failed to backfill '{name}' - skipping to the next chat.")
+
+        stored = skipped = 0
+        max_flood_retries = 5
+        failed = False
+        for attempt in range(1, max_flood_retries + 1):
+            try:
+                stored, skipped = await backfill_chat(client, conn, chat, limit)
+                break
+            except FloodWaitError as e:
+                # Expected, not a bug: Telegram's own rate limit.
+                # Telethon already auto-waits for short flood waits internally (below its flood_sleep_threshold);
+                # this only fires for longer ones.
+                # Logged plainly (no traceback - this isn't an error, it's Telegram asking us to slow down) and retried.
+                # Retrying re-walks this chat's history from the start rather than resuming from where it stopped - wasteful on API calls for a chat that floods repeatedly, but simpler and safer than resuming mid-iterator, and INSERT OR IGNORE means no duplicate rows either way.
+                logger.warning(
+                    f"Rate limited by Telegram while backfilling '{name}' "
+                    f"(attempt {attempt}/{max_flood_retries}) - waiting "
+                    f"{e.seconds}s before retrying. This is normal for "
+                    f"large histories, not an error."
+                )
+                await asyncio.sleep(e.seconds + 1)
+            except Exception:
+                # One chat failing for a genuinely unexpected reason (permissions, a weird entity type, etc.) shouldn't stop the rest of the run.
+                logger.exception(f"Failed to backfill '{name}' - skipping to the next chat.")
+                failed = True
+                break
+        else:
+            logger.error(
+                f"Gave up on '{name}' after {max_flood_retries} flood-wait "
+                f"retries - Telegram kept rate limiting this chat. Try "
+                f"again later, perhaps with --chat '{name}' on its own."
+            )
+            continue
+
+        if failed:
             continue
 
         logger.info(f"  '{name}': {stored} stored, {skipped} skipped.")
