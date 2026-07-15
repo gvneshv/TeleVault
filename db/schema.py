@@ -15,6 +15,7 @@ Schema change log:
   v1 (initial) : chats, senders, messages, message_edits
   v2           : chats.username added for @handle cross-referencing
   v3           : message_deletions table added (mirrors message_edits)
+  v4           : read-path indexes on messages (chat_id+date, date, sender_id, partial indexes on is_deleted/is_edited) - added once list views got slow at real scale (Phase 3); the only prior messages index served write-path dedup, not any read query
 """
 
 import logging
@@ -88,6 +89,36 @@ _CREATE_MESSAGES_INDEX = """
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_tg_id_chat ON messages(tg_message_id, chat_id);
 """
 
+# Read-path indexes - added once list views started running slowly at real scale (Phase 3, ~460k rows).
+# None of these existed before;
+# the only index above serves the write-path dedup check, not any of the read queries in db/read_queries.py.
+# chat_id + date covers get_chat_messages() (WHERE chat_id = ? ORDER BY date DESC) and get_chats()' per-chat aggregation directly.
+_CREATE_MESSAGES_CHAT_DATE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_messages_chat_date ON messages(chat_id, date DESC);
+"""
+
+# Plain date covers get_messages()' global feed ORDER BY date DESC when there's no chat_id filter (the common case for the Messages view).
+_CREATE_MESSAGES_DATE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC);
+"""
+
+# Covers the sender_id filter in get_messages()/get_chat_messages().
+_CREATE_MESSAGES_SENDER_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+"""
+
+# Partial indexes for is_deleted/is_edited - both are a small fraction of all rows in a real archive
+# (e.g. 52 deleted and 359 edited out of 458931 total, from actual testing),
+# so a partial index only needs to cover that fraction instead of the whole table like a plain index would.
+# This is what makes the Deleted view and the Messages view's "edited only" filter fast instead of a full table scan for a handful of matching rows.
+_CREATE_MESSAGES_DELETED_PARTIAL_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_messages_is_deleted_partial ON messages(chat_id, date DESC) WHERE is_deleted = 1;
+"""
+
+_CREATE_MESSAGES_EDITED_PARTIAL_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_messages_is_edited_partial ON messages(chat_id, date DESC) WHERE is_edited = 1;
+"""
+
 # Stores the full before/after text each time a message is edited.
 # This gives a complete revision history, not just "was it ever edited".
 # Linked to messages.id (the app internal ID, not Telegram's).
@@ -130,6 +161,11 @@ _STATEMENTS = [
         ("senders table",       _CREATE_SENDERS),
         ("messages table",      _CREATE_MESSAGES),
         ("messages index",      _CREATE_MESSAGES_INDEX),
+        ("messages chat_date index",      _CREATE_MESSAGES_CHAT_DATE_INDEX),
+        ("messages date index",          _CREATE_MESSAGES_DATE_INDEX),
+        ("messages sender index",        _CREATE_MESSAGES_SENDER_INDEX),
+        ("messages deleted partial index", _CREATE_MESSAGES_DELETED_PARTIAL_INDEX),
+        ("messages edited partial index",  _CREATE_MESSAGES_EDITED_PARTIAL_INDEX),
         ("message_edits table", _CREATE_MESSAGE_EDITS),
         ("message_edits index", _CREATE_MESSAGE_EDITS_INDEX),
         ("message_deletions table", _CREATE_MESSAGE_DELETIONS),
