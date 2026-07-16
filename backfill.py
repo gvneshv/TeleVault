@@ -69,7 +69,7 @@ async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None) -
 
     db.queries.upsert_chat(
         conn,
-        chat_id=chat.id,
+        chat_id=utils.get_peer_id(chat),
         name=chat_name,
         chat_type=chat_type,
         username=chat_username,
@@ -111,7 +111,7 @@ async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None) -
         row_id = db.queries.insert_message(
             conn,
             tg_message_id=message.id,
-            chat_id=chat.id,
+            chat_id=utils.get_peer_id(chat),
             sender_id=message.sender_id,
             text=text,
             date=message.date,
