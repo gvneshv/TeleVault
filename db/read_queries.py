@@ -14,6 +14,7 @@ All datetimes are stored as ISO 8601 strings; returned as-is.
 """
 
 import sqlite3
+import re
 from typing import Any
 
 
@@ -114,6 +115,28 @@ def _paginate(query: str, params: list, conn: sqlite3.Connection,
     items = _rows_to_dicts(cursor)
 
     return {"items": items, "total": total}
+
+
+def _is_whole_word_match(text: str, word: str) -> bool:
+    """
+    Check if `word` appears in `text` as a standalone word, not merely as a substring.
+    Uses lookaround instead of \b so Unicode word boundaries (Cyrillic included) are handled correctly.
+    """
+    pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
+    return re.search(pattern, text, re.IGNORECASE) is not None
+
+
+def _paginate_filtered(query: str, params: list, conn: sqlite3.Connection, page: int, per_page: int, predicate) -> dict[str, Any]:
+    """
+    Like _paginate(), but for filters that can't be expressed in SQL (whole-word matching over FTS5's trigram substring results).
+    Fetches every matching row - no LIMIT/OFFSET at the SQL level - applies `predicate` to each row, then paginates the filtered list in Python.
+    Only used for whole-word search.
+    """
+    cursor = conn.execute(query, params)
+    all_rows = _rows_to_dicts(cursor)
+    filtered = [r for r in all_rows if predicate(r)]
+    offset = (page - 1) * per_page
+    return {"items": filtered[offset:offset + per_page], "total": len(filtered)}
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +264,7 @@ def get_messages(
     date_to: str | None = None,
     only_deleted: bool = False,
     only_edited: bool = False,
+    whole_word: bool = False,
 ) -> dict[str, Any]:
     """
     Global message search with optional filters.
@@ -312,7 +336,14 @@ def get_messages(
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     sql = f"{select} {where} ORDER BY m.date DESC"
 
-    result = _paginate(sql, params, conn, page, per_page)
+    if whole_word and q:
+        result = _paginate_filtered(
+            sql, params, conn, page, per_page,
+            predicate=lambda r: _is_whole_word_match(r["text"] or "", q),
+        )
+    else:
+        result = _paginate(sql, params, conn, page, per_page)
+        
     result["items"] = [_shape_message_row(r, has_chat_columns=True) for r in result["items"]]
     return result
 
@@ -326,6 +357,7 @@ def get_chat_messages(
     sender_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    whole_word: bool = False,
 ) -> dict[str, Any]:
     """
     Messages within a single chat, newest first.
@@ -355,7 +387,14 @@ def get_chat_messages(
     where = "WHERE " + " AND ".join(conditions)
     sql = f"{select} {where} ORDER BY m.date DESC"
 
-    result = _paginate(sql, params, conn, page, per_page)
+    if whole_word and q:
+        result = _paginate_filtered(
+            sql, params, conn, page, per_page,
+            predicate=lambda r: _is_whole_word_match(r["text"] or "", q),
+        )
+    else:
+        result = _paginate(sql, params, conn, page, per_page)
+
     result["items"] = [_shape_message_row(r, has_chat_columns=False) for r in result["items"]]
     return result
 
