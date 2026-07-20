@@ -35,6 +35,7 @@ def list_messages(
         None, description="ISO 8601 inclusive upper bound on message date."
     ),
     only_edited: bool = Query(False, description="Return only edited messages."),
+    whole_word: bool = Query(False, description="When combined with q, match q as a whole word only, not a substring."),
     db: sqlite3.Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
@@ -56,6 +57,7 @@ def list_messages(
         date_to=date_to,
         only_edited=only_edited,
         only_deleted=False,
+        whole_word=whole_word,
     )
     total = result["total"]
     return {
