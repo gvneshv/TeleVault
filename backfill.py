@@ -26,6 +26,14 @@ or interrupting it partway through and re-running later, is always safe - alread
 import argparse
 import asyncio
 import logging
+import json
+import signal
+import sqlite3
+import time
+
+from pathlib import Path
+
+from datetime import datetime
 
 from telethon import TelegramClient, functions, utils
 from telethon.errors import FloodWaitError
@@ -41,6 +49,34 @@ logger = logging.getLogger(__name__)
 # Log a progress line every this many messages processed within a single chat - large channels/years of history can take a long time,
 # and a completely silent script for that long looks hung even when it isn't.
 PROGRESS_INTERVAL = 500
+
+# If False, STATUS_PATH is ignored and status is printed to stderr instead.
+STATUS_PATH = Path(settings.backfill_status_path) if False else None  # set properly below via settings import already present
+
+
+def _write_status(data: dict) -> None:
+    """
+    Overwrite the backfill status file.
+    Read by GET /api/backfill/status so the web UI can render progress without any direct coupling to this process beyond this one file.
+    Temp-file-then-replace so the API never reads a half-written file.
+    """
+    path = Path(settings.backfill_status_path)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(path)
+
+
+_cancelled = False
+
+
+def _handle_sigterm(signum, frame) -> None:
+    """
+    Flip a flag rather than raising immediately - lets the current message finish and insert_message() own commit land cleanly before the run loop notices and exits,
+    so a Cancel click doesn't look like a crash in backfill_runs.
+    """
+    global _cancelled
+    _cancelled = True
+    logger.info("Cancellation requested - finishing the current message, then stopping.")
 
 
 async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None) -> tuple[int, int]:
@@ -83,9 +119,15 @@ async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None) -
     # Doesn't affect correctness here (INSERT OR IGNORE makes this safe to interrupt and resume any time),
     # just makes archived_at ordering read naturally if you ever look at the raw table.
     async for message in client.iter_messages(chat, reverse=True, limit=limit):
+        if _cancelled:
+            logger.info(f"Cancelled mid-chat at '{chat_name}' ({processed} processed).")
+            break
+
         processed += 1
         if processed % PROGRESS_INTERVAL == 0:
             logger.info(f"  ...{processed} messages processed so far ({stored} stored).")
+            if status_cb:
+                status_cb(processed=processed)
 
         text = resolve_message_text(message)
         if not text:
@@ -130,6 +172,26 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
     conn = db.init_db(settings.db_path)
     db.apply_schema(conn)
 
+    run_conn = sqlite3.connect(settings.db_path)
+    run_id = run_conn.execute(
+        "INSERT INTO backfill_runs (status, chat_selector) VALUES ('running', ?)",
+        (chat_selector,),
+    ).lastrowid
+    run_conn.commit()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
+    status = {
+        "state": "running",
+        "started_at": datetime.utcnow().isoformat(),
+        "chats_total": None,
+        "chats_done": 0,
+        "current_chat": None,
+        "overall_processed": 0,
+        "overall_total": 0,
+    }
+    _write_status(status)
+
     client = TelegramClient(settings.session_name, settings.api_id, settings.api_hash)
     await client.start(phone=settings.phone)
 
@@ -153,6 +215,15 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
 
     total_stored = 0
     total_skipped = 0
+
+    status["chats_total"] = len(chats)
+    for chat in chats:
+        try:
+            total_msg = await client.get_messages(chat, limit=1)
+            status["overall_total"] += total_msg.total or 0
+        except Exception:
+            pass  # best-effort estimate only
+    _write_status(status)
 
     for chat in chats:
         name = getattr(chat, "title", None) or getattr(chat, "first_name", None) or str(chat.id)
@@ -199,6 +270,17 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
         total_skipped += skipped
 
     logger.info(f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall.")
+
+    final_status = "cancelled" if _cancelled else "error" if total_stored == 0 and total_skipped == 0 and _process_failed else "completed"
+    status["state"] = final_status
+    _write_status(status)
+    run_conn.execute(
+        "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = ?, "
+        "messages_stored = ?, messages_skipped = ? WHERE id = ?",
+        (final_status, total_stored, total_skipped, run_id),
+    )
+    run_conn.commit()
+    run_conn.close()
 
     await client.disconnect()
     db.close_db()
