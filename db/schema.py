@@ -17,6 +17,7 @@ Schema change log:
   v3           : message_deletions table added (mirrors message_edits)
   v4           : read-path indexes on messages (chat_id+date, date, sender_id, partial indexes on is_deleted/is_edited) - added once list views got slow at real scale (Phase 3); the only prior messages index served write-path dedup, not any read query
   v5           : chat_migrations table - maps an old (pre-migration) chat_id to its canonical new chat_id.
+  v6           : backfill_runs table - records each time a backfill is run
 """
 
 import logging
@@ -168,8 +169,24 @@ CREATE TABLE IF NOT EXISTS chat_migrations (
 );
 """
 
+_CREATE_BACKFILL_RUNS = """
+CREATE TABLE IF NOT EXISTS backfill_runs (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  finished_at       DATETIME,
+  status            TEXT CHECK(status IN ('running', 'completed', 'cancelled', 'error')),
+  chat_selector     TEXT,
+  chats_total       INTEGER,
+  chats_done        INTEGER DEFAULT 0,
+  messages_stored   INTEGER DEFAULT 0,
+  messages_skipped  INTEGER DEFAULT 0,
+  error_message     TEXT
+);
+"""
+
 
 _STATEMENTS = [
+        ("backfill_runs table", _CREATE_BACKFILL_RUNS),
         ("chats table",         _CREATE_CHATS),
         ("chat_migrations table", _CREATE_CHAT_MIGRATIONS),
         ("senders table",       _CREATE_SENDERS),

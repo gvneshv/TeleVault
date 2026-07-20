@@ -92,6 +92,11 @@ class Settings:
     log_level: str          # 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
     log_file: str | None    # None means log to console only
 
+    # --- Backfill ---
+    # These paths are relative to the db_path directory.
+    heartbeat_path: str
+    backfill_status_path: str
+
 
 def _load() -> Settings:
     """
@@ -110,13 +115,15 @@ def _load() -> Settings:
     log_file = log_file_raw if log_file_raw else None
 
     return Settings(
-        api_id=         api_id,
-        api_hash=       _require("TG_API_HASH"),
-        phone=          _require("TG_PHONE"),
-        session_name=   _optional("SESSION_NAME", "televault"),
-        db_path=        _optional("DB_PATH", "data/televault.db"),
-        log_level=      _optional("LOG_LEVEL", "INFO"),
-        log_file=       log_file,
+        api_id=                 api_id,
+        api_hash=               _require("TG_API_HASH"),
+        phone=                  _require("TG_PHONE"),
+        session_name=           _optional("SESSION_NAME", "televault"),
+        db_path=                _optional("DB_PATH", "data/televault.db"),
+        log_level=              _optional("LOG_LEVEL", "INFO"),
+        log_file=               log_file,
+        heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),
+        backfill_status_path=   _optional("BACKFILL_STATUS_PATH", "data/backfill_status.json"),
     )
 
 

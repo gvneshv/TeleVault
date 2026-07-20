@@ -16,6 +16,11 @@ Everything Telegram-related happens inside that loop.
 import asyncio
 import logging
 import signal
+import contextlib
+import json
+import os
+import time
+from pathlib import Path
 
 from telethon import TelegramClient
 
@@ -26,6 +31,24 @@ from handlers import on_message, on_delete, on_edit
 
 
 logger = logging.getLogger(__name__)
+
+
+HEARTBEAT_INTERVAL_SECONDS = 20
+
+async def _heartbeat_loop(path: Path) -> None:
+    """
+    Periodically touch a heartbeat file while the live userbot is connected.
+
+    Read by GET /api/telethon/status and the backfill-start check,
+    so the web UI and API server - both separate processes from this one - can tell whether the live Telegram session is active,
+    without any direct coupling beyond this file.
+    """
+    try:
+        while True:
+            path.write_text(json.dumps({"pid": os.getpid(), "updated_at": time.time()}))
+            await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        pass
 
 
 def register_handlers(client: TelegramClient, self_id: int) -> None:
@@ -86,7 +109,13 @@ async def main() -> None:
     register_handlers(client, self_id=me.id)
 
     # ------------------------------------------------------------------ #
-    # 5. Run                                                              
+    # 5. Heartbeat loop                                                   
+    # ------------------------------------------------------------------ #
+    heartbeat_path = Path(settings.heartbeat_path)
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(heartbeat_path))
+
+    # ------------------------------------------------------------------ #
+    # 6. Run                                                              
     # ------------------------------------------------------------------ #
     logger.info("TeleVault is running. Press Ctrl-C to stop.")
 
@@ -110,6 +139,12 @@ async def main() -> None:
     # 6. Shutdown                                                         
     # ------------------------------------------------------------------ #
     logger.info("Shutting down...")
+
+    heartbeat_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await heartbeat_task
+    heartbeat_path.unlink(missing_ok=True)
+
     await client.disconnect()
     db.close_db()
     logger.info("Goodbye.")
