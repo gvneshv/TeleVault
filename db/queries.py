@@ -113,6 +113,50 @@ def upsert_chat(
         )
 
 
+def merge_chat(conn: sqlite3.Connection, old_chat_id: int, new_chat_id: int) -> None:
+    """
+    Move all messages from old_chat_id to new_chat_id, then remove the old chats row.
+
+    Rows that collide with an existing (tg_message_id, chat_id) row under new_chat_id- the same message archived twice under both IDs before this mapping existed
+    - are deleted outright: backfilled rows never carry richer edit/deletion history than the surviving row already has, so there's nothing worth keeping separately.
+
+    Called automatically by record_chat_migration() right after a migration is recorded, so most migrations are cleaned up within moments of detection.
+    Also safe to call directly (e.g. from merge_migrated_chats.py) to retry a mapping that didn't fully merge the first time - it's idempotent.
+    """
+    cursor = conn.execute(
+        "UPDATE OR IGNORE messages SET chat_id = ? WHERE chat_id = ?", (new_chat_id, old_chat_id)
+    )
+    moved = cursor.rowcount
+    conn.commit()
+
+    leftover = conn.execute(
+        "SELECT id FROM messages WHERE chat_id = ?", (old_chat_id,)
+    ).fetchall()
+    for (msg_id,) in leftover:
+        conn.execute("DELETE FROM message_edits WHERE message_id = ?", (msg_id,))
+        conn.execute("DELETE FROM message_deletions WHERE message_id = ?", (msg_id,))
+        conn.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+    if leftover:
+        conn.commit()
+
+    still_remaining = conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE chat_id = ?", (old_chat_id,)
+    ).fetchone()[0]
+
+    if still_remaining == 0:
+        conn.execute("DELETE FROM chats WHERE chat_id = ?", (old_chat_id,))
+        conn.commit()
+        logger.info(
+            f"Merged chat {old_chat_id} -> {new_chat_id}: moved {moved}, "
+            f"removed {len(leftover)} duplicate leftovers, old chat row removed."
+        )
+    else:
+        logger.warning(
+            f"Chat {old_chat_id} -> {new_chat_id}: still has {still_remaining} rows "
+            f"after cleanup - needs manual review."
+        )
+
+
 def record_chat_migration(conn: sqlite3.Connection, old_chat_id: int, new_chat_id: int) -> None:
     """
     Record that old_chat_id has migrated to new_chat_id (basic group -> supergroup upgrade).
@@ -133,6 +177,10 @@ def record_chat_migration(conn: sqlite3.Connection, old_chat_id: int, new_chat_i
     )
     _commit(conn)
     logger.info(f"Recorded chat migration: {old_chat_id} -> {new_chat_id}.")
+
+    # Fold any pre-existing rows under old_chat_id in immediately, rather than waiting for a manual merge_migrated_chats.py run.
+    # Safe every time - merge_chat() is a no-op if old_chat_id already has nothing left.
+    merge_chat(conn, old_chat_id, new_chat_id)
 
 
 def resolve_chat_id(conn: sqlite3.Connection, chat_id: int) -> int:
