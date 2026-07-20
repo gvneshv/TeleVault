@@ -711,3 +711,209 @@ input:focus-visible {
     padding: 0;
   }
 }
+
+
+/* ---------------------------------------------------------------------
+   Backfill view
+   ------------------------------------------------------------------- */
+
+.backfill-disclaimer {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+
+.backfill-disclaimer h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--color-ink);
+  margin: 0 0 8px;
+}
+
+.backfill-disclaimer ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.backfill-disclaimer li {
+  margin-bottom: 4px;
+}
+
+.backfill-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+
+.backfill-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-ink-muted);
+  flex-shrink: 0;
+}
+
+.backfill-status-dot--on { background: var(--color-patina); }
+.backfill-status-dot--off { background: var(--color-seal); }
+
+.backfill-start-btn {
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  font-weight: 600;
+}
+
+.backfill-start-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.backfill-progress {
+  margin-top: 24px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+}
+
+.backfill-progress__chat {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  background: var(--color-focus);
+  transition: width 0.3s ease;
+}
+
+.backfill-progress__meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-muted);
+}
+
+.backfill-cancel-btn {
+  margin-top: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-seal);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
+  font-size: 12.5px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.modal h2 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+
+.modal__warning {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
+  font-size: 12.5px;
+  margin-bottom: 14px;
+}
+
+.modal__field {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
+
+.modal__field input {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+  color: var(--color-ink);
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modal__btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+}
+
+.modal__btn--primary {
+  background: var(--color-focus);
+  border-color: var(--color-focus);
+  color: #fff;
+}
+
+.modal__btn--primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.backfill-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 24px;
+}
+
+.backfill-history-table th,
+.backfill-history-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.backfill-history-table th {
+  color: var(--color-ink-muted);
+  font-weight: 600;
+  font-size: 11.5px;
+  text-transform: uppercase;
+}
