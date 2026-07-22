@@ -7,6 +7,7 @@ Global message endpoints:
 
 import sqlite3
 from math import ceil
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -36,10 +37,11 @@ def list_messages(
     ),
     only_edited: bool = Query(False, description="Return only edited messages."),
     whole_word: bool = Query(False, description="When combined with q, match q as a whole word only, not a substring."),
+    order: Literal["asc", "desc"] = Query("desc", description="Sort by date ascending (oldest first) or descending (newest first, default)."),
     db: sqlite3.Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
-    Return all archived messages across all chats, newest first.
+    Return all archived messages across all chats, newest first by default.
 
     Each row embeds sender and chat info inline so the frontend doesn't need additional requests per row.
 
@@ -58,6 +60,7 @@ def list_messages(
         only_edited=only_edited,
         only_deleted=False,
         whole_word=whole_word,
+        order=order,
     )
     total = result["total"]
     return {

@@ -10,6 +10,7 @@ It exists as its own endpoint because:
 
 import sqlite3
 from math import ceil
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 
@@ -37,10 +38,11 @@ def list_deleted(
     date_to: str | None = Query(
         None, description="ISO 8601 upper bound on the original message date."
     ),
+    order: Literal["asc", "desc"] = Query("desc", description="Sort by original message date ascending (oldest first) or descending (newest first, default)."),
     db: sqlite3.Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
-    Return all messages that have been flagged as deleted, newest first.
+    Return all messages that have been flagged as deleted, newest first by default.
 
     Results include chat and sender info inline. The `deleted_at` field on each row indicates when TeleVault detected the deletion.
 
@@ -56,6 +58,7 @@ def list_deleted(
         date_from=date_from,
         date_to=date_to,
         only_deleted=True,
+        order=order,
     )
     total = result["total"]
     return {

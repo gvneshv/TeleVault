@@ -36,6 +36,7 @@ const messagesViewState = {
   page: 1,
   q: "",
   onlyEdited: false,
+  order: "desc",
   lastData: null,
   // True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
   initialized: false,
@@ -132,6 +133,7 @@ async function loadMessages(root) {
     page: String(messagesViewState.page),
     per_page: String(MESSAGES_PER_PAGE),
     only_edited: String(messagesViewState.onlyEdited),
+    order: messagesViewState.order,
   });
   if (messagesViewState.q) params.set("q", messagesViewState.q);
 
@@ -169,6 +171,10 @@ function initFilterBar(filterBarRoot, listRoot) {
       <input type="checkbox" id="messages-only-edited" />
       <span>${t("messages.onlyEditedLabel")}</span>
     </label>
+    <select id="messages-order" class="messages-filter__order">
+      <option value="desc">${t("common.newestFirst")}</option>
+      <option value="asc">${t("common.oldestFirst")}</option>
+    </select>
   `;
 
   const searchInput = filterBarRoot.querySelector("#messages-search");
@@ -184,6 +190,14 @@ function initFilterBar(filterBarRoot, listRoot) {
   const editedCheckbox = filterBarRoot.querySelector("#messages-only-edited");
   editedCheckbox.addEventListener("change", () => {
     messagesViewState.onlyEdited = editedCheckbox.checked;
+    messagesViewState.page = 1;
+    loadMessages(listRoot);
+  });
+
+  const orderSelect = filterBarRoot.querySelector("#messages-order");
+  orderSelect.value = messagesViewState.order;
+  orderSelect.addEventListener("change", () => {
+    messagesViewState.order = orderSelect.value;
     messagesViewState.page = 1;
     loadMessages(listRoot);
   });
@@ -222,6 +236,8 @@ document.addEventListener("televault:langchange", () => {
     filterBarRoot.querySelector("#messages-search").value = currentQ;
     filterBarRoot.querySelector("#messages-only-edited").checked =
       currentOnlyEdited;
+    filterBarRoot.querySelector("#messages-order").value =
+      messagesViewState.order;
   }
   if (listRoot && messagesViewState.lastData) {
     renderMessagesView(listRoot, messagesViewState.lastData);

@@ -27,6 +27,8 @@ export const en = {
   "common.last": "Last",
   "common.prev": "Previous",
   "common.next": "Next",
+  "common.newestFirst": "Newest first",
+  "common.oldestFirst": "Oldest first",
   "common.type.private": "Private",
   "common.type.group": "Group",
   "common.type.supergroup": "Supergroup",

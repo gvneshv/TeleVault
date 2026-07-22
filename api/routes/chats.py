@@ -8,6 +8,7 @@ Chat-related endpoints:
 
 import sqlite3
 from math import ceil
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -81,10 +82,12 @@ def list_chat_messages(
     sender_id: int | None = Query(None, description="Filter by sender ID."),
     date_from: str | None = Query(None, description="ISO 8601 lower bound on message date."),
     date_to: str | None = Query(None, description="ISO 8601 upper bound on message date."),
+    whole_word: bool = Query(False, description="When combined with q, match q as a whole word only, not a substring."),
+    order: Literal["asc", "desc"] = Query("desc", description="Sort by date ascending (oldest first) or descending (newest first, default)."),
     db: sqlite3.Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
-    Return messages within a single chat, newest first.
+    Return messages within a single chat, newest first by default.
 
     The `chat` field is omitted from each MessageOut row here — it would be redundant since all messages belong to the same chat_id.
 
@@ -103,5 +106,7 @@ def list_chat_messages(
         sender_id=sender_id,
         date_from=date_from,
         date_to=date_to,
+        whole_word=whole_word,
+        order=order,
     )
     return _build_page(result, page, per_page)

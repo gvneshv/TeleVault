@@ -23,6 +23,8 @@ export const uk = {
   "common.last": "Остання",
   "common.prev": "Назад",
   "common.next": "Далі",
+  "common.newestFirst": "Спочатку новіші",
+  "common.oldestFirst": "Спочатку старіші",
   "common.type.private": "Приватний",
   "common.type.group": "Група",
   "common.type.supergroup": "Супергрупа",

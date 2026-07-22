@@ -265,6 +265,7 @@ def get_messages(
     only_deleted: bool = False,
     only_edited: bool = False,
     whole_word: bool = False,
+    order: str = "desc",
 ) -> dict[str, Any]:
     """
     Global message search with optional filters.
@@ -281,6 +282,10 @@ def get_messages(
         date_to      : ISO 8601 string, inclusive upper bound on m.date.
         only_deleted : if True, return only messages where is_deleted = 1.
         only_edited  : if True, return only messages where is_edited = 1.
+        order        : "desc" (newest first, default) or "asc" (oldest first).
+                       Validated by the route layer (Literal["asc","desc"]) before reaching here,
+                       but re-checked with a plain if/else rather than trusted and interpolated directly - this string ends up in the SQL text
+                       (can't be a bound parameter for ORDER BY direction), so a stray value must fall back safely, not open a SQL-injection path.
 
     Also joins chat name/type for inline display (avoids a second request per row on the global feed and deleted views).
     """
@@ -333,8 +338,9 @@ def get_messages(
     if only_edited:
         conditions.append("m.is_edited = 1")
 
+    direction = "ASC" if order == "asc" else "DESC"
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    sql = f"{select} {where} ORDER BY m.date DESC"
+    sql = f"{select} {where} ORDER BY m.date {direction}"
 
     if whole_word and q:
         result = _paginate_filtered(
@@ -358,9 +364,10 @@ def get_chat_messages(
     date_from: str | None = None,
     date_to: str | None = None,
     whole_word: bool = False,
+    order: str = "desc",
 ) -> dict[str, Any]:
     """
-    Messages within a single chat, newest first.
+    Messages within a single chat, newest first by default (see `order`).
 
     Used by GET /api/chats/{chat_id}/messages.
     Chat columns are omitted (redundant in a per-chat context).
@@ -384,8 +391,9 @@ def get_chat_messages(
         conditions.append("m.date <= ?")
         params.append(date_to)
 
+    direction = "ASC" if order == "asc" else "DESC"
     where = "WHERE " + " AND ".join(conditions)
-    sql = f"{select} {where} ORDER BY m.date DESC"
+    sql = f"{select} {where} ORDER BY m.date {direction}"
 
     if whole_word and q:
         result = _paginate_filtered(

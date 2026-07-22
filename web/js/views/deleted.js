@@ -35,6 +35,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 const deletedViewState = {
   page: 1,
   q: "",
+  order: "desc",
   lastData: null,
   initialized: false,
   /** message_id -> DeletionOut-shaped detail object, or "error".
@@ -271,6 +272,7 @@ async function loadDeleted(root) {
   const params = new URLSearchParams({
     page: String(deletedViewState.page),
     per_page: String(DELETED_PER_PAGE),
+    order: deletedViewState.order,
   });
   if (deletedViewState.q) params.set("q", deletedViewState.q);
 
@@ -302,6 +304,10 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       class="messages-filter__search"
       placeholder="${t("deleted.searchPlaceholder")}"
     />
+    <select id="deleted-order" class="messages-filter__order">
+      <option value="desc">${t("common.newestFirst")}</option>
+      <option value="asc">${t("common.oldestFirst")}</option>
+    </select>
   `;
 
   const searchInput = filterBarRoot.querySelector("#deleted-search");
@@ -312,6 +318,14 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       deletedViewState.page = 1;
       loadDeleted(listRoot);
     }, SEARCH_DEBOUNCE_MS);
+  });
+
+  const orderSelect = filterBarRoot.querySelector("#deleted-order");
+  orderSelect.value = deletedViewState.order;
+  orderSelect.addEventListener("change", () => {
+    deletedViewState.order = orderSelect.value;
+    deletedViewState.page = 1;
+    loadDeleted(listRoot);
   });
 }
 
@@ -341,6 +355,8 @@ document.addEventListener("televault:langchange", () => {
     const currentQ = deletedViewState.q;
     initDeletedFilterBar(filterBarRoot, listRoot);
     filterBarRoot.querySelector("#deleted-search").value = currentQ;
+    filterBarRoot.querySelector("#deleted-order").value =
+      deletedViewState.order;
   }
   if (listRoot && deletedViewState.lastData) {
     renderDeletedView(listRoot, deletedViewState.lastData);
