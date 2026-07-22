@@ -190,9 +190,9 @@ async function fetchBackfillHistory() {
   }
 }
 
-function openModal(root) {
+async function openModal(root) {
   backfillViewState.modalOpen = true;
-  renderRoot(root);
+  await renderRoot(root);
 
   const overlay = document.getElementById("backfill-modal-overlay");
   document
@@ -251,7 +251,7 @@ async function renderRoot(root) {
     .getElementById("backfill-start-btn")
     ?.addEventListener("click", async () => {
       await fetchTelethonStatus();
-      openModal(root);
+      await openModal(root);
     });
   document
     .getElementById("backfill-cancel-btn")
