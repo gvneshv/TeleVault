@@ -20,7 +20,7 @@ from config import settings
 
 from api.dependencies import get_db
 
-router = APIRouter(prefix="/api/backfill", tags=["backfill"])
+router = APIRouter(prefix="/backfill", tags=["backfill"])
 STALE_AFTER_SECONDS = 60
 _process: subprocess.Popen | None = None
 

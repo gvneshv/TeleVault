@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 from config import settings
 
-router = APIRouter(prefix="/api/telethon", tags=["telethon"])
+router = APIRouter(prefix="/telethon", tags=["telethon"])
 STALE_AFTER_SECONDS = 60
 
 
