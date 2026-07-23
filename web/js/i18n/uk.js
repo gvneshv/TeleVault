@@ -34,6 +34,8 @@ export const uk = {
   "chats.noPreview": "Повідомлень ще немає",
   "chats.messagesLabel": "повідомлень",
   "chats.deletedLabel": "видалено",
+  "chats.mostRecentFirst": "Найбільша активність",
+  "chats.leastRecentFirst": "Найменша активність",
 
   "messages.empty": "Повідомлень не знайдено.",
   "messages.noText": "(без тексту)",

@@ -27,6 +27,7 @@ const CHATS_PER_PAGE = 50;
 /** Mutable view state. Re-created fresh; not persisted across reloads. */
 const chatsViewState = {
   page: 1,
+  order: "desc",
   /** Last successfully fetched page from the API, kept so a language
    *  change can re-render without re-fetching. Null until the first load. */
   lastData: null,
@@ -130,6 +131,28 @@ function renderChatsView(root, data) {
   });
 }
 
+/**
+ * Wire up the chats filter bar's sort-order dropdown.
+ * @param {HTMLElement} filterBarRoot
+ * @param {HTMLElement} listRoot
+ */
+function initChatsFilterBar(filterBarRoot, listRoot) {
+  filterBarRoot.innerHTML = `
+    <select id="chats-order" class="messages-filter__order">
+      <option value="desc">${t("chats.mostRecentFirst")}</option>
+      <option value="asc">${t("chats.leastRecentFirst")}</option>
+    </select>
+  `;
+
+  const orderSelect = filterBarRoot.querySelector("#chats-order");
+  orderSelect.value = chatsViewState.order;
+  orderSelect.addEventListener("change", () => {
+    chatsViewState.order = orderSelect.value;
+    chatsViewState.page = 1;
+    loadChats(listRoot);
+  });
+}
+
 /** Fetch one page of chats, cache it, and render it. */
 async function loadChats(root) {
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
@@ -137,7 +160,7 @@ async function loadChats(root) {
   let data;
   try {
     const res = await fetch(
-      `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}`,
+      `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}&order=${chatsViewState.order}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
@@ -152,12 +175,19 @@ async function loadChats(root) {
 
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("chats-root");
+  const filterBarRoot = document.getElementById("chats-filter-bar");
+  if (filterBarRoot) initChatsFilterBar(filterBarRoot, root);
   if (root) loadChats(root);
 });
 
 // Re-render the already-fetched page in the new language — no re-fetch needed, since only the labels change, not the underlying chat data.
 document.addEventListener("televault:langchange", () => {
   const root = document.getElementById("chats-root");
+  const filterBarRoot = document.getElementById("chats-filter-bar");
+  if (filterBarRoot) {
+    initChatsFilterBar(filterBarRoot, root);
+    filterBarRoot.querySelector("#chats-order").value = chatsViewState.order;
+  }
   if (root && chatsViewState.lastData) {
     renderChatsView(root, chatsViewState.lastData);
   }

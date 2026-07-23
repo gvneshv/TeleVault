@@ -13,6 +13,7 @@ STALE_AFTER_SECONDS = 60
 
 @router.get("/status")
 def get_telethon_status():
+    
     path = Path(settings.heartbeat_path)
     if not path.exists():
         return {"running": False}

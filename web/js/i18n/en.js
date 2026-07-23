@@ -38,6 +38,8 @@ export const en = {
   "chats.noPreview": "No messages yet",
   "chats.messagesLabel": "messages",
   "chats.deletedLabel": "deleted",
+  "chats.mostRecentFirst": "Most recently active",
+  "chats.leastRecentFirst": "Least recently active",
 
   "messages.empty": "No messages found.",
   "messages.noText": "(no text)",

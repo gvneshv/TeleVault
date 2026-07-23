@@ -39,14 +39,15 @@ def _build_page(result: dict, page: int, per_page: int) -> dict:
 def list_chats(
     page: int = Query(1, ge=1, description="Page number (1-based)."),
     per_page: int = Query(50, ge=1, le=200, description="Results per page."),
+    order: Literal["asc", "desc"] = Query("desc", description="Sort by most recent activity descending (default) or ascending (least recently active first)."),
     db: sqlite3.Connection = Depends(get_db),
 ) -> PaginatedResponse[ChatOut]:
     """
-    Return all chats TeleVault has seen, sorted by most recent message (same ordering as the Telegram sidebar).
+    Return all chats TeleVault has seen, sorted by most recent message (same ordering as the Telegram sidebar) by default.
 
     Each chat includes aggregate counts (total messages, deleted messages) and a preview of the most recent message text, so the sidebar can be rendered without additional per-chat requests.
     """
-    result = get_chats(db, page=page, per_page=per_page)
+    result = get_chats(db, page=page, per_page=per_page, order=order)
     return _build_page(result, page, per_page)
 
 

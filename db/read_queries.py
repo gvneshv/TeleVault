@@ -147,24 +147,30 @@ def get_chats(
     conn: sqlite3.Connection,
     page: int = 1,
     per_page: int = 50,
+    order: str = "desc",
 ) -> dict[str, Any]:
     """
-    Return all known chats sorted by most recent activity descending (i.e. the same ordering as the Telegram sidebar).
+    Return all known chats sorted by most recent activity (i.e. the same ordering as the Telegram sidebar) by default.
 
     message_count/deleted_count/last_message_at/last_message_preview are denormalized columns on chats itself (see db/migrations/005_chat_denormalized_counters.py),
     kept in sync by triggers on the messages table - this used to be a LEFT JOIN + GROUP BY across every message on every request,
     which got slow as the archive grew since it always scanned the whole messages table regardless of which page was requested.
     Now it's a plain, constant-cost read over the (small) chats table.
 
+    order: "desc" (most recently active first, default) or "asc" (least recently active / longest untouched first).
+    Chats with no messages yet (last_message_at IS NULL) always sort last regardless of direction - there's no "recency" to invert for them,
+    and surfacing empty chats first on an asc sort would be more confusing than helpful.
+
     Columns returned:
         chat_id, name, username, chat_type, first_seen, message_count, deleted_count, last_message_at, last_message_preview
     """
-    sql = """
+    direction = "ASC" if order == "asc" else "DESC"
+    sql = f"""
         SELECT
             chat_id, name, username, chat_type, first_seen,
             message_count, deleted_count, last_message_at, last_message_preview
         FROM chats
-        ORDER BY last_message_at DESC NULLS LAST
+        ORDER BY last_message_at {direction} NULLS LAST
     """
     return _paginate(sql, [], conn, page, per_page)
 
