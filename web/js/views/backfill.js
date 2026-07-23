@@ -233,6 +233,7 @@ async function renderRoot(root) {
   const [status, history] = await Promise.all([
     fetchBackfillStatus(),
     fetchBackfillHistory(),
+    fetchTelethonStatus(),
   ]);
 
   root.innerHTML = `
@@ -242,7 +243,7 @@ async function renderRoot(root) {
       ${t("backfill.startButton")}
     </button>
     ${renderProgress(status)}
-    <h2 class="stats-section-title">${t("backfill.historyTitle")}</h2>
+    <h2 class="stats-section-title backfill-history-title">${t("backfill.historyTitle")}</h2>
     ${renderHistory(history)}
     ${backfillViewState.modalOpen ? renderModal() : ""}
   `;
@@ -284,5 +285,18 @@ function initBackfillView() {
   const root = document.getElementById("backfill-root");
   if (root) renderRoot(root);
 }
+
+// Re-render in the new language. Routed through openModal() rather than a
+// plain renderRoot() when the modal is open, since renderRoot() alone only
+// paints the modal's markup - it doesn't attach its button listeners
+// (openModal() does that right after rendering). Calling renderRoot()
+// directly here would leave a freshly-relabeled modal with dead buttons.
+document.addEventListener("televault:langchange", () => {
+  if (!backfillViewState.initialized) return;
+  const root = document.getElementById("backfill-root");
+  if (!root) return;
+  if (backfillViewState.modalOpen) openModal(root);
+  else renderRoot(root);
+});
 
 export { initBackfillView };

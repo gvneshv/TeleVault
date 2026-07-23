@@ -589,6 +589,10 @@ input:focus-visible {
   margin: 0 0 12px;
 }
 
+.backfill-history-title {
+  margin-top: 32px;
+}
+
 .stats-table {
   width: 100%;
   border-collapse: collapse;
@@ -768,8 +772,10 @@ input:focus-visible {
   flex-shrink: 0;
 }
 
-.backfill-status-dot--on { background: var(--color-patina); }
-.backfill-status-dot--off { background: var(--color-seal); }
+/* Green = safe to start a backfill (live archiver disconnected).
+   Red = blocked (live archiver connected, holds the Telegram session). */
+.backfill-status-dot--on { background: var(--color-seal); }
+.backfill-status-dot--off { background: var(--color-patina); }
 
 .backfill-start-btn {
   padding: 9px 18px;
