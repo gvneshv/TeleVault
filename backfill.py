@@ -6,6 +6,16 @@ Run with:
     python backfill.py --chat @someusername  # one chat only
     python backfill.py --chat -1001234567890 # one chat by numeric ID
     python backfill.py --chat @someusername --limit 500  # cap per chat, useful for testing
+    python backfill.py --full                # force a full re-walk of every chat, ignoring what's already archived
+
+Incremental by default:
+    Each chat only fetches messages newer than the highest tg_message_id TeleVault already has for it (see db.queries.get_last_archived_message_id),
+    which is passed to Telethon as min_id.
+    A brand-new chat with nothing archived yet still gets a full walk, same as before - this only skips *already-covered* history on repeat runs.
+    Telegram message IDs are monotonically increasing within a chat, so this is a safe high-water mark, not a guess.
+
+    Pass --full to ignore this and re-walk everything regardless - useful if you suspect gaps in an existing archive and want to re-verify it from scratch.
+    INSERT OR IGNORE still makes this safe to run (see below), just slower and heavier on Telegram's API than it needs to be for routine use.
 
 Important limitations - Telegram's API, not something TeleVault can work around:
   - Deleted messages cannot be backfilled.
@@ -21,6 +31,7 @@ Stop main.py first, run this, then start main.py again.
 
 Idempotent: insert_message() uses INSERT OR IGNORE (see db/queries.py), so running this more than once,
 or interrupting it partway through and re-running later, is always safe - already-archived messages are silently skipped, never duplicated.
+Incremental mode above is what makes repeat runs *cheap* too, not just safe - idempotency alone doesn't save you from re-fetching everything over the wire.
 """
 
 import argparse
@@ -33,7 +44,7 @@ import time
 
 from pathlib import Path
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from telethon import TelegramClient, functions, utils
 from telethon.errors import FloodWaitError
@@ -79,9 +90,11 @@ def _handle_sigterm(signum, frame) -> None:
     logger.info("Cancellation requested - finishing the current message, then stopping.")
 
 
-async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None, status_cb=None) -> tuple[int, int]:
+async def backfill_chat(
+    client: TelegramClient, conn, chat, limit: int | None, status_cb=None, min_id: int | None = None
+) -> tuple[int, int]:
     """
-    Archive all currently-existing history for one chat.
+    Archive a chat's history - either all of it, or (the default, see backfill.py's module docstring) only messages newer than min_id.
 
     Returns (stored, skipped).
     skipped covers both "already archived" (INSERT OR IGNORE no-op) and "nothing worth archiving" (media, stickers, unsupported service messages)
@@ -118,7 +131,8 @@ async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None, s
     # reverse=True walks oldest -> newest.
     # Doesn't affect correctness here (INSERT OR IGNORE makes this safe to interrupt and resume any time),
     # just makes archived_at ordering read naturally if you ever look at the raw table.
-    async for message in client.iter_messages(chat, reverse=True, limit=limit):
+    # min_id=0 (Telethon's own default) means "no lower bound" - a brand-new chat with nothing archived yet passes min_id=None here, which becomes 0.
+    async for message in client.iter_messages(chat, reverse=True, limit=limit, min_id=min_id or 0):
         if _cancelled:
             logger.info(f"Cancelled mid-chat at '{chat_name}' ({processed} processed).")
             break
@@ -166,7 +180,7 @@ async def backfill_chat(client: TelegramClient, conn, chat, limit: int | None, s
     return stored, skipped
 
 
-async def run(chat_selector: str | None, limit: int | None) -> None:
+async def run(chat_selector: str | None, limit: int | None, force_full: bool = False) -> None:
     setup_logging(log_level=settings.log_level, log_file=settings.log_file)
 
     conn = db.init_db(settings.db_path)
@@ -183,7 +197,7 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
 
     status = {
         "state": "running",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
         "chats_total": None,
         "chats_done": 0,
         "current_chat": None,
@@ -215,11 +229,15 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
 
     total_stored = 0
     total_skipped = 0
+    any_failures = False
 
     status["chats_total"] = len(chats)
     for chat in chats:
         try:
-            total_msg = await client.get_messages(chat, limit=1)
+            chat_min_id = None if force_full else db.queries.get_last_archived_message_id(
+                conn, utils.get_peer_id(chat)
+            )
+            total_msg = await client.get_messages(chat, limit=1, min_id=chat_min_id or 0)
             status["overall_total"] += total_msg.total or 0
         except Exception:
             pass  # best-effort estimate only
@@ -241,14 +259,25 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
                     status["overall_processed"] = base + processed_in_chat
                     _write_status(status)
 
-                stored, skipped = await backfill_chat(client, conn, chat, limit)
+                # Recomputed on every attempt, not just the first:
+                # if an earlier attempt got partway through before a flood wait hit,
+                # whatever it already committed has raised this chat's high-water mark
+                # - so a retry naturally resumes close to where it stopped instead of re-walking from scratch,
+                # with no special resume logic needed beyond recomputing this.
+                chat_min_id = None if force_full else db.queries.get_last_archived_message_id(
+                    conn, utils.get_peer_id(chat)
+                )
+                stored, skipped = await backfill_chat(
+                    client, conn, chat, limit, status_cb=_status_cb, min_id=chat_min_id
+                )
                 break
             except FloodWaitError as e:
                 # Expected, not a bug: Telegram's own rate limit.
                 # Telethon already auto-waits for short flood waits internally (below its flood_sleep_threshold);
                 # this only fires for longer ones.
                 # Logged plainly (no traceback - this isn't an error, it's Telegram asking us to slow down) and retried.
-                # Retrying re-walks this chat's history from the start rather than resuming from where it stopped - wasteful on API calls for a chat that floods repeatedly, but simpler and safer than resuming mid-iterator, and INSERT OR IGNORE means no duplicate rows either way.
+                # A retry recomputes chat_min_id above,
+                # so it resumes from wherever this chat's archive actually got to rather than re-walking the whole thing again - see that comment.
                 logger.warning(
                     f"Rate limited by Telegram while backfilling '{name}' "
                     f"(attempt {attempt}/{max_flood_retries}) - waiting "
@@ -267,18 +296,29 @@ async def run(chat_selector: str | None, limit: int | None) -> None:
                 f"retries - Telegram kept rate limiting this chat. Try "
                 f"again later, perhaps with --chat '{name}' on its own."
             )
+            any_failures = True
+            status["chats_done"] += 1
+            _write_status(status)
             continue
 
         if failed:
+            any_failures = True
+            status["chats_done"] += 1
+            _write_status(status)
             continue
 
         logger.info(f"  '{name}': {stored} stored, {skipped} skipped.")
         total_stored += stored
         total_skipped += skipped
+        # backfill_chat() may never have crossed a PROGRESS_INTERVAL boundary at all (e.g. a chat with under 500 messages never triggers _status_cb),
+        # so make sure overall_processed reflects this chat's true final count regardless of whether any intra-chat callback fired.
+        status["overall_processed"] = base_processed + stored + skipped
+        status["chats_done"] += 1
+        _write_status(status)
 
     logger.info(f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall.")
 
-    final_status = "cancelled" if _cancelled else "error" if total_stored == 0 and total_skipped == 0 and _process_failed else "completed"
+    final_status = "cancelled" if _cancelled else "error" if total_stored == 0 and total_skipped == 0 and any_failures else "completed"
     status["state"] = final_status
     _write_status(status)
     run_conn.execute(
@@ -309,10 +349,19 @@ def main() -> None:
         default=None,
         help="Cap the number of messages fetched per chat. Omit for full history. Useful for a quick test run.",
     )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help=(
+            "Force a full re-walk of each chat's history, ignoring what's already archived."
+            "Off by default: normally only messages newer than the last archived one per chat are fetched,"
+            "which is much faster and lighter on Telegram's API quota on repeat runs."
+        ),
+    )
     args = parser.parse_args()
 
     try:
-        asyncio.run(run(args.chat, args.limit))
+        asyncio.run(run(args.chat, args.limit, args.full))
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
 

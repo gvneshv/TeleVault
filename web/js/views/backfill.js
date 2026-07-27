@@ -15,12 +15,33 @@ import { escapeHtml } from "../lib/dom.js";
 
 const POLL_INTERVAL_MS = 3000;
 
+// A run is only ever truly over once the status file says so explicitly.
+// "idle" is NOT one of these - it's also what fetchBackfillStatus() returns on a network hiccup,
+// and what the status file briefly still shows in the instant right after a start request,
+// before the new subprocess has had a chance to write anything.
+// Treating "idle" as terminal caused polling to die moments after starting a run,
+// and the progress bar/Start button to look stale until the user manually reopened the modal.
+const TERMINAL_STATES = new Set(["completed", "cancelled", "error"]);
+
 const backfillViewState = {
   initialized: false,
   pollTimer: null,
   telethonRunning: null,
   modalOpen: false,
 };
+
+// This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
+// and Python's isoformat() (now fixed to include a real +00:00 offset for the live status file,
+// but older cached data or a not-yet-restarted process could still emit the old naive "YYYY-MM-DDTHH:MM:SS.ffffff" form).
+// Neither naive form is safe to hand to `new Date()` directly: per the JS Date Time String spec,
+// a date-time string with no timezone marker is parsed as LOCAL time, not UTC - silently shifting every duration/ETA calculation by a full timezone offset.
+// If the string already carries an explicit offset, trust it as-is;
+// otherwise normalize the separator and mark it UTC.
+function parseUtc(value) {
+  if (!value) return null;
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(value)) return new Date(value);
+  return new Date(value.replace(" ", "T") + "Z");
+}
 
 function formatDuration(seconds) {
   if (!seconds || seconds < 0) return "—";
@@ -36,6 +57,7 @@ function renderDisclaimer() {
   return `
     <div class="backfill-disclaimer">
       <h2>${t("backfill.aboutTitle")}</h2>
+      <p class="backfill-disclaimer__intro">${t("backfill.aboutIntro")}</p>
       <ul>
         <li>${t("backfill.disclaimerSession")}</li>
         <li>${t("backfill.disclaimerDeleted")}</li>
@@ -70,7 +92,8 @@ function renderTelethonStatus() {
 }
 
 function renderProgress(status) {
-  if (!status || status.state === "idle") return "";
+  if (!status || status.state === "idle" || TERMINAL_STATES.has(status.state))
+    return "";
   const percent =
     status.overall_total > 0
       ? Math.min(
@@ -79,7 +102,7 @@ function renderProgress(status) {
         )
       : 0;
   const elapsed = status.started_at
-    ? (Date.now() - new Date(status.started_at).getTime()) / 1000
+    ? (Date.now() - parseUtc(status.started_at).getTime()) / 1000
     : 0;
   const eta =
     percent > 0 ? Math.round((elapsed / percent) * (100 - percent)) : null;
@@ -111,12 +134,12 @@ function renderHistory(history) {
     .map(
       (run) => `
     <tr>
-      <td>${new Date(run.started_at).toLocaleString()}</td>
+      <td>${parseUtc(run.started_at).toLocaleString()}</td>
       <td>${run.status}</td>
       <td>${run.chats_done ?? 0}</td>
       <td>${run.messages_stored ?? 0}</td>
       <td>${run.messages_skipped ?? 0}</td>
-      <td>${run.finished_at ? formatDuration((new Date(run.finished_at) - new Date(run.started_at)) / 1000) : "—"}</td>
+      <td>${run.finished_at ? formatDuration((parseUtc(run.finished_at) - parseUtc(run.started_at)) / 1000) : "—"}</td>
     </tr>
   `,
     )
@@ -224,8 +247,8 @@ async function openModal(root) {
         // The status poll below reflects whatever actually happened - no separate toast system needed.
       }
       backfillViewState.modalOpen = false;
-      renderRoot(root);
       startPolling(root);
+      await renderRoot(root);
     });
 }
 
@@ -264,11 +287,13 @@ async function renderRoot(root) {
       }
     });
 
-  if (status.state === "running") startPolling(root);
-  else if (backfillViewState.pollTimer) {
+  if (status.state === "running") {
+    startPolling(root);
+  } else if (TERMINAL_STATES.has(status.state) && backfillViewState.pollTimer) {
     clearInterval(backfillViewState.pollTimer);
     backfillViewState.pollTimer = null;
   }
+  // "idle": leave any existing poll timer alone - see TERMINAL_STATES' comment.
 }
 
 function startPolling(root) {
