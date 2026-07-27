@@ -747,6 +747,12 @@ input:focus-visible {
   margin: 0 0 8px;
 }
 
+.backfill-disclaimer__intro {
+  color: var(--color-ink);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
 .backfill-disclaimer ul {
   margin: 0;
   padding-left: 20px;

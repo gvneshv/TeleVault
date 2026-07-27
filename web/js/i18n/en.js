@@ -88,6 +88,8 @@ export const en = {
   "nav.backfill": "Backfill",
 
   "backfill.aboutTitle": "About backfill",
+  "backfill.aboutIntro":
+    "The live archiver only records messages sent while it's running. Backfill fills in the gap: it walks each chat's existing history on Telegram and archives everything TeleVault hasn't seen yet — useful right after your first setup, or for any chat TeleVault only recently joined.",
   "backfill.disclaimerSession":
     "Backfill needs its own Telegram connection. The live archiver (main.py) must be stopped first — Telegram only allows one active session at a time.",
   "backfill.disclaimerDeleted":

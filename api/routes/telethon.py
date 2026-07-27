@@ -13,7 +13,7 @@ STALE_AFTER_SECONDS = 60
 
 @router.get("/status")
 def get_telethon_status():
-    
+    """Read by GET /api/health so the web UI can render progress without any direct coupling to this process beyond this one file."""    
     path = Path(settings.heartbeat_path)
     if not path.exists():
         return {"running": False}
