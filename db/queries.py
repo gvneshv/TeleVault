@@ -21,6 +21,22 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
+def get_last_archived_message_id(conn: sqlite3.Connection, chat_id: int) -> int | None:
+    """
+    Return the highest tg_message_id already archived for a chat, or None if nothing has been archived for it yet (a brand-new chat).
+
+    Telegram message IDs are monotonically increasing within a chat,
+    so this is a safe "high water mark":
+    backfill.py passes it as Telethon's min_id to fetch only messages newer than what's already archived,
+    instead of re-walking the chat's entire history on every run.
+    See backfill.py's module docstring for the full incremental-backfill design.
+    """
+    row = conn.execute(
+        "SELECT MAX(tg_message_id) FROM messages WHERE chat_id = ?", (chat_id,)
+    ).fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
 # ---------------------------------------------------------------------------
 # Timezone helpers
 # ---------------------------------------------------------------------------
