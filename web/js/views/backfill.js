@@ -10,7 +10,7 @@
  * Checks GET /api/telethon/status before allowing a start, since backfill.py and main.py cannot share the Telegram session at the same time.
  */
 
-import { t } from "../i18n.js";
+import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 
 const POLL_INTERVAL_MS = 3000;
@@ -28,6 +28,7 @@ const backfillViewState = {
   pollTimer: null,
   telethonRunning: null,
   modalOpen: false,
+  historyFetchInFlight: false,
 };
 
 // This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
@@ -48,9 +49,28 @@ function formatDuration(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+  const hUnit = t("backfill.unitHour");
+  const mUnit = t("backfill.unitMinute");
+  const sUnit = t("backfill.unitSecond");
+  if (h > 0) return `${h}${hUnit} ${m}${mUnit}`;
+  if (m > 0) return `${m}${mUnit} ${s}${sUnit}`;
+  return `${s}${sUnit}`;
+}
+
+// toLocaleString() with no arguments uses the BROWSER's ambient locale, not the app's own EN/UK toggle - and without explicit field widths,
+// the output length varies (e.g. a single-digit hour vs a double-digit one), which is what made history rows look inconsistently sized.
+// Pinning both the locale and 2-digit widths for every field fixes both at once.
+function formatDateTime(date) {
+  if (!date) return "—";
+  return date.toLocaleString(getCurrentLang(), {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function renderDisclaimer() {
@@ -94,18 +114,30 @@ function renderTelethonStatus() {
 function renderProgress(status) {
   if (!status || status.state === "idle" || TERMINAL_STATES.has(status.state))
     return "";
-  const percent =
-    status.overall_total > 0
+  // Primary progress signal: chats completed, not messages processed.
+  // overall_total can be dominated by a handful of large, mostly-already-archived chats on an incremental run,
+  // which keeps a message-count percentage pinned near 0% for a long stretch even while real progress
+  // (chats_done advancing) is happening - chats_done/chats_total doesn't have that problem, since every chat counts the same regardless of size.
+  const chatsPercent =
+    status.chats_total > 0
       ? Math.min(
           100,
-          Math.round((status.overall_processed / status.overall_total) * 100),
+          Math.round((status.chats_done / status.chats_total) * 100),
         )
+      : 0;
+  // Supplementary only: shown with real decimal precision rather than rounded to a whole percent,
+  // since a legitimately-progressing run can sit at a fraction of a percent for a while (see above).
+  const msgPercent =
+    status.overall_total > 0
+      ? Math.min(100, (status.overall_processed / status.overall_total) * 100)
       : 0;
   const elapsed = status.started_at
     ? (Date.now() - parseUtc(status.started_at).getTime()) / 1000
     : 0;
   const eta =
-    percent > 0 ? Math.round((elapsed / percent) * (100 - percent)) : null;
+    chatsPercent > 0
+      ? Math.round((elapsed / chatsPercent) * (100 - chatsPercent))
+      : null;
   const stateLabel =
     {
       running: t("backfill.stateRunning"),
@@ -117,9 +149,9 @@ function renderProgress(status) {
   return `
     <div class="backfill-progress">
       <div class="backfill-progress__chat">${stateLabel}${status.current_chat ? ` — ${escapeHtml(status.current_chat)}` : ""}</div>
-      <div class="progress-bar"><div class="progress-bar__fill" style="width: ${percent}%"></div></div>
+      <div class="progress-bar"><div class="progress-bar__fill" style="width: ${chatsPercent}%"></div></div>
       <div class="backfill-progress__meta">
-        <span>${status.chats_done ?? 0}/${status.chats_total ?? "?"} ${t("backfill.chats")} · ${percent}%</span>
+        <span>${status.chats_done ?? 0}/${status.chats_total ?? "?"} ${t("backfill.chats")} · ${chatsPercent}% · ${msgPercent.toFixed(1)}% ${t("backfill.byMessages")}</span>
         <span>${eta !== null && status.state === "running" ? `${t("backfill.eta")}: ~${formatDuration(eta)}` : formatDuration(elapsed)}</span>
       </div>
       ${status.state === "running" ? `<button id="backfill-cancel-btn" class="backfill-cancel-btn">${t("backfill.cancel")}</button>` : ""}
@@ -130,12 +162,18 @@ function renderProgress(status) {
 function renderHistory(history) {
   if (!history || history.length === 0)
     return `<div class="empty-state">${t("backfill.noHistory")}</div>`;
+  const stateLabels = {
+    running: t("backfill.stateRunning"),
+    completed: t("backfill.stateCompleted"),
+    cancelled: t("backfill.stateCancelled"),
+    error: t("backfill.stateError"),
+  };
   const rows = history
     .map(
       (run) => `
     <tr>
-      <td>${parseUtc(run.started_at).toLocaleString()}</td>
-      <td>${run.status}</td>
+      <td>${formatDateTime(parseUtc(run.started_at))}</td>
+      <td>${stateLabels[run.status] ?? run.status}</td>
       <td>${run.chats_done ?? 0}</td>
       <td>${run.messages_stored ?? 0}</td>
       <td>${run.messages_skipped ?? 0}</td>
@@ -253,9 +291,11 @@ async function openModal(root) {
 }
 
 async function renderRoot(root) {
-  const [status, history] = await Promise.all([
+  // Status and telethon-connection checks are fast, file-based reads.
+  // History is DB-backed and fetched separately below, once the DOM below already exists - a slow history query (e.g. under heavy write load)
+  // must never hold back the progress bar or Start button from updating, which is exactly what happened when all three were awaited together.
+  const [status] = await Promise.all([
     fetchBackfillStatus(),
-    fetchBackfillHistory(),
     fetchTelethonStatus(),
   ]);
 
@@ -267,7 +307,7 @@ async function renderRoot(root) {
     </button>
     ${renderProgress(status)}
     <h2 class="stats-section-title backfill-history-title">${t("backfill.historyTitle")}</h2>
-    ${renderHistory(history)}
+    <div id="backfill-history-root">${t("common.loading")}</div>
     ${backfillViewState.modalOpen ? renderModal() : ""}
   `;
 
@@ -294,6 +334,20 @@ async function renderRoot(root) {
     backfillViewState.pollTimer = null;
   }
   // "idle": leave any existing poll timer alone - see TERMINAL_STATES' comment.
+
+  // Guarded against overlap: if a previous call's history fetch is still in flight (it's the one query here that can genuinely be slow),
+  // don't pile another one on top of an already-busy database.
+  if (!backfillViewState.historyFetchInFlight) {
+    backfillViewState.historyFetchInFlight = true;
+    fetchBackfillHistory()
+      .then((history) => {
+        const historyRoot = document.getElementById("backfill-history-root");
+        if (historyRoot) historyRoot.innerHTML = renderHistory(history);
+      })
+      .finally(() => {
+        backfillViewState.historyFetchInFlight = false;
+      });
+  }
 }
 
 function startPolling(root) {
@@ -305,7 +359,6 @@ function startPolling(root) {
 }
 
 function initBackfillView() {
-  if (backfillViewState.initialized) return;
   backfillViewState.initialized = true;
   const root = document.getElementById("backfill-root");
   if (root) renderRoot(root);
