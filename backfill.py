@@ -171,12 +171,18 @@ async def backfill_chat(
             sender_id=message.sender_id,
             text=text,
             date=message.date,
+            # Batched below, not per-row - see insert_message()'s docstring.
+            commit=False,
         )
         if row_id is not None:
             stored += 1
         else:
             skipped += 1
 
+        if processed % PROGRESS_INTERVAL == 0:
+            conn.commit()
+
+    conn.commit()  # flush whatever's left in the final partial batch
     return stored, skipped
 
 

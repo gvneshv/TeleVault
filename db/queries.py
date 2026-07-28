@@ -281,7 +281,8 @@ def insert_message(
     sender_id: int | None, 
     text: str | None, 
     date: datetime,
-    is_edited: bool = False
+    is_edited: bool = False,
+    commit: bool = True,
 ) -> int | None:
     """
     Store a new incoming or outgoing message.
@@ -290,6 +291,12 @@ def insert_message(
     archived_at is set to the current local time explicitly so it doesn't fall back to SQLite's UTC DEFAULT CURRENT_TIMESTAMP.
 
     `is_edited` should be True when this insert is a fallback from the edit handler - the message wasn't in the DB yet, but we know it has been edited at least once.
+
+    commit=False lets a bulk caller (backfill.py) batch many inserts into one commit instead of fsyncing the WAL after every single row
+    - with hundreds of thousands of messages in one run, per-row commits meant per-row fsyncs,
+    which was frequent enough to trigger SQLite's passive WAL checkpoint far more often than necessary, competing with concurrent readers (the web UI) for I/O.
+    The live handler path (on_message.py) is low-volume by nature
+    (one real Telegram event at a time) and keeps the default commit=True - this only matters for bulk insert loops.
  
     Returns the internal row ID (messages.id) on success, or None if the message was already present (INSERT OR IGNORE - safe on re-delivery)
     """
@@ -336,7 +343,8 @@ def insert_message(
             "INSERT OR IGNORE INTO messages (tg_message_id, chat_id, sender_id, text, date, is_edited, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (tg_message_id, chat_id, sender_id, text, local_date, 1 if is_edited else 0, local_archived_at),
         )
-        _commit(conn)
+        if commit:
+            _commit(conn)
     except Exception:
         conn.rollback()
         raise
