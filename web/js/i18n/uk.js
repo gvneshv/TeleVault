@@ -115,6 +115,7 @@ export const uk = {
   "backfill.stateCancelled": "Скасовано",
   "backfill.stateError": "Помилка",
   "backfill.chats": "чатів",
+  "backfill.byMessages": "за повідомленнями",
   "backfill.eta": "Залишилось приблизно",
   "backfill.cancel": "Скасувати",
   "backfill.historyTitle": "Історія запусків",
@@ -125,6 +126,9 @@ export const uk = {
   "backfill.historyStored": "Збережено",
   "backfill.historySkipped": "Пропущено",
   "backfill.historyDuration": "Тривалість",
+  "backfill.unitHour": "год",
+  "backfill.unitMinute": "хв",
+  "backfill.unitSecond": "с",
 
   "messages.wholeWordLabel": "Ціле слово",
   "common.cancel": "Скасувати",
