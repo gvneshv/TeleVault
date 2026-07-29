@@ -238,15 +238,6 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
     any_failures = False
 
     status["chats_total"] = len(chats)
-    for chat in chats:
-        try:
-            chat_min_id = None if force_full else db.queries.get_last_archived_message_id(
-                conn, utils.get_peer_id(chat)
-            )
-            total_msg = await client.get_messages(chat, limit=1, min_id=chat_min_id or 0)
-            status["overall_total"] += total_msg.total or 0
-        except Exception:
-            pass  # best-effort estimate only
     _write_status(status)
 
     for chat in chats:

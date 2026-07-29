@@ -167,14 +167,17 @@ function initFilterBar(filterBarRoot, listRoot) {
       placeholder="${t("messages.searchPlaceholder")}"
       data-i18n-attr-placeholder="messages.searchPlaceholder"
     />
-    <label class="messages-filter__toggle">
+    <label class="tv-checkbox">
       <input type="checkbox" id="messages-only-edited" />
+      <span class="tv-checkbox__box"></span>
       <span>${t("messages.onlyEditedLabel")}</span>
     </label>
-    <select id="messages-order" class="messages-filter__order">
-      <option value="desc">${t("common.newestFirst")}</option>
-      <option value="asc">${t("common.oldestFirst")}</option>
-    </select>
+    <div class="tv-select-wrapper">
+      <select id="messages-order" class="tv-select">
+        <option value="desc">${t("common.newestFirst")}</option>
+        <option value="asc">${t("common.oldestFirst")}</option>
+      </select>
+    </div>
   `;
 
   const searchInput = filterBarRoot.querySelector("#messages-search");

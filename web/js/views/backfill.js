@@ -29,6 +29,8 @@ const backfillViewState = {
   telethonRunning: null,
   modalOpen: false,
   historyFetchInFlight: false,
+  historyEverFetched: false,
+  lastSeenState: null,
 };
 
 // This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
@@ -124,12 +126,6 @@ function renderProgress(status) {
           100,
           Math.round((status.chats_done / status.chats_total) * 100),
         )
-      : 0;
-  // Supplementary only: shown with real decimal precision rather than rounded to a whole percent,
-  // since a legitimately-progressing run can sit at a fraction of a percent for a while (see above).
-  const msgPercent =
-    status.overall_total > 0
-      ? Math.min(100, (status.overall_processed / status.overall_total) * 100)
       : 0;
   const elapsed = status.started_at
     ? (Date.now() - parseUtc(status.started_at).getTime()) / 1000
@@ -335,9 +331,18 @@ async function renderRoot(root) {
   }
   // "idle": leave any existing poll timer alone - see TERMINAL_STATES' comment.
 
-  // Guarded against overlap: if a previous call's history fetch is still in flight (it's the one query here that can genuinely be slow),
-  // don't pile another one on top of an already-busy database.
-  if (!backfillViewState.historyFetchInFlight) {
+  const justFinished =
+    backfillViewState.lastSeenState === "running" && status.state !== "running";
+  const shouldFetchHistory = !backfillViewState.historyEverFetched || justFinished;
+  backfillViewState.lastSeenState = status.state;
+
+  // History only changes when a run starts or finishes - re-fetching it on
+  // every 3-second poll tick during an active run hit the DB for no reason
+  // and visibly re-rendered a table that hadn't actually changed. Guarded
+  // against overlap too: if a previous call's history fetch is still in
+  // flight, don't pile another one on top of an already-busy database.
+  if (shouldFetchHistory && !backfillViewState.historyFetchInFlight) {
+    backfillViewState.historyEverFetched = true;
     backfillViewState.historyFetchInFlight = true;
     fetchBackfillHistory()
       .then((history) => {

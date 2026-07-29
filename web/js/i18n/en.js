@@ -119,7 +119,6 @@ export const en = {
   "backfill.stateCancelled": "Cancelled",
   "backfill.stateError": "Error",
   "backfill.chats": "chats",
-  "backfill.byMessages": "by messages",
   "backfill.eta": "Est. remaining",
   "backfill.cancel": "Cancel",
   "backfill.historyTitle": "Run history",

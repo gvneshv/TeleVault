@@ -432,6 +432,120 @@ input:focus-visible {
   color: inherit;
 }
 
+/* ---------------------------------------------------------------------
+   Reusable custom form controls (checkbox, select)
+   Native widgets are visually inconsistent across browsers/OSes and don't pick up the app's own theme tokens
+   - these replace them everywhere a checkbox or select appears, not just in one view.
+   ------------------------------------------------------------------- */
+
+.tv-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The real input stays in the DOM (for accessibility, keyboard, and form semantics) but is visually hidden - .tv-checkbox__box is what's shown. */
+.tv-checkbox input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.tv-checkbox__box {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-raised);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.tv-checkbox__box::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid var(--color-bg-raised);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.tv-checkbox input[type="checkbox"]:checked + .tv-checkbox__box {
+  background: var(--color-focus);
+  border-color: var(--color-focus);
+}
+
+.tv-checkbox input[type="checkbox"]:checked + .tv-checkbox__box::after {
+  opacity: 1;
+}
+
+.tv-checkbox input[type="checkbox"]:focus-visible + .tv-checkbox__box {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.tv-checkbox:hover .tv-checkbox__box {
+  border-color: var(--color-focus);
+}
+
+/* Select: the closed box is fully custom-styled
+   (native appearance removed, custom chevron drawn via a bordered pseudo-element so it inherits --color-ink-muted correctly in both themes,
+   same border-trick as the checkmark above).
+   The OPEN dropdown panel itself is still rendered by the browser/OS natively
+   - <select> doesn't allow styling that part at all without replacing it with a fully custom JS-built widget.
+   This is the common, honest middle ground for a native <select>. */
+.tv-select-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.tv-select-wrapper::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border: solid var(--color-ink-muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+.tv-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding: 8px 30px 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-raised);
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.tv-select:hover {
+  border-color: var(--color-focus);
+}
+
+.tv-select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
 .message-list {
   list-style: none;
   margin: 0;
