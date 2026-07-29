@@ -138,10 +138,12 @@ function renderChatsView(root, data) {
  */
 function initChatsFilterBar(filterBarRoot, listRoot) {
   filterBarRoot.innerHTML = `
-    <select id="chats-order" class="messages-filter__order">
-      <option value="desc">${t("chats.mostRecentFirst")}</option>
-      <option value="asc">${t("chats.leastRecentFirst")}</option>
-    </select>
+    <div class="tv-select-wrapper">
+      <select id="chats-order" class="tv-select">
+        <option value="desc">${t("chats.mostRecentFirst")}</option>
+        <option value="asc">${t("chats.leastRecentFirst")}</option>
+      </select>
+    </div>
   `;
 
   const orderSelect = filterBarRoot.querySelector("#chats-order");

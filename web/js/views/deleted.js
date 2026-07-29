@@ -304,10 +304,12 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       class="messages-filter__search"
       placeholder="${t("deleted.searchPlaceholder")}"
     />
-    <select id="deleted-order" class="messages-filter__order">
-      <option value="desc">${t("common.newestFirst")}</option>
-      <option value="asc">${t("common.oldestFirst")}</option>
-    </select>
+    <div class="tv-select-wrapper">
+      <select id="deleted-order" class="tv-select">
+        <option value="desc">${t("common.newestFirst")}</option>
+        <option value="asc">${t("common.oldestFirst")}</option>
+      </select>
+    </div>
   `;
 
   const searchInput = filterBarRoot.querySelector("#deleted-search");
