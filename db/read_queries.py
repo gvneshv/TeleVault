@@ -474,24 +474,32 @@ def get_stats(conn: sqlite3.Connection) -> dict[str, Any]:
     Aggregate statistics for the /api/stats endpoint.
 
     Runs three queries:
-        1. Global totals (counts, archiving_since) - a single-pass scan over messages, no GROUP BY, so this stays fast at any archive size.
+        1. Global totals - SUM over the same denormalized per-chat counters the per-chat breakdown below already uses
+        (see db/migrations/005_chat_denormalized_counters.py),
+        instead of the COUNT(*)+SUM(CASE...) scan across every row in messages this used to run on every request.
+        archiving_since is served by a rowid-order lookup instead: `id` is INTEGER PRIMARY KEY AUTOINCREMENT,
+        so the lowest id is always the first-ever archived row, and SQLite answers "smallest rowid" straight from the b-tree without touching any other row.
         2. total_chats / total_senders - trivial COUNT(*) on small tables.
-        3. Per-chat breakdown - reads the denormalized counters on chats directly (see db/migrations/005_chat_denormalized_counters.py)
-           instead of a LEFT JOIN + GROUP BY across every message, which used to make this endpoint slower the larger the archive grew.
+        3. Per-chat breakdown - reads the denormalized counters on chats directly instead of a LEFT JOIN + GROUP BY across every message,
+        which used to make this endpoint slower the larger the archive grew.
 
     Stats are not latency-critical - they're for a dashboard, not a hot path -
-    but the per-chat breakdown doesn't need to be slow just because it's not urgent.
+    but there's no reason for it to be slow just because it's not urgent.
     """
     totals_row = conn.execute(
         """
         SELECT
-            COUNT(*)                                           AS total_messages,
-            SUM(CASE WHEN is_deleted = 1 THEN 1 ELSE 0 END)  AS total_deleted,
-            SUM(CASE WHEN is_edited  = 1 THEN 1 ELSE 0 END)  AS total_edited,
-            MIN(archived_at)                                   AS archiving_since
-        FROM messages
+            COALESCE(SUM(message_count), 0) AS total_messages,
+            COALESCE(SUM(deleted_count), 0) AS total_deleted,
+            COALESCE(SUM(edited_count), 0)  AS total_edited
+        FROM chats
         """
     ).fetchone()
+
+    archiving_since_row = conn.execute(
+        "SELECT archived_at FROM messages ORDER BY id ASC LIMIT 1"
+    ).fetchone()
+    archiving_since = archiving_since_row[0] if archiving_since_row else None
 
     total_chats = conn.execute("SELECT COUNT(*) FROM chats").fetchone()[0]
     total_senders = conn.execute("SELECT COUNT(*) FROM senders").fetchone()[0]
@@ -514,7 +522,7 @@ def get_stats(conn: sqlite3.Connection) -> dict[str, Any]:
         "total_edited": totals_row[2] or 0,
         "total_chats": total_chats,
         "total_senders": total_senders,
-        "archiving_since": totals_row[3],
+        "archiving_since": archiving_since,
         "per_chat": per_chat,
     }
 
