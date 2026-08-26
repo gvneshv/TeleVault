@@ -91,7 +91,7 @@ def _handle_sigterm(signum, frame) -> None:
 
 
 async def backfill_chat(
-    client: TelegramClient, conn, chat, limit: int | None, status_cb=None, min_id: int | None = None
+    client: TelegramClient, conn, chat, limit: int | None, min_id: int | None = None
 ) -> tuple[int, int]:
     """
     Archive a chat's history - either all of it, or (the default, see backfill.py's module docstring) only messages newer than min_id.
@@ -140,8 +140,6 @@ async def backfill_chat(
         processed += 1
         if processed % PROGRESS_INTERVAL == 0:
             logger.info(f"  ...{processed} messages processed so far ({stored} stored).")
-            if status_cb:
-                status_cb(processed)
 
         text = resolve_message_text(message)
         if not text:
@@ -207,8 +205,6 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
         "chats_total": None,
         "chats_done": 0,
         "current_chat": None,
-        "overall_processed": 0,
-        "overall_total": 0,
     }
     _write_status(status)
 
@@ -250,11 +246,6 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
         for attempt in range(1, max_flood_retries + 1):
             try:
                 status["current_chat"] = name
-                base_processed = status["overall_processed"]
-
-                def _status_cb(processed_in_chat, base=base_processed):
-                    status["overall_processed"] = base + processed_in_chat
-                    _write_status(status)
 
                 # Recomputed on every attempt, not just the first:
                 # if an earlier attempt got partway through before a flood wait hit,
@@ -265,7 +256,7 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
                     conn, utils.get_peer_id(chat)
                 )
                 stored, skipped = await backfill_chat(
-                    client, conn, chat, limit, status_cb=_status_cb, min_id=chat_min_id
+                    client, conn, chat, limit, min_id=chat_min_id
                 )
                 break
             except FloodWaitError as e:
@@ -307,9 +298,6 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
         logger.info(f"  '{name}': {stored} stored, {skipped} skipped.")
         total_stored += stored
         total_skipped += skipped
-        # backfill_chat() may never have crossed a PROGRESS_INTERVAL boundary at all (e.g. a chat with under 500 messages never triggers _status_cb),
-        # so make sure overall_processed reflects this chat's true final count regardless of whether any intra-chat callback fired.
-        status["overall_processed"] = base_processed + stored + skipped
         status["chats_done"] += 1
         _write_status(status)
 
