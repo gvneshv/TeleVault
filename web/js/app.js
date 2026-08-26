@@ -17,6 +17,7 @@
  */
 
 import "./views/chats.js";
+import "./archiver-toggle.js";
 import { initMessagesView } from "./views/messages.js";
 import { initDeletedView } from "./views/deleted.js";
 import { initStatsView } from "./views/stats.js";

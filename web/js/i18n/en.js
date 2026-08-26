@@ -135,4 +135,13 @@ export const en = {
 
   "messages.wholeWordLabel": "Whole word",
   "common.cancel": "Cancel",
+
+  "archiver.running": "Archiver running",
+  "archiver.stopped": "Archiver stopped",
+  "archiver.starting": "Starting…",
+  "archiver.stopping": "Stopping…",
+  "archiver.startAction": "Start",
+  "archiver.stopAction": "Stop",
+  "archiver.confirmStop":
+    "Stop the archiver? Real-time archiving will pause until you start it again.",
 };

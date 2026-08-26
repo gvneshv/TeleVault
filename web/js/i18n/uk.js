@@ -131,4 +131,13 @@ export const uk = {
 
   "messages.wholeWordLabel": "Ціле слово",
   "common.cancel": "Скасувати",
+
+  "archiver.running": "Архіватор працює",
+  "archiver.stopped": "Архіватор зупинено",
+  "archiver.starting": "Запуск…",
+  "archiver.stopping": "Зупинення…",
+  "archiver.startAction": "Запустити",
+  "archiver.stopAction": "Зупинити",
+  "archiver.confirmStop":
+    "Зупинити архіватор? Архівування в реальному часі призупиниться, доки ви не запустите його знову.",
 };
