@@ -10,7 +10,7 @@
  * Bump CACHE_NAME whenever shell files change, so old caches are evicted on the next visit instead of silently serving outdated JS/CSS.
  */
 
-const CACHE_NAME = "televault-shell-v15";
+const CACHE_NAME = "televault-shell-v16";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -21,12 +21,15 @@ const SHELL_FILES = [
   "/js/i18n.js",
   "/js/lib/dom.js",
   "/js/lib/pagination.js",
+  "/js/lib/order-toggle.js",
+  "/js/archiver-toggle.js",
   "/js/app.js",
   "/js/views/chats.js",
   "/js/views/messages.js",
   "/js/views/deleted.js",
   "/js/views/stats.js",
   "/js/views/health.js",
+  "/js/views/backfill.js",
   "/js/i18n/en.js",
   "/js/i18n/uk.js",
   "/manifest.webmanifest",
@@ -34,7 +37,17 @@ const SHELL_FILES = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)),
+    caches.open(CACHE_NAME).then((cache) =>
+      // cache.addAll() is all-or-nothing: a single 404 among SHELL_FILES fails the *entire* install and leaves this SW with no cache at all, silently.
+      // Cache each file independently instead, so one missing or renamed file (easy to hit mid-development) can't take the rest down.
+      Promise.allSettled(
+        SHELL_FILES.map((file) =>
+          cache.add(file).catch((err) => {
+            console.warn(`[sw] failed to precache ${file}:`, err);
+          }),
+        ),
+      ),
+    ),
   );
   self.skipWaiting();
 });
@@ -65,6 +78,10 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches
       .match(event.request)
-      .then((cached) => cached || fetch(event.request)),
+      .then((cached) => cached || fetch(event.request))
+      .catch((err) => {
+        console.warn(`[sw] fetch failed for ${event.request.url}:`, err);
+        throw err;
+      }),
   );
 });
