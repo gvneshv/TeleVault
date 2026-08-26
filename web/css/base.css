@@ -140,6 +140,42 @@ input:focus-visible {
   color: var(--color-ink);
 }
 
+.archiver-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.archiver-toggle:hover:not(:disabled) {
+  border-color: var(--color-focus);
+}
+
+.archiver-toggle:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.archiver-toggle__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-ink-muted);
+}
+
+/* Running = patina (the app's existing "healthy/active" green), same token the backfill dot already uses for "safe to proceed".
+   Stopped/unknown stay neutral gray - stopped isn't an error state, just off, so it doesn't get the seal-red treatment reserved for deleted/blocked meanings. */
+.archiver-toggle[data-state="running"] .archiver-toggle__dot {
+  background: var(--color-patina);
+}
+
+.archiver-toggle__label {
+  font-size: 12px;
+}
+
 /* ---------------------------------------------------------------------
    Content pane
    ------------------------------------------------------------------- */
@@ -544,6 +580,35 @@ input:focus-visible {
 .tv-select:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
+}
+
+/* Order toggle: replaces the old 2-option <select> with a single button that flips state and relabels itself,
+   same look-and-feel as .tv-select but without the always-empty dropdown-panel affordance a 2-option select doesn't need. */
+.tv-order-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-raised);
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.tv-order-toggle:hover {
+  border-color: var(--color-focus);
+}
+
+.tv-order-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.tv-order-toggle__arrow {
+  color: var(--color-ink-muted);
 }
 
 .message-list {

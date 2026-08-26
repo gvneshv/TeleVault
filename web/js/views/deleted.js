@@ -20,6 +20,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
+import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
   attach as attachPagination,
@@ -304,12 +305,7 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       class="messages-filter__search"
       placeholder="${t("deleted.searchPlaceholder")}"
     />
-    <div class="tv-select-wrapper">
-      <select id="deleted-order" class="tv-select">
-        <option value="desc">${t("common.newestFirst")}</option>
-        <option value="asc">${t("common.oldestFirst")}</option>
-      </select>
-    </div>
+    ${renderOrderToggle("deleted-order", deletedViewState.order)}
   `;
 
   const searchInput = filterBarRoot.querySelector("#deleted-search");
@@ -322,13 +318,16 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
     }, SEARCH_DEBOUNCE_MS);
   });
 
-  const orderSelect = filterBarRoot.querySelector("#deleted-order");
-  orderSelect.value = deletedViewState.order;
-  orderSelect.addEventListener("change", () => {
-    deletedViewState.order = orderSelect.value;
-    deletedViewState.page = 1;
-    loadDeleted(listRoot);
-  });
+  wireOrderToggle(
+    filterBarRoot,
+    "deleted-order",
+    () => deletedViewState.order,
+    (next) => {
+      deletedViewState.order = next;
+      deletedViewState.page = 1;
+      loadDeleted(listRoot);
+    },
+  );
 }
 
 /** Entry point called by app.js the first time the Deleted tab is opened. */
@@ -357,8 +356,6 @@ document.addEventListener("televault:langchange", () => {
     const currentQ = deletedViewState.q;
     initDeletedFilterBar(filterBarRoot, listRoot);
     filterBarRoot.querySelector("#deleted-search").value = currentQ;
-    filterBarRoot.querySelector("#deleted-order").value =
-      deletedViewState.order;
   }
   if (listRoot && deletedViewState.lastData) {
     renderDeletedView(listRoot, deletedViewState.lastData);

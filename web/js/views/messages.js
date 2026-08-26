@@ -19,6 +19,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
+import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
   attach as attachPagination,
@@ -172,12 +173,7 @@ function initFilterBar(filterBarRoot, listRoot) {
       <span class="tv-checkbox__box"></span>
       <span>${t("messages.onlyEditedLabel")}</span>
     </label>
-    <div class="tv-select-wrapper">
-      <select id="messages-order" class="tv-select">
-        <option value="desc">${t("common.newestFirst")}</option>
-        <option value="asc">${t("common.oldestFirst")}</option>
-      </select>
-    </div>
+    ${renderOrderToggle("messages-order", messagesViewState.order)}
   `;
 
   const searchInput = filterBarRoot.querySelector("#messages-search");
@@ -197,13 +193,16 @@ function initFilterBar(filterBarRoot, listRoot) {
     loadMessages(listRoot);
   });
 
-  const orderSelect = filterBarRoot.querySelector("#messages-order");
-  orderSelect.value = messagesViewState.order;
-  orderSelect.addEventListener("change", () => {
-    messagesViewState.order = orderSelect.value;
-    messagesViewState.page = 1;
-    loadMessages(listRoot);
-  });
+  wireOrderToggle(
+    filterBarRoot,
+    "messages-order",
+    () => messagesViewState.order,
+    (next) => {
+      messagesViewState.order = next;
+      messagesViewState.page = 1;
+      loadMessages(listRoot);
+    },
+  );
 }
 
 /**
@@ -239,8 +238,6 @@ document.addEventListener("televault:langchange", () => {
     filterBarRoot.querySelector("#messages-search").value = currentQ;
     filterBarRoot.querySelector("#messages-only-edited").checked =
       currentOnlyEdited;
-    filterBarRoot.querySelector("#messages-order").value =
-      messagesViewState.order;
   }
   if (listRoot && messagesViewState.lastData) {
     renderMessagesView(listRoot, messagesViewState.lastData);

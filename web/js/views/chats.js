@@ -17,6 +17,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
+import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
   attach as attachPagination,
@@ -131,28 +132,31 @@ function renderChatsView(root, data) {
   });
 }
 
+const CHATS_ORDER_LABEL_KEYS = {
+  descKey: "chats.mostRecentFirst",
+  ascKey: "chats.leastRecentFirst",
+};
+
 /**
- * Wire up the chats filter bar's sort-order dropdown.
+ * Wire up the chats filter bar's sort-order toggle.
  * @param {HTMLElement} filterBarRoot
  * @param {HTMLElement} listRoot
  */
 function initChatsFilterBar(filterBarRoot, listRoot) {
   filterBarRoot.innerHTML = `
-    <div class="tv-select-wrapper">
-      <select id="chats-order" class="tv-select">
-        <option value="desc">${t("chats.mostRecentFirst")}</option>
-        <option value="asc">${t("chats.leastRecentFirst")}</option>
-      </select>
-    </div>
+    ${renderOrderToggle("chats-order", chatsViewState.order, CHATS_ORDER_LABEL_KEYS)}
   `;
 
-  const orderSelect = filterBarRoot.querySelector("#chats-order");
-  orderSelect.value = chatsViewState.order;
-  orderSelect.addEventListener("change", () => {
-    chatsViewState.order = orderSelect.value;
-    chatsViewState.page = 1;
-    loadChats(listRoot);
-  });
+  wireOrderToggle(
+    filterBarRoot,
+    "chats-order",
+    () => chatsViewState.order,
+    (next) => {
+      chatsViewState.order = next;
+      chatsViewState.page = 1;
+      loadChats(listRoot);
+    },
+  );
 }
 
 /** Fetch one page of chats, cache it, and render it. */
@@ -188,7 +192,6 @@ document.addEventListener("televault:langchange", () => {
   const filterBarRoot = document.getElementById("chats-filter-bar");
   if (filterBarRoot) {
     initChatsFilterBar(filterBarRoot, root);
-    filterBarRoot.querySelector("#chats-order").value = chatsViewState.order;
   }
   if (root && chatsViewState.lastData) {
     renderChatsView(root, chatsViewState.lastData);
