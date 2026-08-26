@@ -147,7 +147,7 @@ function renderProgress(status) {
       <div class="backfill-progress__chat">${stateLabel}${status.current_chat ? ` — ${escapeHtml(status.current_chat)}` : ""}</div>
       <div class="progress-bar"><div class="progress-bar__fill" style="width: ${chatsPercent}%"></div></div>
       <div class="backfill-progress__meta">
-        <span>${status.chats_done ?? 0}/${status.chats_total ?? "?"} ${t("backfill.chats")} · ${chatsPercent}% · ${msgPercent.toFixed(1)}% ${t("backfill.byMessages")}</span>
+        <span>${status.chats_done ?? 0}/${status.chats_total ?? "?"} ${t("backfill.chats")} · ${chatsPercent}%</span>
         <span>${eta !== null && status.state === "running" ? `${t("backfill.eta")}: ~${formatDuration(eta)}` : formatDuration(elapsed)}</span>
       </div>
       ${status.state === "running" ? `<button id="backfill-cancel-btn" class="backfill-cancel-btn">${t("backfill.cancel")}</button>` : ""}
@@ -333,7 +333,8 @@ async function renderRoot(root) {
 
   const justFinished =
     backfillViewState.lastSeenState === "running" && status.state !== "running";
-  const shouldFetchHistory = !backfillViewState.historyEverFetched || justFinished;
+  const shouldFetchHistory =
+    !backfillViewState.historyEverFetched || justFinished;
   backfillViewState.lastSeenState = status.state;
 
   // History only changes when a run starts or finishes - re-fetching it on
