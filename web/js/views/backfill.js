@@ -12,8 +12,15 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
+import { describeError } from "../lib/errors.js";
 
 const POLL_INTERVAL_MS = 3000;
+// Slower than the backfill-progress poll,
+// and runs independently of it - the telethon connection note used to only refresh as a side effect of the backfill-progress poll,
+// which only runs while a backfill is actively in progress.
+// Starting/stopping the live archiver from the nav button while sitting idle on this tab left the note frozen at whatever it said when the tab was first opened,
+// since nothing was polling to notice the change.
+const TELETHON_POLL_INTERVAL_MS = 5000;
 
 // A run is only ever truly over once the status file says so explicitly.
 // "idle" is NOT one of these - it's also what fetchBackfillStatus() returns on a network hiccup,
@@ -26,10 +33,12 @@ const TERMINAL_STATES = new Set(["completed", "cancelled", "error"]);
 const backfillViewState = {
   initialized: false,
   pollTimer: null,
+  telethonPollTimer: null,
   telethonRunning: null,
   modalOpen: false,
   historyFetchInFlight: false,
   historyEverFetched: false,
+  historyHtml: null,
   lastSeenState: null,
 };
 
@@ -247,6 +256,22 @@ async function fetchBackfillHistory() {
   }
 }
 
+async function refreshTelethonStatusRow() {
+  await fetchTelethonStatus();
+  const row = document.querySelector(".backfill-status-row");
+  // Only patch if the row is currently on screen (view still open) - replacing renderTelethonStatus()'s wrapper element in place,
+  // not the whole root, so this can't clobber the progress bar/history/modal it happens to run alongside.
+  if (row) row.outerHTML = renderTelethonStatus();
+}
+
+function startTelethonPolling() {
+  if (backfillViewState.telethonPollTimer) return;
+  backfillViewState.telethonPollTimer = setInterval(
+    refreshTelethonStatusRow,
+    TELETHON_POLL_INTERVAL_MS,
+  );
+}
+
 async function openModal(root) {
   backfillViewState.modalOpen = true;
   await renderRoot(root);
@@ -272,13 +297,17 @@ async function openModal(root) {
       const limit =
         document.getElementById("backfill-limit-input").value || null;
       try {
-        await fetch("/api/backfill/start", {
+        const res = await fetch("/api/backfill/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat, limit: limit ? Number(limit) : null }),
         });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          window.alert(describeError(body.detail));
+        }
       } catch {
-        // The status poll below reflects whatever actually happened - no separate toast system needed.
+        window.alert(t("common.error"));
       }
       backfillViewState.modalOpen = false;
       startPolling(root);
@@ -303,7 +332,7 @@ async function renderRoot(root) {
     </button>
     ${renderProgress(status)}
     <h2 class="stats-section-title backfill-history-title">${t("backfill.historyTitle")}</h2>
-    <div id="backfill-history-root">${t("common.loading")}</div>
+    <div id="backfill-history-root">${backfillViewState.historyHtml ?? t("common.loading")}</div>
     ${backfillViewState.modalOpen ? renderModal() : ""}
   `;
 
@@ -315,12 +344,16 @@ async function renderRoot(root) {
     });
   document
     .getElementById("backfill-cancel-btn")
-    ?.addEventListener("click", async () => {
+    ?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = t("common.loading");
       try {
         await fetch("/api/backfill/cancel", { method: "POST" });
       } catch {
-        // Best-effort - next poll reflects reality either way.
+        // Best-effort - the render below reflects reality either way.
       }
+      await renderRoot(root);
     });
 
   if (status.state === "running") {
@@ -347,8 +380,9 @@ async function renderRoot(root) {
     backfillViewState.historyFetchInFlight = true;
     fetchBackfillHistory()
       .then((history) => {
+        backfillViewState.historyHtml = renderHistory(history);
         const historyRoot = document.getElementById("backfill-history-root");
-        if (historyRoot) historyRoot.innerHTML = renderHistory(history);
+        if (historyRoot) historyRoot.innerHTML = backfillViewState.historyHtml;
       })
       .finally(() => {
         backfillViewState.historyFetchInFlight = false;
@@ -368,6 +402,7 @@ function initBackfillView() {
   backfillViewState.initialized = true;
   const root = document.getElementById("backfill-root");
   if (root) renderRoot(root);
+  startTelethonPolling();
 }
 
 // Re-render in the new language. Routed through openModal() rather than a
