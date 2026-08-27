@@ -10,8 +10,15 @@
  */
 
 import { t } from "./i18n.js";
+import { describeError } from "./lib/errors.js";
 
 const POLL_INTERVAL_MS = 15000;
+
+// main.py takes a moment to actually connect to Telegram (or disconnect) after the start/stop request returns
+// - a single status check immediately afterward often still shows the OLD state, which made the button look like it hadn't done anything.
+// Poll more tightly for a short window right after a click instead of waiting for the next slow periodic tick.
+const SETTLE_POLL_INTERVAL_MS = 1000;
+const SETTLE_POLL_MAX_ATTEMPTS = 15;
 
 const state = {
   // "unknown" until the first status fetch resolves - avoids flashing a wrong running/stopped label for a moment on page load.
@@ -21,12 +28,13 @@ const state = {
 
 /** @param {HTMLElement} button */
 function render(button) {
-  const dot = button.querySelector(".archiver-toggle__dot");
   const label = button.querySelector(".archiver-toggle__label");
 
   if (state.busy) {
     label.textContent =
-      state.status === "running" ? t("archiver.stopping") : t("archiver.starting");
+      state.status === "running"
+        ? t("archiver.stopping")
+        : t("archiver.starting");
     button.disabled = true;
     button.dataset.state = "busy";
     return;
@@ -42,7 +50,7 @@ function render(button) {
   } else {
     label.textContent = "";
   }
-  void dot; // color comes from data-state in CSS, nothing to set here directly.
+  // Dot color comes from the [data-state] CSS rule, driven by button.dataset.state.
 }
 
 /** @param {HTMLElement} button */
@@ -58,32 +66,60 @@ async function refreshStatus(button) {
   render(button);
 }
 
+/**
+ * Poll status repeatedly until it reflects the expected post-action state
+ * (or we give up after SETTLE_POLL_MAX_ATTEMPTS)
+ * - keeps the button in its "busy" state the whole time so the user sees continuous feedback instead of one premature check.
+ * @param {HTMLElement} button
+ * @param {"running"|"stopped"} expected
+ */
+async function settlePoll(button, expected) {
+  for (let attempt = 0; attempt < SETTLE_POLL_MAX_ATTEMPTS; attempt++) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, SETTLE_POLL_INTERVAL_MS),
+    );
+    await refreshStatus(button); // updates state.status, still renders busy since state.busy is still true
+    if (state.status === expected) break;
+  }
+  state.busy = false;
+  render(button);
+}
+
 /** @param {HTMLElement} button */
 async function handleClick(button) {
   if (state.busy || state.status === "unknown") return;
 
-  if (state.status === "running" && !window.confirm(t("archiver.confirmStop"))) {
+  if (
+    state.status === "running" &&
+    !window.confirm(t("archiver.confirmStop"))
+  ) {
     return;
   }
 
+  const wasRunning = state.status === "running";
   state.busy = true;
   render(button);
 
-  const endpoint = state.status === "running" ? "stop" : "start";
+  const endpoint = wasRunning ? "stop" : "start";
+  let ok = true;
   try {
     const res = await fetch(`/api/telethon/${endpoint}`, { method: "POST" });
     if (!res.ok) {
+      ok = false;
       const body = await res.json().catch(() => ({}));
-      window.alert(body.detail || `HTTP ${res.status}`);
+      window.alert(describeError(body.detail));
     }
   } catch {
+    ok = false;
     window.alert(t("common.error"));
   }
 
-  state.busy = false;
-  // main.py takes a moment to connect (or to disconnect) after the request returns,
-  // so the very next status check may still show the old state - that's fine, the next poll tick will catch up.
-  await refreshStatus(button);
+  if (ok) {
+    await settlePoll(button, wasRunning ? "stopped" : "running");
+  } else {
+    state.busy = false;
+    await refreshStatus(button);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {

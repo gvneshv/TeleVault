@@ -144,4 +144,11 @@ export const en = {
   "archiver.stopAction": "Stop",
   "archiver.confirmStop":
     "Stop the archiver? Real-time archiving will pause until you start it again.",
+
+  "error.alreadyRunning": "It's already running.",
+  "error.notRunning": "It isn't running right now.",
+  "error.archiverConnected":
+    "The live archiver is currently connected. Stop it first — a backfill and the live archiver can't use the same Telegram session at the same time.",
+  "error.backfillRunning":
+    "A backfill is currently running. Stop it first — it and the live archiver can't use the same Telegram session at the same time.",
 };
