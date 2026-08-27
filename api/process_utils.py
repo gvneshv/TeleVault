@@ -1,6 +1,8 @@
 """Small process-management helpers shared by the backfill and telethon (archiver) routes."""
+import json
 import os
 import subprocess
+from pathlib import Path
 
 
 def pid_alive(pid: int) -> bool:
@@ -33,3 +35,27 @@ def pid_alive(pid: int) -> bool:
         return True
     except Exception:
         return False
+
+
+def is_backfill_running(status_path) -> bool:
+    """
+    Whether a backfill is genuinely still running, per the persisted status file.
+
+    Deliberately does NOT just trust status["state"] == "running":
+    if the process that was supposed to update this file died without cleaning up
+    (a hard kill, a crash, or - on Windows - the SIGTERM-maps-to-TerminateProcess gap documented in api/routes/backfill.py),
+    the file can be left stuck saying "running" forever with nothing left alive to correct it.
+    Checking the persisted pid's actual liveness is what makes that self-healing instead of a permanently stuck flag
+    - used by both start_backfill()'s own "already running" guard and start_archiver()'s mutual-exclusion check, so a stuck file can't block the archiver either.
+    """
+    path = Path(status_path)
+    if not path.exists():
+        return False
+    try:
+        status = json.loads(path.read_text())
+    except Exception:
+        return False
+    if status.get("state") != "running":
+        return False
+    pid = status.get("pid")
+    return bool(pid) and pid_alive(pid)

@@ -25,7 +25,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from config import settings
-from api.process_utils import pid_alive
+from api.process_utils import pid_alive, is_backfill_running
 
 router = APIRouter(prefix="/telethon", tags=["telethon"])
 STALE_AFTER_SECONDS = 60
@@ -49,13 +49,7 @@ def _is_running() -> bool:
 
 
 def _backfill_is_running() -> bool:
-    path = Path(settings.backfill_status_path)
-    if not path.exists():
-        return False
-    try:
-        return json.loads(path.read_text()).get("state") == "running"
-    except Exception:
-        return False
+    return is_backfill_running(settings.backfill_status_path)
 
 
 @router.get("/status")
