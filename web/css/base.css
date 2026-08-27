@@ -133,6 +133,7 @@ input:focus-visible {
 .app-nav__controls button,
 .app-nav__controls select {
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -143,8 +144,9 @@ input:focus-visible {
 .archiver-toggle {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  white-space: nowrap;
+  min-width: 0;
   cursor: pointer;
   transition: border-color 0.15s ease;
 }
@@ -166,14 +168,17 @@ input:focus-visible {
   background: var(--color-ink-muted);
 }
 
-/* Running = patina (the app's existing "healthy/active" green), same token the backfill dot already uses for "safe to proceed".
+/* Running = patina (the app's existing "healthy/active" green).
    Stopped/unknown stay neutral gray - stopped isn't an error state, just off, so it doesn't get the seal-red treatment reserved for deleted/blocked meanings. */
 .archiver-toggle[data-state="running"] .archiver-toggle__dot {
   background: var(--color-patina);
 }
 
 .archiver-toggle__label {
-  font-size: 12px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------------
@@ -957,10 +962,15 @@ input:focus-visible {
   flex-shrink: 0;
 }
 
-/* Green = safe to start a backfill (live archiver disconnected).
-   Red = blocked (live archiver connected, holds the Telegram session). */
-.backfill-status-dot--on { background: var(--color-seal); }
-.backfill-status-dot--off { background: var(--color-patina); }
+/* Deliberately NOT colored red/green:
+   this is the same underlying "is the archiver running" state the nav button's dot already shows with its own green=running/gray=stopped meaning,
+   and a connected archiver isn't a bad thing in general - it only matters here because it blocks starting a backfill.
+   That warning has its own banner in the start modal (.modal__warning) instead;
+   this dot is just an ambient informational note. */
+.backfill-status-dot--on,
+.backfill-status-dot--off {
+  background: var(--color-ink-muted);
+}
 
 .backfill-start-btn {
   padding: 9px 18px;
