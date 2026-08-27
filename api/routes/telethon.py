@@ -25,6 +25,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from config import settings
+from api.process_utils import pid_alive
 
 router = APIRouter(prefix="/telethon", tags=["telethon"])
 STALE_AFTER_SECONDS = 60
@@ -69,13 +70,18 @@ def get_telethon_status():
 @router.post("/start")
 def start_archiver():
     if _is_running():
-        raise HTTPException(409, "The userbot is already running.")
+        raise HTTPException(
+            409, {"message": "The userbot is already running.", "reason": "already_running"}
+        )
     if _backfill_is_running():
         raise HTTPException(
             409,
-            "A backfill is currently running. Stop it before starting the "
-            "userbot - Telethon sessions only support one active connection "
-            "at a time.",
+            {
+                "message": "A backfill is currently running. Stop it before starting the "
+                "userbot - Telethon sessions only support one active connection "
+                "at a time.",
+                "reason": "backfill_running",
+            },
         )
     subprocess.Popen([sys.executable, "main.py"])
     return {"started": True}
@@ -84,12 +90,15 @@ def start_archiver():
 @router.post("/stop")
 def stop_archiver():
     data = _heartbeat()
-    if data is None:
-        raise HTTPException(409, "The userbot is not currently running.")
+    if data is None or "pid" not in data or not pid_alive(data["pid"]):
+        raise HTTPException(
+            409, {"message": "The userbot is not currently running.", "reason": "not_running"}
+        )
     try:
         os.kill(data["pid"], signal.SIGTERM)
-    except ProcessLookupError:
-        # Heartbeat file was stale and the process is already gone -
-        # nothing left to stop.
-        raise HTTPException(409, "The userbot is not currently running.")
+    except OSError:
+        # Died between the pid_alive() check above and here - already gone, nothing left to stop.
+        raise HTTPException(
+            409, {"message": "The userbot is not currently running.", "reason": "not_running"}
+        )
     return {"stopping": True}

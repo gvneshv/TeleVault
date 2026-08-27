@@ -38,6 +38,7 @@ import argparse
 import asyncio
 import logging
 import json
+import os
 import signal
 import sqlite3
 import time
@@ -201,6 +202,7 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
 
     status = {
         "state": "running",
+        "pid": os.getpid(),
         "started_at": datetime.now(timezone.utc).isoformat(),
         "chats_total": None,
         "chats_done": 0,
