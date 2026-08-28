@@ -103,6 +103,7 @@ export const en = {
   "backfill.checkingConnection": "Checking live connection…",
   "backfill.connectionOn": "Live archiver is currently connected",
   "backfill.connectionOff": "Live archiver is not connected",
+  "backfill.blockedNote": "— backfill is unavailable while it’s running.",
   "backfill.startButton": "Start backfill",
   "backfill.confirmTitle": "Start a backfill?",
   "backfill.confirmBody":

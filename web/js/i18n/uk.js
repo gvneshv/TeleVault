@@ -99,6 +99,7 @@ export const uk = {
   "backfill.checkingConnection": "Перевірка з'єднання…",
   "backfill.connectionOn": "Архівування зараз підключено",
   "backfill.connectionOff": "Архівування зараз відключено",
+  "backfill.blockedNote": "— імпорт історії недоступний, доки він працює.",
   "backfill.startButton": "Почати імпорт історії",
   "backfill.confirmTitle": "Почати імпорт історії?",
   "backfill.confirmBody":
