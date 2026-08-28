@@ -39,7 +39,9 @@ const backfillViewState = {
   historyFetchInFlight: false,
   historyEverFetched: false,
   historyHtml: null,
+  historyData: null,
   lastSeenState: null,
+  renderGeneration: 0,
 };
 
 // This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
@@ -102,22 +104,18 @@ function renderDisclaimer() {
 
 function renderTelethonStatus() {
   const running = backfillViewState.telethonRunning;
-  const dotClass =
-    running === null
-      ? ""
-      : running
-        ? "backfill-status-dot--on"
-        : "backfill-status-dot--off";
   const label =
     running === null
       ? t("backfill.checkingConnection")
       : running
         ? t("backfill.connectionOn")
         : t("backfill.connectionOff");
+  // Only call out the row (and only show the second sentence) when the archiver is actually blocking a backfill
+  // - a connected archiver isn't inherently a bad state anywhere else in the app, it only matters here.
+  const blocked = running === true;
   return `
-    <div class="backfill-status-row">
-      <span class="backfill-status-dot ${dotClass}"></span>
-      <span>${label}</span>
+    <div class="backfill-status-row ${blocked ? "backfill-status-row--blocked" : ""}">
+      <span>${label}${blocked ? ` ${t("backfill.blockedNote")}` : ""}</span>
     </div>
   `;
 }
@@ -316,6 +314,8 @@ async function openModal(root) {
 }
 
 async function renderRoot(root) {
+  const myGeneration = ++backfillViewState.renderGeneration;
+
   // Status and telethon-connection checks are fast, file-based reads.
   // History is DB-backed and fetched separately below, once the DOM below already exists - a slow history query (e.g. under heavy write load)
   // must never hold back the progress bar or Start button from updating, which is exactly what happened when all three were awaited together.
@@ -323,6 +323,13 @@ async function renderRoot(root) {
     fetchBackfillStatus(),
     fetchTelethonStatus(),
   ]);
+
+  // setInterval fires on a fixed clock regardless of whether the previous tick's fetch has resolved yet.
+  // If an earlier tick is slow (network jitter) and a later tick's fetch resolves first,
+  // the earlier one must not still overwrite the DOM with its now-stale result once it finally resolves
+  // - that looked like the progress bar randomly failing to appear (or reverting) until an unrelated re-render
+  // (e.g. switching tabs and back) happened to land cleanly.
+  if (myGeneration !== backfillViewState.renderGeneration) return;
 
   root.innerHTML = `
     ${renderDisclaimer()}
@@ -380,6 +387,7 @@ async function renderRoot(root) {
     backfillViewState.historyFetchInFlight = true;
     fetchBackfillHistory()
       .then((history) => {
+        backfillViewState.historyData = history;
         backfillViewState.historyHtml = renderHistory(history);
         const historyRoot = document.getElementById("backfill-history-root");
         if (historyRoot) historyRoot.innerHTML = backfillViewState.historyHtml;
@@ -412,6 +420,13 @@ function initBackfillView() {
 // directly here would leave a freshly-relabeled modal with dead buttons.
 document.addEventListener("televault:langchange", () => {
   if (!backfillViewState.initialized) return;
+  // renderRoot() re-inserts backfillViewState.historyHtml as-is (see the "Loading forever" fix above) rather than refetching on every render,
+  // so without this it stayed in whatever language it was originally fetched in.
+  if (backfillViewState.historyData) {
+    backfillViewState.historyHtml = renderHistory(
+      backfillViewState.historyData,
+    );
+  }
   const root = document.getElementById("backfill-root");
   if (!root) return;
   if (backfillViewState.modalOpen) openModal(root);
