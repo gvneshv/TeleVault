@@ -126,12 +126,20 @@ input:focus-visible {
 
 .app-nav__controls {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   padding: 0 8px;
 }
 
+.app-nav__controls-row {
+  display: flex;
+  gap: 6px;
+}
+
 .app-nav__controls button,
-.app-nav__controls select {
+.app-nav__controls select,
+.app-nav__controls-row button,
+.app-nav__controls-row select {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
@@ -951,25 +959,17 @@ input:focus-visible {
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
+  padding: 4px 0;
   font-size: 13px;
 }
 
-.backfill-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-ink-muted);
-  flex-shrink: 0;
-}
-
-/* Deliberately NOT colored red/green:
-   this is the same underlying "is the archiver running" state the nav button's dot already shows with its own green=running/gray=stopped meaning,
-   and a connected archiver isn't a bad thing in general - it only matters here because it blocks starting a backfill.
-   That warning has its own banner in the start modal (.modal__warning) instead;
-   this dot is just an ambient informational note. */
-.backfill-status-dot--on,
-.backfill-status-dot--off {
-  background: var(--color-ink-muted);
+/* Only applied when the archiver is actually blocking a backfill right now - reuses the same colors as .modal__warning below,
+   so this ambient note and that banner read as the same kind of "heads up" rather than two different warning styles for the same condition. */
+.backfill-status-row--blocked {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
 }
 
 .backfill-start-btn {
