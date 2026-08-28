@@ -95,4 +95,9 @@ def stop_archiver():
         raise HTTPException(
             409, {"message": "The userbot is not currently running.", "reason": "not_running"}
         )
+    # Delete the heartbeat ourselves rather than waiting for main.py's own shutdown code to do it - on Windows that code never runs (see this module's docstring),
+    # which otherwise left the heartbeat's last real timestamp sitting there,
+    # making every other "is the archiver running?" check
+    # (e.g. the backfill start guard) take up to STALE_AFTER_SECONDS to notice the process was actually already gone.
+    Path(settings.heartbeat_path).unlink(missing_ok=True)
     return {"stopping": True}
