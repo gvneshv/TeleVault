@@ -35,6 +35,7 @@ from config import settings
 
 from api.dependencies import get_db
 from api.process_utils import pid_alive
+from utils.atomic_write import atomic_write_json
 
 router = APIRouter(prefix="/backfill", tags=["backfill"])
 STALE_AFTER_SECONDS = 60
@@ -68,10 +69,7 @@ def _read_status() -> dict:
 
 
 def _write_status(data: dict) -> None:
-    path = Path(settings.backfill_status_path)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data))
-    tmp.replace(path)
+    atomic_write_json(Path(settings.backfill_status_path), data)
 
 
 def _running_pid() -> int | None:
@@ -148,6 +146,23 @@ def cancel_backfill():
     status = _read_status()
     status["state"] = "cancelled"
     _write_status(status)
+
+    # Same reasoning applies to the backfill_runs history row:
+    # it's normally only written once, right at the natural end of run() - which a hard-killed process never reaches,
+    # leaving its History entry stuck on "running" forever too.
+    # run_id was persisted into the status file at startup specifically so this endpoint could reach it.
+    run_id = status.get("run_id")
+    if run_id is not None:
+        conn = sqlite3.connect(settings.db_path)
+        try:
+            conn.execute(
+                "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = 'cancelled', "
+                "chats_total = ?, chats_done = ? WHERE id = ? AND status = 'running'",
+                (status.get("chats_total"), status.get("chats_done"), run_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     return {"cancelling": True}
 

@@ -54,6 +54,7 @@ from telethon.tl.types import PeerChat
 import db
 from config import settings
 from utils.logging_setup import setup_logging
+from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
 
 logger = logging.getLogger(__name__)
@@ -70,12 +71,8 @@ def _write_status(data: dict) -> None:
     """
     Overwrite the backfill status file.
     Read by GET /api/backfill/status so the web UI can render progress without any direct coupling to this process beyond this one file.
-    Temp-file-then-replace so the API never reads a half-written file.
     """
-    path = Path(settings.backfill_status_path)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data))
-    tmp.replace(path)
+    atomic_write_json(Path(settings.backfill_status_path), data)
 
 
 _cancelled = False
@@ -203,6 +200,7 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
     status = {
         "state": "running",
         "pid": os.getpid(),
+        "run_id": run_id,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "chats_total": None,
         "chats_done": 0,
