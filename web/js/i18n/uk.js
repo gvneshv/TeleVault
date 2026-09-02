@@ -99,7 +99,7 @@ export const uk = {
   "backfill.checkingConnection": "Перевірка з'єднання…",
   "backfill.connectionOn": "Архівування зараз підключено",
   "backfill.connectionOff": "Архівування зараз відключено",
-  "backfill.blockedNote": "— імпорт історії недоступний, доки він працює.",
+  "backfill.blockedNote": "— імпорт історії недоступний, доки воно працює.",
   "backfill.startButton": "Почати імпорт історії",
   "backfill.confirmTitle": "Почати імпорт історії?",
   "backfill.confirmBody":
@@ -140,7 +140,7 @@ export const uk = {
   "archiver.startAction": "Запустити",
   "archiver.stopAction": "Зупинити",
   "archiver.confirmStop":
-    "Зупинити архіватор? Архівування в реальному часі призупиниться, доки ви не запустите його знову.",
+    "Зупинити архіватор? Архівування призупиниться, доки ви не запустите його знову.",
 
   "error.alreadyRunning": "Він уже запущений.",
   "error.notRunning": "Зараз він не запущений.",

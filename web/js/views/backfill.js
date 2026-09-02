@@ -42,6 +42,7 @@ const backfillViewState = {
   historyData: null,
   lastSeenState: null,
   renderGeneration: 0,
+  awaitingStart: false,
 };
 
 // This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
@@ -294,12 +295,14 @@ async function openModal(root) {
         document.getElementById("backfill-chat-input").value.trim() || null;
       const limit =
         document.getElementById("backfill-limit-input").value || null;
+      let started = false;
       try {
         const res = await fetch("/api/backfill/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat, limit: limit ? Number(limit) : null }),
         });
+        started = res.ok;
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           window.alert(describeError(body.detail));
@@ -308,7 +311,13 @@ async function openModal(root) {
         window.alert(t("common.error"));
       }
       backfillViewState.modalOpen = false;
-      startPolling(root);
+      if (started) {
+        // The status file still holds the PREVIOUS run's terminal state (completed/cancelled) for a moment,
+        // until the new subprocess overwrites it - without this flag,
+        // that stale read looks indistinguishable from "this new run already finished" and wrongly clears the poll timer we're about to start.
+        backfillViewState.awaitingStart = true;
+        startPolling(root);
+      }
       await renderRoot(root);
     });
 }
@@ -365,9 +374,18 @@ async function renderRoot(root) {
 
   if (status.state === "running") {
     startPolling(root);
-  } else if (TERMINAL_STATES.has(status.state) && backfillViewState.pollTimer) {
+    backfillViewState.awaitingStart = false;
+  } else if (
+    TERMINAL_STATES.has(status.state) &&
+    backfillViewState.pollTimer &&
+    !backfillViewState.awaitingStart
+  ) {
     clearInterval(backfillViewState.pollTimer);
     backfillViewState.pollTimer = null;
+  } else if (status.state === "idle") {
+    // Genuinely idle (not just a stale pre-overwrite read) - a start attempt that's still "awaiting" at this point isn't going to resolve on its own,
+    // so stop treating stale terminal reads as suspect.
+    backfillViewState.awaitingStart = false;
   }
   // "idle": leave any existing poll timer alone - see TERMINAL_STATES' comment.
 
