@@ -3,11 +3,13 @@ Application entry point - start TeleVault with: python main.py
  
 Startup sequence:
   1. Logging
-  2. Database (open connection, apply schema)
-  3. Telethon client (authenticate if needed, then connect)
-  4. Register event handlers
-  5. Run until interrupted (Ctrl-C or SIGTERM)
-  6. Graceful shutdown
+  2. Guard: refuse to start if another instance is already running, or if a backfill is currently in progress
+     (enforced here so it applies no matter how this script is launched - terminal, cron, or the web UI)
+  3. Database (open connection, apply schema)
+  4. Telethon client (authenticate if needed, then connect)
+  5. Register event handlers
+  6. Run until interrupted (Ctrl-C or SIGTERM)
+  7. Graceful shutdown
  
 Telethon uses asyncio internally, so the entry point is an async function run via asyncio.run().
 Everything Telegram-related happens inside that loop.
@@ -19,6 +21,7 @@ import signal
 import contextlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -28,12 +31,57 @@ import db
 from config import settings
 from utils.logging_setup import setup_logging
 from handlers import on_message, on_delete, on_edit
+from api.process_utils import pid_alive, is_backfill_running
 
 
 logger = logging.getLogger(__name__)
 
 
 HEARTBEAT_INTERVAL_SECONDS = 20
+
+# How old a heartbeat can be before we stop trusting it as "still live".
+# Mirrors api/routes/telethon.py's STALE_AFTER_SECONDS - kept as a separate constant
+# rather than a shared import to avoid pulling API-layer code into this module for a single number;
+# if you ever change one, change both.
+STALE_HEARTBEAT_SECONDS = 60
+
+
+def _refuse_if_already_running() -> None:
+    """
+    Exit immediately if another live archiver session or an active backfill already holds the Telegram connection.
+
+    api/routes/telethon.py's start_archiver() already refuses to start a second archiver,
+    or to start one while a backfill is running - but that check only runs when the archiver is launched THROUGH the API (i.e. the web UI's Archiver button).
+    Running `python main.py` directly from a terminal bypassed it entirely,
+    so nothing stopped two live Telethon sessions - or a live session plus an in-progress backfill - from fighting over the same account.
+    That's the can be a cause of the spurious 2FA re-prompt from Telegram.
+
+    Checking here, at the one true entry point regardless of how it was launched, is what actually closes that gap.
+    Runs before anything else (DB, Telethon) is opened, so exiting here needs no cleanup.
+    """
+    heartbeat_path = Path(settings.heartbeat_path)
+    if heartbeat_path.exists():
+        try:
+            data = json.loads(heartbeat_path.read_text())
+            age = time.time() - data.get("updated_at", 0)
+            if age < STALE_HEARTBEAT_SECONDS and pid_alive(data.get("pid")):
+                logger.error(
+                    "TeleVault is already running (pid %s, heartbeat %.0fs old). "
+                    "Refusing to start a second instance.",
+                    data.get("pid"), age,
+                )
+                sys.exit(1)
+        except (json.JSONDecodeError, OSError):
+            # Corrupt/unreadable heartbeat - treat as no live instance, same as api/routes/telethon.py's own heartbeat-reading helper does.
+            pass
+
+    if is_backfill_running(settings.backfill_status_path):
+        logger.error(
+            "A backfill is currently running." \
+            "Stop it before starting the userbot - Telethon sessions only support one active connection at a time."
+        )
+        sys.exit(1)
+
 
 async def _heartbeat_loop(path: Path) -> None:
     """
@@ -80,6 +128,11 @@ async def main() -> None:
     # ------------------------------------------------------------------ #
     setup_logging(log_level=settings.log_level, log_file=settings.log_file)
     logger.info("Starting TeleVault...")
+
+    # ------------------------------------------------------------------ #
+    # 1.5. Single-instance / backfill-exclusion guard                     
+    # ------------------------------------------------------------------ #
+    _refuse_if_already_running()
 
     # ------------------------------------------------------------------ #
     # 2. Database                                                         
