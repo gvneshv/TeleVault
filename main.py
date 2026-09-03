@@ -31,19 +31,13 @@ import db
 from config import settings
 from utils.logging_setup import setup_logging
 from handlers import on_message, on_delete, on_edit
-from api.process_utils import pid_alive, is_backfill_running
+from api.process_utils import is_archiver_running, is_backfill_running
 
 
 logger = logging.getLogger(__name__)
 
 
 HEARTBEAT_INTERVAL_SECONDS = 20
-
-# How old a heartbeat can be before we stop trusting it as "still live".
-# Mirrors api/routes/telethon.py's STALE_AFTER_SECONDS - kept as a separate constant
-# rather than a shared import to avoid pulling API-layer code into this module for a single number;
-# if you ever change one, change both.
-STALE_HEARTBEAT_SECONDS = 60
 
 
 def _refuse_if_already_running() -> None:
@@ -54,26 +48,15 @@ def _refuse_if_already_running() -> None:
     or to start one while a backfill is running - but that check only runs when the archiver is launched THROUGH the API (i.e. the web UI's Archiver button).
     Running `python main.py` directly from a terminal bypassed it entirely,
     so nothing stopped two live Telethon sessions - or a live session plus an in-progress backfill - from fighting over the same account.
-    That's the can be a cause of the spurious 2FA re-prompt from Telegram.
 
     Checking here, at the one true entry point regardless of how it was launched, is what actually closes that gap.
     Runs before anything else (DB, Telethon) is opened, so exiting here needs no cleanup.
     """
-    heartbeat_path = Path(settings.heartbeat_path)
-    if heartbeat_path.exists():
-        try:
-            data = json.loads(heartbeat_path.read_text())
-            age = time.time() - data.get("updated_at", 0)
-            if age < STALE_HEARTBEAT_SECONDS and pid_alive(data.get("pid")):
-                logger.error(
-                    "TeleVault is already running (pid %s, heartbeat %.0fs old). "
-                    "Refusing to start a second instance.",
-                    data.get("pid"), age,
-                )
-                sys.exit(1)
-        except (json.JSONDecodeError, OSError):
-            # Corrupt/unreadable heartbeat - treat as no live instance, same as api/routes/telethon.py's own heartbeat-reading helper does.
-            pass
+    if is_archiver_running(settings.heartbeat_path):
+        logger.error(
+            "TeleVault is already running (heartbeat is live). Refusing to start a second instance."
+        )
+        sys.exit(1)
 
     if is_backfill_running(settings.backfill_status_path):
         logger.error(

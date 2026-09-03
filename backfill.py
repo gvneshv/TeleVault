@@ -41,6 +41,7 @@ import json
 import os
 import signal
 import sqlite3
+import sys
 import time
 
 from pathlib import Path
@@ -56,6 +57,7 @@ from config import settings
 from utils.logging_setup import setup_logging
 from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
+from api.process_utils import is_archiver_running, is_backfill_running
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,32 @@ def _write_status(data: dict) -> None:
 
 
 _cancelled = False
+
+
+def _refuse_if_conflicting() -> None:
+    """
+    Exit immediately if another backfill is already running, or if the live archiver (main.py) currently holds the Telegram session.
+
+    api/routes/backfill.py's start_backfill() already refuses both cases
+    - but only when a backfill is launched THROUGH the API (the web UI's "Start Backfill" button).
+    Running `python backfill.py` directly from a terminal skipped that check entirely
+    - the same gap main.py itself had on the archiver side (see main.py's own _refuse_if_already_running()).
+    Checking here, at the one true entry point regardless of how it was launched, is what actually closes it.
+    Runs before anything (DB, Telethon, the backfill_runs row) is opened, so exiting here needs no cleanup.
+    """
+    if is_backfill_running(settings.backfill_status_path):
+        logger.error(
+            "A backfill is already running." \
+            "Refusing to start a second one - they would both write to the same database and fight over the same Telegram session."
+        )
+        sys.exit(1)
+
+    if is_archiver_running(settings.heartbeat_path):
+        logger.error(
+            "The live userbot (main.py) appears to be connected." \
+            "Stop it before starting a backfill - Telethon sessions only support one active connection at a time."
+        )
+        sys.exit(1)
 
 
 def _handle_sigterm(signum, frame) -> None:
@@ -183,8 +211,6 @@ async def backfill_chat(
 
 
 async def run(chat_selector: str | None, limit: int | None, force_full: bool = False) -> None:
-    setup_logging(log_level=settings.log_level, log_file=settings.log_file)
-
     conn = db.init_db(settings.db_path)
     db.apply_schema(conn)
 
@@ -344,6 +370,9 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    setup_logging(log_level=settings.log_level, log_file=settings.log_file)
+    _refuse_if_conflicting()
 
     try:
         asyncio.run(run(args.chat, args.limit, args.full))

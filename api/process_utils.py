@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -59,3 +60,24 @@ def is_backfill_running(status_path) -> bool:
         return False
     pid = status.get("pid")
     return bool(pid) and pid_alive(pid)
+
+
+def is_archiver_running(heartbeat_path, stale_after_seconds: int = 60) -> bool:
+    """
+    Whether the live userbot (main.py) currently holds the Telegram session, per its heartbeat file.
+
+    main.py rewrites this file every HEARTBEAT_INTERVAL_SECONDS (20s) while connected and deletes it on clean shutdown
+    - so its mere presence isn't proof of anything still running (a hard kill or crash leaves it behind).
+    Requiring it to be recently-written is what makes this self-healing:
+    a stale heartbeat is treated the same as no heartbeat at all, so it can never permanently block a backfill or a second archiver start.
+
+    stale_after_seconds defaults to 60 (three missed heartbeats) - matches the threshold api/routes/telethon.py's own status endpoint uses.
+    """
+    path = Path(heartbeat_path)
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text())
+        return (time.time() - data["updated_at"]) < stale_after_seconds
+    except Exception:
+        return False
