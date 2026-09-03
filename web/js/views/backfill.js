@@ -30,6 +30,12 @@ const TELETHON_POLL_INTERVAL_MS = 5000;
 // and the progress bar/Start button to look stale until the user manually reopened the modal.
 const TERMINAL_STATES = new Set(["completed", "cancelled", "error"]);
 
+// How long to keep giving a just-started run the benefit of the doubt while the status file still reads "idle".
+// Must comfortably exceed subprocess spawn latency
+// (Windows in particular can be slow here - see process_utils.py notes)
+// so the very first poll or two after clicking Start doesn't get mistaken for "this never actually started".
+const AWAITING_START_TIMEOUT_MS = 15000;
+
 const backfillViewState = {
   initialized: false,
   pollTimer: null,
@@ -43,6 +49,7 @@ const backfillViewState = {
   lastSeenState: null,
   renderGeneration: 0,
   awaitingStart: false,
+  awaitingStartAt: null,
 };
 
 // This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
@@ -316,6 +323,7 @@ async function openModal(root) {
         // until the new subprocess overwrites it - without this flag,
         // that stale read looks indistinguishable from "this new run already finished" and wrongly clears the poll timer we're about to start.
         backfillViewState.awaitingStart = true;
+        backfillViewState.awaitingStartAt = Date.now();
         startPolling(root);
       }
       await renderRoot(root);
@@ -375,6 +383,7 @@ async function renderRoot(root) {
   if (status.state === "running") {
     startPolling(root);
     backfillViewState.awaitingStart = false;
+    backfillViewState.awaitingStartAt = null;
   } else if (
     TERMINAL_STATES.has(status.state) &&
     backfillViewState.pollTimer &&
@@ -383,9 +392,17 @@ async function renderRoot(root) {
     clearInterval(backfillViewState.pollTimer);
     backfillViewState.pollTimer = null;
   } else if (status.state === "idle") {
-    // Genuinely idle (not just a stale pre-overwrite read) - a start attempt that's still "awaiting" at this point isn't going to resolve on its own,
-    // so stop treating stale terminal reads as suspect.
-    backfillViewState.awaitingStart = false;
+    // The status file reads "idle" for a moment right after a start request too (see TERMINAL_STATES comment above)
+    // - so a single idle read here isn't proof the run never started.
+    // Only give up once we've waited past a generous grace period with no sign of life;
+    // a start attempt genuinely stuck past that point isn't going to resolve on its own.
+    if (
+      !backfillViewState.awaitingStart ||
+      Date.now() - backfillViewState.awaitingStartAt > AWAITING_START_TIMEOUT_MS
+    ) {
+      backfillViewState.awaitingStart = false;
+      backfillViewState.awaitingStartAt = null;
+    }
   }
   // "idle": leave any existing poll timer alone - see TERMINAL_STATES' comment.
 
