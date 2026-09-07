@@ -8,6 +8,10 @@ browse, search, and review what's been archived.
 **Phase 2 (web UI):** read-only REST API + installable PWA — Chats, Messages,
 Deleted, Stats, and Health views, with EN/UK language support and light/dark themes.
 
+> **Status:** [`v1.2.0`](CHANGELOG.md#120--2026-09-07) is the last release on
+> SQLite. A PostgreSQL migration (+ SQLAlchemy + Alembic) is now underway —
+> see the CHANGELOG's "Planned — Phase 4" section for scope.
+
 ---
 
 ## Requirements

@@ -9,6 +9,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+> 🚧 **PostgreSQL migration in progress.** [1.2.0] below is the last SQLite-based
+> release — see "Planned — Phase 4" for what's changing and why.
+
 ### Planned — Phase 3 (Advanced Features)
 
 - Full-text search via SQLite FTS5 virtual table
@@ -49,7 +52,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.1.0] — 2026-07-09
+## [1.2.0] — 2026-09-07
+
+Last release on the SQLite-based storage layer — the PostgreSQL migration
+begins from here (see "Planned — Phase 4" above).
+
+### Fixed
+
+- Backfill progress bar sometimes failing to appear when starting a run,
+  requiring a manual tab switch to recover. Caused by an `awaitingStart`
+  guard (added to protect against a stale-terminal-state race) being reset
+  on the very first post-start poll, which almost always still reads
+  `"idle"` before the new subprocess has written anything.
+- `main.py` and `backfill.py`, when launched directly from a terminal,
+  bypassed the mutual-exclusion checks that only fired when started through
+  the API/web UI — allowing two live Telethon sessions, or a session and an
+  in-progress backfill, to run concurrently. Most likely cause of a spurious
+  2FA re-prompt seen in practice. Both entry points now guard themselves
+  directly, via a new shared `is_archiver_running()` / `is_backfill_running()`
+  pair in `api/process_utils.py`.
+- `utils/__inti__.py` typo corrected to `utils/__init__.py`. The package init
+  was never actually being loaded (the app only worked because Python 3.3+
+  namespace packages don't require one) - its intended
+  `from utils import setup_logging` re-export was dead code.
+
+### Added
+
+- `scripts/toggle_archiver.ps1` / `.bat` — a double-click Windows shortcut
+  that starts or stops the live archiver directly (reads/writes the same
+  heartbeat file `main.py` itself uses; no API server required).
+
+---
 
 ### Summary
 
