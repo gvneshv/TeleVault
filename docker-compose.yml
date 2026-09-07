@@ -1,0 +1,35 @@
+# Local development Postgres for the TeleVault PostgreSQL migration (see CHANGELOG "1.2.0" and README "Status").
+#
+# This is a DEV convenience, not a production deployment - the VPS setup documented in README/docs will run Postgres separately (or a managed instance).
+# Credentials below are placeholders on purpose;
+# they only need to match config.py's DATABASE_URL default, both localhost-only.
+#
+# Usage:
+#   docker compose up -d        # start Postgres in the background
+#   docker compose down         # stop it (data persists in the named volume)
+#   docker compose down -v      # stop it AND wipe the data volume
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: televault-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: televault
+      POSTGRES_PASSWORD: televault
+      POSTGRES_DB: televault
+    ports:
+      - "5432:5432"
+    volumes:
+      - televault_pgdata:/var/lib/postgresql/data
+      # Postgres's official image runs every .sql/.sh file in this directory once, automatically,
+      # but ONLY the very first time the container starts against an empty data volume - not on every restart.
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U televault -d televault"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  televault_pgdata:

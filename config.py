@@ -13,7 +13,7 @@ Why a dataclass rather than reading os.environ inline?
   - Missing required values fail loudly at startup, not halfway through a run.
  
 Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE
-Optional (have defaults): DB_PATH, SESSION_NAME, LOG_LEVEL, LOG_FILE
+Optional (have defaults): DB_PATH, DATABASE_URL, SESSION_NAME, LOG_LEVEL, LOG_FILE
 """
 
 import os
@@ -85,8 +85,13 @@ class Settings:
     # Changing this forces a fresh login — keep it stable.
     session_name: str
 
-    # --- Storage ---
+    # --- Storage (SQLite - active storage layer for now) ---
     db_path: str
+
+    # --- Storage (PostgreSQL - migration in progress, see CHANGELOG "1.2.0").
+    # Not read by anything yet; db/connection.py still talks to SQLite only.
+    # Defaults to matching docker-compose.yml's local dev Postgres service. ---
+    database_url: str
 
     # --- Logging ---
     log_level: str          # 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
@@ -120,6 +125,7 @@ def _load() -> Settings:
         phone=                  _require("TG_PHONE"),
         session_name=           _optional("SESSION_NAME", "televault"),
         db_path=                _optional("DB_PATH", "data/televault.db"),
+        database_url=           _optional("DATABASE_URL", "postgresql+psycopg://televault:televault@localhost:5432/televault"),
         log_level=              _optional("LOG_LEVEL", "INFO"),
         log_file=               log_file,
         heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),
