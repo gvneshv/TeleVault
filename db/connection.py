@@ -1,111 +1,151 @@
 """
-Manages the SQLite connection for the entire application.
- 
-It uses a single shared connection rather than opening/closing one per query.
-SQLite handles this fine for a single-process app like TeleVault, and it avoids the overhead of reconnecting on every write event.
- 
-WAL (Write-Ahead Logging) mode is enabled because it allows reads and writes to happen concurrently without blocking each other - important when Telethon's event loop is constantly firing while you might also be querying the DB manually.
+Manages the PostgreSQL connection pool for the entire application, via an SQLAlchemy Core Engine (psycopg v3 driver).
 
-Datetime handling
------------------
-Python 3.12 deprecated the built-in sqlite3 datetime adapters/converters and they are removed in later versions. Rather than rely on them, this module registers explicit ones that work on every Python version:
- 
-  - Adapter  (Python -> SQLite): datetime -> ISO 8601 TEXT string
-  - Converter (SQLite -> Python): TEXT column declared DATETIME -> datetime
+This replaces the old model of a single shared sqlite3.Connection held open for the app's entire lifetime.
+SQLAlchemy's Engine owns a connection pool internally (QueuePool by default) and hands out individual connections on checkout
+- this module wraps that in two functions matching what the two actual use cases need:
+
+  - get_connection()          : a read-write connection for the userbot's live handlers and the backfill script.
+  - get_readonly_connection() : a connection for the API server, with `SET default_transaction_read_only = on` applied immediately after checkout.
+
+Why a pool instead of one global connection:
+    The old sqlite3 approach worked because SQLite connections are cheap and a single-process app only ever has one in flight at a time.
+    Postgres is a network service - checking out a pooled connection per unit of work
+    (one handler invocation, one API request) and returning it afterwards is the normal, correct pattern, and it's what makes concurrent use safe.
+
+Why get_connection() is now "checkout, use, close" instead of "get the one open connection":
+    This is a real contract change from the SQLite version, not just an implementation detail.
+    Every caller of get_connection() must close the connection
+    (or use it as a context manager: `with db.get_connection() as conn:`) to return it to the pool when done.
+    The current handler call sites (handlers/on_message.py, on_delete.py, on_edit.py)
+    still call get_connection() expecting the old "one connection for the whole app" behaviour and do not close what they get back
+    - they will leak pool connections until they're updated.
+    That update is out of scope for this file;
+    it's tracked as the "wrap the 3 handler call sites" step.
+
+Datetime handling - simpler than before:
+    The SQLite version registered manual adapters because Python's built-in sqlite3 datetime adapters were deprecated and DATETIME was stored as a TEXT column.
+    Neither problem exists here: psycopg v3 converts timezone-aware Python datetimes to/from Postgres TIMESTAMPTZ natively, so there is nothing to register.
+
+Foreign keys and journal mode - not applicable here:
+    The SQLite version turned on `PRAGMA foreign_keys` (off by default in SQLite) and WAL mode (for concurrent readers/writers on one file).
+    PostgreSQL enforces foreign keys unconditionally and has its own MVCC concurrency model - neither pragma has a Postgres equivalent to set.
 """
 
-import sqlite3
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
+from contextlib import contextmanager
+from typing import Generator, Optional
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Connection, Engine
 
 logger = logging.getLogger(__name__)
 
-# Module-level variable - holds the single connection instance.
+# Module-level variable - holds the single Engine instance (and, through it, the connection pool).
 # None until init_db() is called.
-_connection: sqlite3.Connection | None = None
-
-
-
-# ---------------------------------------------------------------------------
-# Datetime adapters - registered once at import time
-# ---------------------------------------------------------------------------
-
-def _adapt_datetime(dt: datetime) -> str:
-    """
-    Serialize a Python datetime to an ISO 8601 string for SQLite storage.
-    Timezone-aware datetimes keep their offset(e.g. '+02:00'), so stored timestamps are unambiguous and human-readable when querying the DB directly.
-    """
-    return dt.isoformat(timespec="seconds")
-
-
-sqlite3.register_adapter(datetime, _adapt_datetime)
-# No register_converter - detect_types is intentionally omitted from the connection (see init_db).
-# Datetimes read from DATETIME columns come back as ISO 8601 strings;
-# that's correct for Phase 1 where we don't do any datetime arithmetic on values retrieved from the DB.
+_engine: Optional[Engine] = None
 
 
 # ---------------------------------------------------------------------------
-# Connection lifecycle
+# Engine lifecycle
 # ---------------------------------------------------------------------------
 
-def init_db(db_path: str) -> sqlite3.Connection:
+def init_db(database_url: str) -> Engine:
     """
-    Open the SQLite database at the given path, apply performance settings, and return the connection.
-    Also stores it internally so get_connection() can retrieve it later without needing the path again.
- 
-    Creates the file and any parent directories if they don't exist yet.
+    Create the SQLAlchemy Engine for the given PostgreSQL connection URL,
+    and store it internally so get_connection()/get_readonly_connection() can retrieve it later without needing the URL again.
+
+    This does NOT open a connection itself - the pool connects lazily, on first checkout.
+    Safe to call once at startup;
+    calling it again replaces the stored engine
+    (any connections already checked out from the old one keep working until closed, but new checkouts go through the new engine).
+
+    pool_pre_ping=True: before handing out a pooled connection, SQLAlchemy issues a cheap "is this still alive" check and transparently reconnects if not.
+    Worth having for an always-on VPS process
+    - a Postgres restart or a network blip between messages shouldn't surface as a mysterious error on whatever handler happens to run next.
     """
-    global _connection
+    global _engine
 
-    # Ensure the parent directory exists (e.g. if db_path is 'data/televault.db')
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Opening database at: {db_path}")
-
-    # Pylance showed an error here ||, but it's fine
-                                #  \/
-    _connection = sqlite3.connect( # type: ignore
-        db_path,
-        # detect_types is intentionally omitted.
-        # In Python 3.14, PARSE_DECLTYPES|PARSE_COLNAMES changed behaviour and breaks any query that uses dot-notation table aliases (m.col, c.col), producing spurious "near '.': syntax error" at runtime.
-        # The datetime adapter below still serialises datetime -> ISO string on INSERT; 
-        # on SELECT, DATETIME columns come back as plain strings, which is fine for Phase 1 where we don't do datetime arithmetic in Python.
-        check_same_thread=False,
-    )
-
-    # Return rows as dict-like objects (row["column_name"] instead of row[0]).
-    # Much safer and more readable than positional indexing
-    _connection.row_factory = sqlite3.Row
-
-    # WAL mode: writes go to a separate log file first, so readers are never blocked by a write in progress.
-    # Better performance for our use case
-    _connection.execute("PRAGMA journal_mode=WAL;")
-
-    # Foreign key enforcement is OFF by default in SQLite - turn it on so our FK constraints (chat_id, sender_id) are actually enforced.
-    _connection.execute("PRAGMA foreign_keys=ON;")
-
-    logger.info("Database connection established.")
-    return _connection
+    logger.info("Creating database engine")
+    _engine = create_engine(database_url, pool_pre_ping=True)
+    logger.info("Database engine created.")
+    return _engine
 
 
-def get_connection() -> sqlite3.Connection:
+def get_engine() -> Engine:
     """
-    Return the active database connection.
-    Raises an error if init_db() hasn't been called yet.
+    Return the active Engine.
+    Raises if init_db() hasn't been called yet.
     """
-    if _connection is None:
-        raise RuntimeError("Database not initialised. Call init_db() before get_connection().")
-    return _connection
+    if _engine is None:
+        raise RuntimeError("Database not initialised. Call init_db() before get_engine().")
+    return _engine
 
 
 def close_db() -> None:
     """
-    Cleanly close the database connection.
-    Should be called on application shutdown so any buffered WAL data is written to the main database file.
+    Dispose of the engine's connection pool - closes every pooled connection.
+    Should be called on application shutdown.
     """
-    global _connection
-    if _connection is not None:
-        _connection.close()
-        _connection = None
-        logger.info("Database connection closed.")
+    global _engine
+    if _engine is not None:
+        _engine.dispose()
+        _engine = None
+        logger.info("Database engine disposed.")
+
+
+# ---------------------------------------------------------------------------
+# Read-write connection (userbot handlers, backfill)
+# ---------------------------------------------------------------------------
+
+def get_connection() -> Connection:
+    """
+    Check out a read-write connection from the pool.
+
+    The caller owns this connection and is responsible for closing it (or using it as a context manager) to return it to the pool
+    - see this module's docstring for why that's a real behaviour change from the old single global sqlite3.Connection,
+    and which callers haven't been updated for it yet.
+
+    Transactions: SQLAlchemy Core connections use "commit as you go"
+    - a transaction begins implicitly on the first statement and stays open until conn.commit() (or conn.rollback()) is called explicitly.
+    There is no autocommit-per-statement behaviour to rely on here.
+    """
+    return get_engine().connect()
+
+
+# ---------------------------------------------------------------------------
+# Read-only connection (API server)
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def get_readonly_connection() -> Generator[Connection, None, None]:
+    """
+    Check out a connection from the pool, mark its session read-only, and yield it.
+    Always used as a context manager:
+
+        with db.get_readonly_connection() as conn:
+            ...
+
+    Replaces the SQLite `file:path?mode=ro` URI trick (api/dependencies.py) - same safeguard in spirit (a write attempted on this connection errors out),
+    just enforced by Postgres itself via a session GUC instead of the SQLite driver refusing to open the file for writing.
+
+    Important: `SET default_transaction_read_only` is a SESSION-level setting, not scoped to a single transaction.
+    If it weren't reset before the connection goes back into the pool,
+    a later get_connection() call from a write-path caller could receive this exact raw connection back from the pool still stuck in read-only mode
+    - a write would then fail with an error that has nothing obviously to do with its actual cause.
+    The `finally` block below resets it explicitly before closing, so the connection is clean whichever caller the pool hands it to next.
+    """
+    conn = get_engine().connect()
+    conn.execute(text("SET default_transaction_read_only = on"))
+    conn.commit()
+    try:
+        yield conn
+    finally:
+        # rollback() first, unconditionally:
+        # if the caller's code inside the `with` block hit an error - e.g. exactly the "write rejected" error this connection exists to produce
+        # - Postgres marks the transaction aborted, and refuses every statement (including our own reset below) until a ROLLBACK happens.
+        # Safe to call even when nothing needs rolling back (no-op in that case).
+        conn.rollback()
+        conn.execute(text("SET default_transaction_read_only = off"))
+        conn.commit()
+        conn.close()
