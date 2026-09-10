@@ -15,7 +15,7 @@ Incremental by default:
     Telegram message IDs are monotonically increasing within a chat, so this is a safe high-water mark, not a guess.
 
     Pass --full to ignore this and re-walk everything regardless - useful if you suspect gaps in an existing archive and want to re-verify it from scratch.
-    INSERT OR IGNORE still makes this safe to run (see below), just slower and heavier on Telegram's API than it needs to be for routine use.
+    ON CONFLICT DO NOTHING still makes this safe to run (see below), just slower and heavier on Telegram's API than it needs to be for routine use.
 
 Important limitations - Telegram's API, not something TeleVault can work around:
   - Deleted messages cannot be backfilled.
@@ -29,7 +29,7 @@ Important limitations - Telegram's API, not something TeleVault can work around:
 Do not run this at the same time as main.py (the live userbot) against the same .session file - Telethon sessions support one active connection at a time.
 Stop main.py first, run this, then start main.py again.
 
-Idempotent: insert_message() uses INSERT OR IGNORE (see db/queries.py), so running this more than once,
+Idempotent: insert_message() uses ON CONFLICT DO NOTHING (see db/queries.py), so running this more than once,
 or interrupting it partway through and re-running later, is always safe - already-archived messages are silently skipped, never duplicated.
 Incremental mode above is what makes repeat runs *cheap* too, not just safe - idempotency alone doesn't save you from re-fetching everything over the wire.
 """
@@ -40,7 +40,6 @@ import logging
 import json
 import os
 import signal
-import sqlite3
 import sys
 import time
 
@@ -51,6 +50,7 @@ from datetime import datetime, timezone
 from telethon import TelegramClient, functions, utils
 from telethon.errors import FloodWaitError
 from telethon.tl.types import PeerChat
+from sqlalchemy import text as sql_text
 
 import db
 from config import settings
@@ -66,7 +66,9 @@ logger = logging.getLogger(__name__)
 PROGRESS_INTERVAL = 500
 
 # If False, STATUS_PATH is ignored and status is printed to stderr instead.
-STATUS_PATH = Path(settings.backfill_status_path) if False else None  # set properly below via settings import already present
+STATUS_PATH = (
+    Path(settings.backfill_status_path) if False else None
+)  # set properly below via settings import already present
 
 
 def _write_status(data: dict) -> None:
@@ -93,14 +95,14 @@ def _refuse_if_conflicting() -> None:
     """
     if is_backfill_running(settings.backfill_status_path):
         logger.error(
-            "A backfill is already running." \
+            "A backfill is already running."
             "Refusing to start a second one - they would both write to the same database and fight over the same Telegram session."
         )
         sys.exit(1)
 
     if is_archiver_running(settings.heartbeat_path):
         logger.error(
-            "The live userbot (main.py) appears to be connected." \
+            "The live userbot (main.py) appears to be connected."
             "Stop it before starting a backfill - Telethon sessions only support one active connection at a time."
         )
         sys.exit(1)
@@ -113,7 +115,9 @@ def _handle_sigterm(signum, frame) -> None:
     """
     global _cancelled
     _cancelled = True
-    logger.info("Cancellation requested - finishing the current message, then stopping.")
+    logger.info(
+        "Cancellation requested - finishing the current message, then stopping."
+    )
 
 
 async def backfill_chat(
@@ -138,9 +142,13 @@ async def backfill_chat(
             migrated_from = getattr(full.full_chat, "migrated_from_chat_id", None)
             if migrated_from:
                 old_chat_id = utils.get_peer_id(PeerChat(migrated_from))
-                db.queries.record_chat_migration(conn, old_chat_id=old_chat_id, new_chat_id=chat.id)
+                db.queries.record_chat_migration(
+                    conn, old_chat_id=old_chat_id, new_chat_id=chat.id
+                )
         except Exception:
-            logger.exception(f"Could not check migration status for '{chat_name}' - continuing without it.")
+            logger.exception(
+                f"Could not check migration status for '{chat_name}' - continuing without it."
+            )
 
     db.queries.upsert_chat(
         conn,
@@ -158,14 +166,18 @@ async def backfill_chat(
     # Doesn't affect correctness here (INSERT OR IGNORE makes this safe to interrupt and resume any time),
     # just makes archived_at ordering read naturally if you ever look at the raw table.
     # min_id=0 (Telethon's own default) means "no lower bound" - a brand-new chat with nothing archived yet passes min_id=None here, which becomes 0.
-    async for message in client.iter_messages(chat, reverse=True, limit=limit, min_id=min_id or 0):
+    async for message in client.iter_messages(
+        chat, reverse=True, limit=limit, min_id=min_id or 0
+    ):
         if _cancelled:
             logger.info(f"Cancelled mid-chat at '{chat_name}' ({processed} processed).")
             break
 
         processed += 1
         if processed % PROGRESS_INTERVAL == 0:
-            logger.info(f"  ...{processed} messages processed so far ({stored} stored).")
+            logger.info(
+                f"  ...{processed} messages processed so far ({stored} stored)."
+            )
 
         text = resolve_message_text(message)
         if not text:
@@ -175,10 +187,11 @@ async def backfill_chat(
         if message.sender_id is not None:
             sender = await message.get_sender()
             username, first_name, last_name = get_sender_fields(sender)
-            # commit=False: grouped with insert_message()'s own commit below,
-            # same rationale as handlers/on_message.py - avoids a SQLite WAL snapshot-isolation issue where the FK check in insert_message
-            # can't see a separately-committed parent row.
-            # See upsert_sender's docstring in db/queries.py.
+            # commit=False:
+            # grouped with insert_message()'s own commit below
+            # (and that one is itself batched every PROGRESS_INTERVAL rows, not per-message - see the conn.commit() calls further down).
+            # Keeps the sender upsert and the message insert atomic as one unit rather than two separately-committed statements,
+            # and avoids paying a Postgres WAL fsync for every single row - see insert_message()'s docstring in db/queries.py.
             db.queries.upsert_sender(
                 conn,
                 sender_id=message.sender_id,
@@ -210,15 +223,26 @@ async def backfill_chat(
     return stored, skipped
 
 
-async def run(chat_selector: str | None, limit: int | None, force_full: bool = False) -> None:
-    conn = db.init_db(settings.db_path)
-    db.apply_schema(conn)
+async def run(
+    chat_selector: str | None, limit: int | None, force_full: bool = False
+) -> None:
+    # Schema application is now `alembic upgrade head`, run explicitly as a deploy step - not called here (see db/schema.py's module docstring for why).
+    # This assumes migrations have already been applied.
+    db.init_db(settings.database_url)
+    conn = db.get_connection()
 
-    run_conn = sqlite3.connect(settings.db_path)
+    # A second, separate pooled connection dedicated to backfill_runs bookkeeping (the status row's start/finish, not the archived data itself)
+    # - kept apart from `conn` above so the run-status update at the very end
+    # (after the whole backfill loop) isn't entangled in whatever transaction state `conn` is in at that point.
+    # Same separation of concerns the original SQLite version had (a dedicated sqlite3.connect() for this one purpose),
+    # just now a second pooled connection rather than a second raw one.
+    run_conn = db.get_connection()
     run_id = run_conn.execute(
-        "INSERT INTO backfill_runs (status, chat_selector) VALUES ('running', ?)",
-        (chat_selector,),
-    ).lastrowid
+        sql_text(
+            "INSERT INTO backfill_runs (status, chat_selector) VALUES ('running', :chat_selector) RETURNING id"
+        ),
+        {"chat_selector": chat_selector},
+    ).scalar()
     run_conn.commit()
 
     signal.signal(signal.SIGTERM, _handle_sigterm)
@@ -249,7 +273,7 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
         chats = [await client.get_entity(target)]
     else:
         logger.warning(
-            "No --chat given - backfilling EVERY chat you're in." \
+            "No --chat given - backfilling EVERY chat you're in."
             "This can take a long time and make many API requests for accounts with "
             "years of history or large channels. Press Ctrl-C to abort."
         )
@@ -263,7 +287,11 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
     _write_status(status)
 
     for chat in chats:
-        name = getattr(chat, "title", None) or getattr(chat, "first_name", None) or str(chat.id)
+        name = (
+            getattr(chat, "title", None)
+            or getattr(chat, "first_name", None)
+            or str(chat.id)
+        )
         logger.info(f"Backfilling '{name}'...")
 
         stored = skipped = 0
@@ -278,8 +306,12 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
                 # whatever it already committed has raised this chat's high-water mark
                 # - so a retry naturally resumes close to where it stopped instead of re-walking from scratch,
                 # with no special resume logic needed beyond recomputing this.
-                chat_min_id = None if force_full else db.queries.get_last_archived_message_id(
-                    conn, utils.get_peer_id(chat)
+                chat_min_id = (
+                    None
+                    if force_full
+                    else db.queries.get_last_archived_message_id(
+                        conn, utils.get_peer_id(chat)
+                    )
                 )
                 stored, skipped = await backfill_chat(
                     client, conn, chat, limit, min_id=chat_min_id
@@ -301,7 +333,9 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
                 await asyncio.sleep(e.seconds + 1)
             except Exception:
                 # One chat failing for a genuinely unexpected reason (permissions, a weird entity type, etc.) shouldn't stop the rest of the run.
-                logger.exception(f"Failed to backfill '{name}' - skipping to the next chat.")
+                logger.exception(
+                    f"Failed to backfill '{name}' - skipping to the next chat."
+                )
                 failed = True
                 break
         else:
@@ -327,20 +361,38 @@ async def run(chat_selector: str | None, limit: int | None, force_full: bool = F
         status["chats_done"] += 1
         _write_status(status)
 
-    logger.info(f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall.")
+    logger.info(
+        f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall."
+    )
 
-    final_status = "cancelled" if _cancelled else "error" if total_stored == 0 and total_skipped == 0 and any_failures else "completed"
+    final_status = (
+        "cancelled"
+        if _cancelled
+        else (
+            "error"
+            if total_stored == 0 and total_skipped == 0 and any_failures
+            else "completed"
+        )
+    )
     status["state"] = final_status
     _write_status(status)
     run_conn.execute(
-        "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = ?, "
-        "messages_stored = ?, messages_skipped = ? WHERE id = ?",
-        (final_status, total_stored, total_skipped, run_id),
+        sql_text(
+            "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = :status, "
+            "messages_stored = :messages_stored, messages_skipped = :messages_skipped WHERE id = :run_id"
+        ),
+        {
+            "status": final_status,
+            "messages_stored": total_stored,
+            "messages_skipped": total_skipped,
+            "run_id": run_id,
+        },
     )
     run_conn.commit()
     run_conn.close()
 
     await client.disconnect()
+    conn.close()
     db.close_db()
 
 

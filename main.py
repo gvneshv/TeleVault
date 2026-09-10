@@ -1,16 +1,16 @@
 """
 Application entry point - start TeleVault with: python main.py
- 
+
 Startup sequence:
   1. Logging
   2. Guard: refuse to start if another instance is already running, or if a backfill is currently in progress
      (enforced here so it applies no matter how this script is launched - terminal, cron, or the web UI)
-  3. Database (open connection, apply schema)
+  3. Database (open the connection pool - assumes migrations are already applied via `alembic upgrade head`, a separate deploy step, not run from here)
   4. Telethon client (authenticate if needed, then connect)
   5. Register event handlers
   6. Run until interrupted (Ctrl-C or SIGTERM)
   7. Graceful shutdown
- 
+
 Telethon uses asyncio internally, so the entry point is an async function run via asyncio.run().
 Everything Telegram-related happens inside that loop.
 """
@@ -32,7 +32,6 @@ from config import settings
 from utils.logging_setup import setup_logging
 from handlers import on_message, on_delete, on_edit
 from api.process_utils import is_archiver_running, is_backfill_running
-
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,7 @@ def _refuse_if_already_running() -> None:
 
     if is_backfill_running(settings.backfill_status_path):
         logger.error(
-            "A backfill is currently running." \
+            "A backfill is currently running."
             "Stop it before starting the userbot - Telethon sessions only support one active connection at a time."
         )
         sys.exit(1)
@@ -85,13 +84,13 @@ async def _heartbeat_loop(path: Path) -> None:
 def register_handlers(client: TelegramClient, self_id: int) -> None:
     """
     Attach all Telethon event handlers to the client.
- 
+
     Each handler module registers itself when imported (via @client.on(...) decorators), but the client reference must be injected first.
     The pattern used in each handler module is:
- 
+
         def register(client): ...  <- called here
         # rather than a bare module-level decorator
- 
+
     This keeps the client out of module-level scope in the handler files and makes unit testing easier - you can call register(mock_client) without needing a real Telethon connection.
 
     self_id (the archiving account's own Telegram user ID) is passed to on_delete specifically:
@@ -103,28 +102,31 @@ def register_handlers(client: TelegramClient, self_id: int) -> None:
     on_delete.register(client, self_id)
     on_edit.register(client)
     logger.info("Event handlers registered.")
-  
+
 
 async def main() -> None:
     # ------------------------------------------------------------------ #
-    # 1. Logging                                                          
+    # 1. Logging
     # ------------------------------------------------------------------ #
     setup_logging(log_level=settings.log_level, log_file=settings.log_file)
     logger.info("Starting TeleVault...")
 
     # ------------------------------------------------------------------ #
-    # 1.5. Single-instance / backfill-exclusion guard                     
+    # 1.5. Single-instance / backfill-exclusion guard
     # ------------------------------------------------------------------ #
     _refuse_if_already_running()
 
     # ------------------------------------------------------------------ #
-    # 2. Database                                                         
+    # 2. Database
     # ------------------------------------------------------------------ #
-    conn = db.init_db(settings.db_path)
-    db.apply_schema(conn)
+    # Schema application is now `alembic upgrade head`, run explicitly as a deploy step - not a function called here at every startup
+    # (see db/schema.py's module docstring for why).
+    # This just opens the connection pool;
+    # it assumes migrations have already been applied.
+    db.init_db(settings.database_url)
 
     # ------------------------------------------------------------------ #
-    # 3. Telethon client                                                  
+    # 3. Telethon client
     # ------------------------------------------------------------------ #
     # The session file persists the login so you only enter the auth code once.
     # After that, Telethon reuses the saved session automatically.
@@ -140,18 +142,18 @@ async def main() -> None:
     logger.info(f"Authenticated as: {me.first_name} (id={me.id})")
 
     # ------------------------------------------------------------------ #
-    # 4. Event handlers                                                   
+    # 4. Event handlers
     # ------------------------------------------------------------------ #
     register_handlers(client, self_id=me.id)
 
     # ------------------------------------------------------------------ #
-    # 5. Heartbeat loop                                                   
+    # 5. Heartbeat loop
     # ------------------------------------------------------------------ #
     heartbeat_path = Path(settings.heartbeat_path)
     heartbeat_task = asyncio.create_task(_heartbeat_loop(heartbeat_path))
 
     # ------------------------------------------------------------------ #
-    # 6. Run                                                              
+    # 6. Run
     # ------------------------------------------------------------------ #
     logger.info("TeleVault is running. Press Ctrl-C to stop.")
 
@@ -170,9 +172,9 @@ async def main() -> None:
         # KeyboardInterrupt : Ctrl-C on all platforms.
         # CancelledError    : Python 3.14 changed asyncio shutdown - the main task is now cancelled rather than allowed to return cleanly, so CancelledError surfaces here instead.
         pass
-    
+
     # ------------------------------------------------------------------ #
-    # 6. Shutdown                                                         
+    # 6. Shutdown
     # ------------------------------------------------------------------ #
     logger.info("Shutting down...")
 
@@ -184,7 +186,7 @@ async def main() -> None:
     await client.disconnect()
     db.close_db()
     logger.info("Goodbye.")
-  
+
 
 if __name__ == "__main__":
     # Wrap asyncio.run() so that Ctrl-C or a SIGTERM-triggered CancelledError reaching this level exits silently rather than printing a traceback.
