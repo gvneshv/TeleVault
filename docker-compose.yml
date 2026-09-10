@@ -1,4 +1,4 @@
-# Local development Postgres for the TeleVault PostgreSQL migration (see CHANGELOG "1.2.0" and README "Status").
+# Local development Postgres for TeleVault (see CHANGELOG and README "Requirements").
 #
 # This is a DEV convenience, not a production deployment - the VPS setup documented in README/docs will run Postgres separately (or a managed instance).
 # Credentials below are placeholders on purpose;
@@ -8,6 +8,11 @@
 #   docker compose up -d        # start Postgres in the background
 #   docker compose down         # stop it (data persists in the named volume)
 #   docker compose down -v      # stop it AND wipe the data volume
+#
+# Note:
+# Postgres must be running (this container up) any time you want to connect to the database at all - via the app, psql, a GUI client, or `alembic` commands.
+# Unlike SQLite, there's no "just open the file" option.
+# See README's "Local development" note for what this means day-to-day.
 
 services:
   postgres:

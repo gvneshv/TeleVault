@@ -10,7 +10,7 @@ fastapi
 uvicorn[standard]   # includes uvloop + httptools for production performance
 pydantic>=2.0       # schemas use Pydantic v2 model_config and field syntax
 
-# --- Storage (Phase 4: PostgreSQL migration, in progress - see CHANGELOG) ---
+# --- Storage (PostgreSQL - see CHANGELOG "2.0.0") ---
 sqlalchemy>=2.0     # Core (not the ORM) - see db/ for why
 psycopg[binary]>=3.1  # Postgres driver; [binary] avoids needing build tools locally
 alembic>=1.13       # schema migrations, replacing the old hand-rolled db/migrations/ scripts

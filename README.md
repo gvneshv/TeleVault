@@ -4,19 +4,21 @@ A personal Telegram userbot that archives all your messages in real time and
 preserves deleted ones so you can retrieve them later — with a web UI to
 browse, search, and review what's been archived.
 
-**Phase 1 (userbot):** text messages only, all chat types, local SQLite storage.
+**Phase 1 (userbot):** text messages only, all chat types, PostgreSQL storage.
 **Phase 2 (web UI):** read-only REST API + installable PWA — Chats, Messages,
 Deleted, Stats, and Health views, with EN/UK language support and light/dark themes.
 
-> **Status:** [`v1.2.0`](CHANGELOG.md#120--2026-09-07) is the last release on
-> SQLite. A PostgreSQL migration (+ SQLAlchemy + Alembic) is now underway —
-> see the CHANGELOG's "Planned — Phase 4" section for scope.
+> **Status:** PostgreSQL is now the storage layer (SQLAlchemy Core + Alembic
+> migrations), replacing the SQLite-based storage from
+> [`v1.2.0`](CHANGELOG.md#120--2026-09-07) and earlier. See the CHANGELOG for
+> the full migration writeup and what's next.
 
 ---
 
 ## Requirements
 
 - Python 3.11 or newer
+- Docker + Docker Compose (for the local Postgres instance - see step 2)
 - A Telegram account
 - Telegram API credentials (free - takes two minutes to get)
 
@@ -50,6 +52,26 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Start Postgres
+
+```bash
+docker compose up -d
+```
+
+This starts a local Postgres 16 instance in the background, matching the
+credentials `.env.example`'s `DATABASE_URL` default already expects - no
+extra configuration needed for local dev. Data persists in a Docker volume
+across restarts (`docker compose down` stops the container without touching
+your data; only `docker compose down -v` wipes it).
+
+**Note for local development:** Postgres is a client-server database, unlike
+SQLite - it needs to actually be running (this container up) any time you
+want to connect to it at all, whether that's TeleVault itself, `psql`, or a
+GUI client. `docker compose up -d` takes a couple of seconds and then just
+runs quietly in the background; most people start it once at the beginning
+of a dev session and leave it running. See `docker-compose.yml`'s comments
+for more.
+
 ---
 
 ## 3. Configure
@@ -66,11 +88,45 @@ TG_API_HASH=0123456789abcdef0123456789abcdef
 TG_PHONE=+1234567890          # your number in international format
 ```
 
-The other settings have sensible defaults - you can leave them as-is for now.
+The other settings have sensible defaults - you can leave them as-is for
+now. `DATABASE_URL` already matches the Postgres container started in step 2.
 
 ---
 
-## 4. First run
+## 4. Set up the database
+
+With Postgres running (step 2), apply the schema:
+
+```bash
+alembic upgrade head
+```
+
+This creates all tables, indexes, and the `pg_trgm` extension used for
+search. Safe to run again later after pulling new schema changes - Alembic
+only applies migrations that haven't run yet.
+
+### Migrating an existing SQLite archive
+
+If you have an archive from a previous SQLite-based install
+(`v1.2.0` or earlier) that you want to keep, migrate it now, before running
+TeleVault against the new Postgres database for the first time:
+
+```bash
+python scripts/migrate_sqlite_to_postgres.py --dry-run   # preview counts, writes nothing
+python scripts/migrate_sqlite_to_postgres.py             # the real migration
+```
+
+It reads from `DB_PATH` (read-only - your old file is never modified) and
+writes into `DATABASE_URL`. Safe to interrupt and re-run if needed - see the
+script's own module docstring for exactly how that safety works. It
+verifies its own results (row counts, source vs. target) at the end and
+exits with an error if anything doesn't match.
+
+Starting fresh with no prior archive? Skip this - there's nothing to migrate.
+
+---
+
+## 5. First run
 
 ```bash
 python main.py
@@ -95,7 +151,7 @@ From this point, TeleVault is archiving every text message in real time.
 
 ---
 
-## 5. Smoke test
+## 6. Smoke test
 
 With TeleVault running, open Telegram on your phone or desktop and:
 
@@ -113,27 +169,31 @@ With TeleVault running, open Telegram on your phone or desktop and:
 
 3. **Query the database directly** to confirm:
    ```bash
-   sqlite3 data/televault.db "
+   docker compose exec postgres psql -U televault -d televault -c "
      SELECT text, is_deleted, deleted_at
      FROM messages
      ORDER BY archived_at DESC
      LIMIT 5;
    "
    ```
+   (Or use any Postgres GUI client - DBeaver, pgAdmin, TablePlus, or a
+   VSCode Postgres extension - pointed at `localhost:5432` with the
+   credentials from `.env`.)
 
 ---
 
-## 6. Stopping TeleVault
+## 7. Stopping TeleVault
 
 Press **Ctrl-C**. The shutdown is graceful - the database connection is
 flushed and closed cleanly before the process exits.
 
 ---
 
-## 7. Launch the web UI
+## 8. Launch the web UI
 
 The web UI is a separate process from the userbot — both can run at the same
-time, reading/writing the same SQLite file (the API only ever reads).
+time, reading/writing the same Postgres database (the API only ever reads,
+via a read-only connection - see `api/dependencies.py`).
 
 ```bash
 uvicorn api.server:app --host 127.0.0.1 --port 8000
@@ -167,20 +227,23 @@ A few things worth knowing:
 
 ```
 televault/
+├── alembic/             # Schema migrations (Alembic) - source of truth is db/schema.py
+│   └── versions/
 ├── api/                 # REST API (FastAPI) — read-only, serves web/ as static files
-│   ├── routes/          # chats.py, messages.py, deleted.py, stats.py, health.py
+│   ├── routes/          # chats.py, messages.py, deleted.py, stats.py, health.py, backfill.py
 │   ├── schemas/         # Pydantic v2 response models
-│   ├── dependencies.py  # get_db() — read-only SQLite connection per request
+│   ├── dependencies.py  # get_db() — read-only Postgres connection per request
 │   └── server.py        # FastAPI app + static file mount
-├── data/                # SQLite file lives here (gitignored)
 ├── main.py              # Userbot entry point
 ├── config.py            # Settings loader (.env -> Settings dataclass)
 ├── db/
-│   ├── migrations/      # Idempotent schema migrations, run on every startup
-│   ├── connection.py    # SQLite connection management (write side)
-│   ├── schema.py        # Table definitions (run on every startup)
+│   ├── connection.py    # Postgres connection pool (SQLAlchemy Engine + psycopg)
+│   ├── schema.py        # Table definitions (SQLAlchemy Core) - read by Alembic, not applied at runtime
 │   ├── queries.py       # All write operations (used by the userbot)
 │   └── read_queries.py  # All read operations (used by the API)
+├── scripts/
+│   ├── migrate_sqlite_to_postgres.py  # One-time SQLite -> Postgres data migration
+│   ├── toggle_archiver.ps1 / .bat     # Windows shortcut to start/stop the live archiver
 ├── handlers/
 │   ├── helpers.py       # Shared Telethon entity utilities
 │   ├── on_message.py    # NewMessage handler
@@ -195,9 +258,34 @@ televault/
 │   ├── index.html
 │   ├── sw.js
 │   └── manifest.webmanifest
+├── docker-compose.yml   # Local dev Postgres
+├── docker/init/         # Runs once, first time the Postgres container starts (enables pg_trgm)
 └── utils/
     └── logging_setup.py # Console + rotating file logging
 ```
+
+---
+
+## Routine maintenance
+
+A few things worth checking on periodically once this is deployed and running long-term - nothing urgent, just good habits:
+
+- **`docker system prune`** — Docker images/layers accumulate over time (old
+  Postgres image versions, dangling build layers). Run
+  `docker system prune` occasionally to reclaim disk space. This does **not**
+  touch the `televault_pgdata` volume or your data (`docker system prune`
+  never removes volumes unless you explicitly pass `--volumes` - avoid that
+  flag). Check disk usage first with `docker system df` if you want to see
+  what's actually being reclaimed before running it.
+- **Database backups** — `docker compose exec postgres pg_dump -U televault televault > backup.sql`
+  gives you a plain-text SQL dump you can restore from later. Worth
+  automating (a cron job) once this is deployed somewhere that matters.
+- **Disk usage on the VPS generally** — the archive only grows; check
+  available disk space periodically (`df -h`), especially once media
+  archiving lands (Phase 4 - see CHANGELOG).
+- **`alembic current`** — shows which migration is currently applied. Useful
+  after pulling updates, to confirm `alembic upgrade head` actually ran and
+  the database schema matches what the code expects.
 
 ---
 
@@ -219,3 +307,7 @@ televault/
   that authenticates first (e.g. Nginx with basic auth, a VPN, or an
   SSH tunnel) rather than exposing the port directly. Login/auth for the web
   UI itself isn't planned yet.
+- **Local development needs Postgres running.** Unlike SQLite, there's no
+  "just open the file" - the Postgres container (or however you're running
+  Postgres) needs to be up any time you want to connect to the database,
+  including via a GUI client or `psql`. See step 2's note above.
