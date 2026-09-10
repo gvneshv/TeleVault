@@ -6,7 +6,7 @@ Chat-related endpoints:
     GET /api/chats/{chat_id}/messages   — paginated messages within one chat
 """
 
-import sqlite3
+from sqlalchemy.engine import Connection
 from math import ceil
 from typing import Literal
 
@@ -39,8 +39,11 @@ def _build_page(result: dict, page: int, per_page: int) -> dict:
 def list_chats(
     page: int = Query(1, ge=1, description="Page number (1-based)."),
     per_page: int = Query(50, ge=1, le=200, description="Results per page."),
-    order: Literal["asc", "desc"] = Query("desc", description="Sort by most recent activity descending (default) or ascending (least recently active first)."),
-    db: sqlite3.Connection = Depends(get_db),
+    order: Literal["asc", "desc"] = Query(
+        "desc",
+        description="Sort by most recent activity descending (default) or ascending (least recently active first).",
+    ),
+    db: Connection = Depends(get_db),
 ) -> PaginatedResponse[ChatOut]:
     """
     Return all chats TeleVault has seen, sorted by most recent message (same ordering as the Telegram sidebar) by default.
@@ -58,7 +61,7 @@ def list_chats(
 )
 def get_chat_by_id(
     chat_id: int,
-    db: sqlite3.Connection = Depends(get_db),
+    db: Connection = Depends(get_db),
 ) -> ChatOut:
     """
     Return a single chat record with aggregate counts.
@@ -81,11 +84,21 @@ def list_chat_messages(
     per_page: int = Query(50, ge=1, le=200),
     q: str | None = Query(None, description="Substring search within message text."),
     sender_id: int | None = Query(None, description="Filter by sender ID."),
-    date_from: str | None = Query(None, description="ISO 8601 lower bound on message date."),
-    date_to: str | None = Query(None, description="ISO 8601 upper bound on message date."),
-    whole_word: bool = Query(False, description="When combined with q, match q as a whole word only, not a substring."),
-    order: Literal["asc", "desc"] = Query("desc", description="Sort by date ascending (oldest first) or descending (newest first, default)."),
-    db: sqlite3.Connection = Depends(get_db),
+    date_from: str | None = Query(
+        None, description="ISO 8601 lower bound on message date."
+    ),
+    date_to: str | None = Query(
+        None, description="ISO 8601 upper bound on message date."
+    ),
+    whole_word: bool = Query(
+        False,
+        description="When combined with q, match q as a whole word only, not a substring.",
+    ),
+    order: Literal["asc", "desc"] = Query(
+        "desc",
+        description="Sort by date ascending (oldest first) or descending (newest first, default).",
+    ),
+    db: Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
     Return messages within a single chat, newest first by default.

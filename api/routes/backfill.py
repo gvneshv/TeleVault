@@ -19,18 +19,21 @@ so it never gets the chance to write its own final "cancelled" status.
 That's why cancel_backfill() below writes the terminal state itself right after signaling,
 instead of waiting for/trusting the child to report its own exit.
 """
+
 import json
 import os
 import signal
 import subprocess
 import sys
-import sqlite3
 import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from sqlalchemy import text as sql_text
+from sqlalchemy.engine import Connection
 
+import db
 from config import settings
 
 from api.dependencies import get_db
@@ -121,7 +124,8 @@ def cancel_backfill():
     pid = _running_pid()
     if pid is None:
         raise HTTPException(
-            409, {"message": "No backfill is currently running.", "reason": "not_running"}
+            409,
+            {"message": "No backfill is currently running.", "reason": "not_running"},
         )
 
     try:
@@ -151,18 +155,24 @@ def cancel_backfill():
     # it's normally only written once, right at the natural end of run() - which a hard-killed process never reaches,
     # leaving its History entry stuck on "running" forever too.
     # run_id was persisted into the status file at startup specifically so this endpoint could reach it.
+    #
+    # This is a genuine write, so it goes through db.get_connection() (read-write) rather than the get_db() dependency used elsewhere in this file
+    # (get_db() is read-only - see api/dependencies.py - this UPDATE would be rejected by Postgres itself if run through it).
     run_id = status.get("run_id")
     if run_id is not None:
-        conn = sqlite3.connect(settings.db_path)
-        try:
+        with db.get_connection() as conn:
             conn.execute(
-                "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = 'cancelled', "
-                "chats_total = ?, chats_done = ? WHERE id = ? AND status = 'running'",
-                (status.get("chats_total"), status.get("chats_done"), run_id),
+                sql_text(
+                    "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = 'cancelled', "
+                    "chats_total = :chats_total, chats_done = :chats_done WHERE id = :run_id AND status = 'running'"
+                ),
+                {
+                    "chats_total": status.get("chats_total"),
+                    "chats_done": status.get("chats_done"),
+                    "run_id": run_id,
+                },
             )
             conn.commit()
-        finally:
-            conn.close()
 
     return {"cancelling": True}
 
@@ -173,10 +183,16 @@ def get_backfill_status():
 
 
 @router.get("/history")
-def get_backfill_history(db: sqlite3.Connection = Depends(get_db)):
-    rows = db.execute(
-        "SELECT id, started_at, finished_at, status, chats_total, chats_done, "
-        "messages_stored, messages_skipped, error_message FROM backfill_runs "
-        "ORDER BY started_at DESC LIMIT 50"
-    ).fetchall()
+def get_backfill_history(db: Connection = Depends(get_db)):
+    rows = (
+        db.execute(
+            sql_text(
+                "SELECT id, started_at, finished_at, status, chats_total, chats_done, "
+                "messages_stored, messages_skipped, error_message FROM backfill_runs "
+                "ORDER BY started_at DESC LIMIT 50"
+            )
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]

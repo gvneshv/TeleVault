@@ -5,7 +5,7 @@ Global message endpoints:
     GET /api/messages/{id}      — single message with edit history + deletion
 """
 
-import sqlite3
+from sqlalchemy.engine import Connection
 from math import ceil
 from typing import Literal
 
@@ -36,9 +36,15 @@ def list_messages(
         None, description="ISO 8601 inclusive upper bound on message date."
     ),
     only_edited: bool = Query(False, description="Return only edited messages."),
-    whole_word: bool = Query(False, description="When combined with q, match q as a whole word only, not a substring."),
-    order: Literal["asc", "desc"] = Query("desc", description="Sort by date ascending (oldest first) or descending (newest first, default)."),
-    db: sqlite3.Connection = Depends(get_db),
+    whole_word: bool = Query(
+        False,
+        description="When combined with q, match q as a whole word only, not a substring.",
+    ),
+    order: Literal["asc", "desc"] = Query(
+        "desc",
+        description="Sort by date ascending (oldest first) or descending (newest first, default).",
+    ),
+    db: Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
     Return all archived messages across all chats, newest first by default.
@@ -79,7 +85,7 @@ def list_messages(
 )
 def get_message(
     message_id: int,
-    db: sqlite3.Connection = Depends(get_db),
+    db: Connection = Depends(get_db),
 ) -> MessageDetail:
     """
     Return a single archived message by its internal TeleVault ID (not the Telegram message ID, which is only unique within a chat).
@@ -90,7 +96,5 @@ def get_message(
     """
     row = get_message_detail(db, message_id)
     if row is None:
-        raise HTTPException(
-            status_code=404, detail=f"Message {message_id} not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Message {message_id} not found.")
     return row

@@ -2,7 +2,7 @@
 GET /api/stats — global archive statistics for the dashboard view.
 """
 
-import sqlite3
+from sqlalchemy.engine import Connection
 
 from fastapi import APIRouter, Depends
 
@@ -18,7 +18,7 @@ router = APIRouter(tags=["stats"])
     response_model=StatsOut,
     summary="Global archive statistics",
 )
-def archive_stats(db: sqlite3.Connection = Depends(get_db)) -> StatsOut:
+def archive_stats(db: Connection = Depends(get_db)) -> StatsOut:
     """
     Return aggregate statistics for the dashboard:
 

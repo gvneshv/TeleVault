@@ -12,7 +12,7 @@ What this checks vs. what it doesn't:
     ✗ Whether the userbot is currently connected to Telegram (that requires IPC — a Phase 3 addition, see CHANGELOG)
 """
 
-import sqlite3
+from sqlalchemy.engine import Connection
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
@@ -25,7 +25,7 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthOut, summary="API and dependency liveness")
-def health_check(db: sqlite3.Connection = Depends(get_db)) -> HealthOut:
+def health_check(db: Connection = Depends(get_db)) -> HealthOut:
     """
     Return liveness status for the API and its key dependencies.
 
@@ -36,6 +36,7 @@ def health_check(db: sqlite3.Connection = Depends(get_db)) -> HealthOut:
     # Check 1: can we read from the database?
     try:
         from db.read_queries import get_message_count
+
         message_count = get_message_count(db)
         db_readable = True
     except Exception:

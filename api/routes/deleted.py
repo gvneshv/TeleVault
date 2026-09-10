@@ -8,7 +8,7 @@ It exists as its own endpoint because:
     2. It may grow its own filters in Phase 3 (e.g. filter by inference actor, filter by chat, date range) without affecting the general /messages API.
 """
 
-import sqlite3
+from sqlalchemy.engine import Connection
 from math import ceil
 from typing import Literal
 
@@ -38,8 +38,11 @@ def list_deleted(
     date_to: str | None = Query(
         None, description="ISO 8601 upper bound on the original message date."
     ),
-    order: Literal["asc", "desc"] = Query("desc", description="Sort by original message date ascending (oldest first) or descending (newest first, default)."),
-    db: sqlite3.Connection = Depends(get_db),
+    order: Literal["asc", "desc"] = Query(
+        "desc",
+        description="Sort by original message date ascending (oldest first) or descending (newest first, default).",
+    ),
+    db: Connection = Depends(get_db),
 ) -> PaginatedResponse[MessageOut]:
     """
     Return all messages that have been flagged as deleted, newest first by default.
