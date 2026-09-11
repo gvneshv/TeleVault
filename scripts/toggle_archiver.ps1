@@ -93,6 +93,22 @@ if (Test-BackfillRunning) {
 }
 
 Write-Host "Starting archiver..."
-Start-Process -FilePath "python" -ArgumentList "main.py" -WorkingDirectory $ProjectRoot | Out-Null
+
+# Use the project's own virtualenv interpreter if one exists at the conventional path (README's setup instructions create .venv here),
+# rather than bare "python" - Start-Process resolves that via the system PATH,
+# which is not guaranteed to be the same environment your own terminal has active when you type `python main.py` yourself.
+# Running under the wrong interpreter (no telethon/sqlalchemy/etc. installed)
+# produces a ModuleNotFoundError - falls back to bare "python" if no .venv is found, in case you're not using one.
+$venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+$pythonExe = if (Test-Path $venvPython) { $venvPython } else { "python" }
+
+# Launched via `cmd /k` rather than the interpreter directly:
+# Start-Process gives the launched command its own new console window,
+# and that window closes itself the instant the process inside it exits - success OR crash.
+# Without /k, a startup error flashes red text and the window is gone before it's readable.
+# /k keeps the window open afterwards either way,
+# until you close it yourself - matching the "closing the window manually works too" note below,
+# which was already true for a successfully-running archiver, just not for one that fails immediately.
+Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$pythonExe`" main.py" -WorkingDirectory $ProjectRoot | Out-Null
 Write-Host "Started. A new console window should appear shortly - that window IS the archiver." -ForegroundColor Green
 Write-Host "Running this shortcut again is the clean way to stop it (closing the window manually works too, but skips the heartbeat cleanup above)." -ForegroundColor Green
