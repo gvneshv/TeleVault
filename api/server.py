@@ -2,9 +2,9 @@
 FastAPI application factory and lifespan manager for the TeleVault API.
 
 Process topology reminder:
-    The userbot (main.py) and this API server are two separate processes sharing one SQLite file.
+    The userbot (main.py) and this API server are two separate processes sharing one PostgreSQL database.
     The userbot writes; this server only reads.
-    Never open a write connection here — use db.get_read_connection() from api/dependencies.py exclusively.
+    Never open a write connection here — use db.get_readonly_connection() from api/dependencies.py exclusively.
 
 Running in development:
     uvicorn televault.api.server:app --reload --port 8000
@@ -14,13 +14,19 @@ On VPS (via systemd):
     Nginx proxies /api/* to this process; /web/* is served directly by Nginx.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+import db
+from config import settings
+
 from .routes import chats, messages, deleted, stats, health, backfill, telethon
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -32,16 +38,19 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan handler (replaces the deprecated on_event pattern).
 
-    Startup: nothing to initialise — read connections are opened per-request in the dependency.
-    We log readiness so the systemd journal shows a clear start signal.
+    Startup: creates the Postgres connection pool (db.init_db()) - this process is separate from main.py (the userbot),
+    so main.py's own init_db() call never runs here.
+    Without this, every request would fail with "Database not initialised" the moment a route's get_db() dependency tried
+    to check out a connection - there's no implicit fallback.
+    This is genuinely required now, unlike the old SQLite version (a raw sqlite3.connect() per request needed no prior setup at all).
 
-    Shutdown: same — connections are closed by the dependency's finally block.
-    Any cleanup that becomes necessary in later phases goes here.
+    Shutdown: disposes the pool (db.close_db()) - closes every pooled connection cleanly rather than leaving them to the OS on process exit.
     """
-    import logging
-    logging.getLogger(__name__).info("TeleVault API starting up.")
+    logger.info("TeleVault API starting up.")
+    db.init_db(settings.database_url)
     yield
-    logging.getLogger(__name__).info("TeleVault API shutting down.")
+    db.close_db()
+    logger.info("TeleVault API shutting down.")
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +63,7 @@ app = FastAPI(
         "Read-only REST API for the TeleVault personal Telegram archive. "
         "All write operations are performed exclusively by the userbot process."
     ),
-    version="1.1.0",
+    version="2.0.0",
     # Disable the default /docs and /redoc in production by setting these to None.
     # Leave them enabled for now — useful during development.
     docs_url="/api/docs",
