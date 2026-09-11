@@ -6,6 +6,8 @@ Two levels of detail are provided:
 - `ChatSummary` - lightweight embed used inside MessageOut to avoid repeating the full chat object for every message in a list
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -41,13 +43,13 @@ class ChatOut(BaseModel):
         None,
         description="One of: private, group, supergroup, channel.",
     )
-    first_seen: str | None = Field(
+    first_seen: datetime | None = Field(
         None,
         description="ISO 8601 datetime when the app first saw this chat.",
     )
     message_count: int = 0
     deleted_count: int = 0
-    last_message_at: str | None = None
+    last_message_at: datetime | None = None
     last_message_preview: str | None = Field(
         None,
         max_length=80,

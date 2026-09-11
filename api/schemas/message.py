@@ -10,6 +10,7 @@ Model hierarchy:
 """
 
 from typing import Literal
+from datetime import datetime
 from pydantic import BaseModel, Field, computed_field
 
 from .chat import ChatSummary
@@ -66,7 +67,7 @@ class EditOut(BaseModel):
     id: int
     old_text: str | None = None
     new_text: str | None = None
-    edited_at: str | None = Field(None, description="ISO 8601 datetime of the edit")
+    edited_at: datetime | None = Field(None, description="ISO 8601 datetime of the edit")
 
     model_config = {"from_attributes": True}
 
@@ -101,7 +102,7 @@ class DeletionOut(BaseModel):
 
     id: int
     text_snapshot: str | None = Field(None, description="Copy of the message text at time of deletion")
-    deleted_at: str | None = Field(None, description="ISO 8601 datetime when the deletion was detected")
+    deleted_at: datetime | None = Field(None, description="ISO 8601 datetime when the deletion was detected")
     deleted_by_inference: DeletionActorInference = "unknown"
     inference_confidence: str | None = Field(
         None,
@@ -124,17 +125,17 @@ class MessageOut(BaseModel):
     chat: ChatSummary | None = Field(None, description="Omitted on per-chat endpoints where it would be redundant")
     sender: SenderOut | None = None
     text: str | None = None
-    date: str | None = Field(..., description="ISO 8601 send timestamp.")
-    archived_at: str | None = Field(..., description="ISO 8601 timestamp when the app first stored this message")
+    date: datetime | None = Field(..., description="ISO 8601 send timestamp.")
+    archived_at: datetime | None = Field(..., description="ISO 8601 timestamp when the app first stored this message")
     is_edited: bool = False
-    edited_at: str | None = None
+    edited_at: datetime | None = None
     is_deleted: bool = False
-    deleted_at: str | None = None
+    deleted_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
 
-class MessageDetail(BaseModel):
+class MessageDetail(MessageOut):
     """
     Full message record including edit history and deletion details. 
     Returned by GET /api/messages/{id}.
