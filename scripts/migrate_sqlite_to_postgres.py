@@ -38,7 +38,7 @@ Datetime handling - the single most important correctness detail in this script:
     verified against the actual pre-migration code (db/connection.py's _adapt_datetime() and every write path in db/queries.py / backfill.py) rather than assumed:
 
       - Columns the application always set explicitly in Python
-        (messages.date/archived_at/edited_at/deleted_at, message_edits. edited_at, message_deletions.deleted_at):
+        (messages.date/archived_at/edited_at/deleted_at, message_edits.edited_at, message_deletions.deleted_at):
         an offset-aware ISO 8601 string produced by dt.isoformat() on a timezone-aware (local time) datetime, e.g. '2026-01-01T12:00:00+02:00'.
       - Columns that always fell back to SQLite's own DEFAULT CURRENT_TIMESTAMP because the application never set them explicitly
         (chats.first_seen, senders.first_seen, chat_migrations.migrated_at, backfill_runs.started_at/finished_at):
@@ -184,6 +184,26 @@ def ensure_sender_migrated(target, sender_row: sqlite3.Row, dry_run: bool) -> No
 # ---------------------------------------------------------------------------
 
 
+def _fetch_by_message_ids(source: sqlite3.Connection, table: str, message_ids: tuple[int, ...], batch_size: int = 500) -> list[sqlite3.Row]:
+    """
+    Fetch all rows from `table` (message_edits or message_deletions) whose message_id is in message_ids,
+    batching the IN clause into groups of batch_size rather than one giant query with a bound parameter per id.
+
+    SQLite caps the number of bound parameters per query (SQLITE_MAX_VARIABLE_NUMBER - 999 on older builds, up to 32766 on newer ones, but never unlimited).
+    A single busy chat can easily have more messages than that in one archive,
+    so building one IN clause per id for the whole chat isn't safe at scale - this was caught by a real migration run against a large channel,
+    not found in testing with the small sample data used to build this script originally.
+    """
+    rows: list[sqlite3.Row] = []
+    for i in range(0, len(message_ids), batch_size):
+        batch = message_ids[i : i + batch_size]
+        placeholders = ",".join("?" * len(batch))
+        rows.extend(
+            source.execute(f"SELECT * FROM {table} WHERE message_id IN ({placeholders})", batch).fetchall()
+        )
+    return rows
+
+
 def migrate_chat(
     source: sqlite3.Connection,
     target,
@@ -292,12 +312,8 @@ def migrate_chat(
 
         if id_map:
             old_ids = tuple(id_map.keys())
-            placeholders = ",".join("?" * len(old_ids))
 
-            edit_rows = source.execute(
-                f"SELECT * FROM message_edits WHERE message_id IN ({placeholders})",
-                old_ids,
-            ).fetchall()
+            edit_rows = _fetch_by_message_ids(source, "message_edits", old_ids)
             for edit in edit_rows:
                 target.execute(
                     sql_text(
@@ -313,10 +329,7 @@ def migrate_chat(
                 )
                 edits_migrated += 1
 
-            deletion_rows = source.execute(
-                f"SELECT * FROM message_deletions WHERE message_id IN ({placeholders})",
-                old_ids,
-            ).fetchall()
+            deletion_rows = _fetch_by_message_ids(source, "message_deletions", old_ids)
             for deletion in deletion_rows:
                 # deleted_by_inference/inference_confidence didn't exist in every historical version of the source schema
                 # (added by SQLite migrations 001-003) - guard with a fallback in case this is ever run against an older export that predates them.
