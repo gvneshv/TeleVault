@@ -29,6 +29,7 @@ from telethon.tl.types import (
     PeerChat,
     PeerChannel,
 )
+from sqlalchemy.exc import OperationalError
 
 import db
 from .helpers import get_chat_type, get_sender_fields, resolve_message_text
@@ -123,13 +124,39 @@ def register(client) -> None:
             # Fires in the OLD chat. event.chat_id is the old id; action.channel_id
             # is the new supergroup's raw (unmarked) id.
             new_chat_id = utils.get_peer_id(PeerChannel(action.channel_id))
-            await asyncio.to_thread(_record_migration, event.chat_id, new_chat_id)
+            try:
+                await asyncio.to_thread(_record_migration, event.chat_id, new_chat_id)
+            except OperationalError:
+                logger.error(
+                    "Could not record chat migration %s -> %s - database unreachable (Docker down?).",
+                    event.chat_id,
+                    new_chat_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to record chat migration %s -> %s.",
+                    event.chat_id,
+                    new_chat_id,
+                )
             return
         if isinstance(action, MessageActionChannelMigrateFrom):
             # Fires in the NEW supergroup. event.chat_id is the new id; action.chat_id
             # is the old basic group's raw (unmarked) id.
             old_chat_id = utils.get_peer_id(PeerChat(action.chat_id))
-            await asyncio.to_thread(_record_migration, old_chat_id, event.chat_id)
+            try:
+                await asyncio.to_thread(_record_migration, old_chat_id, event.chat_id)
+            except OperationalError:
+                logger.error(
+                    "Could not record chat migration %s -> %s - database unreachable (Docker down?).",
+                    old_chat_id,
+                    event.chat_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to record chat migration %s -> %s.",
+                    old_chat_id,
+                    event.chat_id,
+                )
             return
 
         # --- Resolve the text to archive -----------------------------------
@@ -186,6 +213,14 @@ def register(client) -> None:
                 message.date,
             )
 
+        except OperationalError:
+            # Specifically "database unreachable" (Docker down, network blip, etc.) - a short, readable line rather than a full connection-pool traceback.
+            # Anything else still falls to the except Exception below and gets logger.exception().
+            logger.error(
+                "Could not archive message %s in chat %s - database unreachable (Docker down?).",
+                message.id,
+                event.chat_id,
+            )
         except Exception:
             # Log and swallow — a single failed insert should never crash the listener.
             # The message will simply be absent from the archive.

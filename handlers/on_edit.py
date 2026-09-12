@@ -24,6 +24,7 @@ import asyncio
 import logging
 
 from telethon import events
+from sqlalchemy.exc import OperationalError
 
 import db
 from handlers.helpers import get_chat_type, get_sender_fields
@@ -149,6 +150,12 @@ def register(client) -> None:
                 message.text,
                 edit_date,
                 message.date,
+            )
+        except OperationalError:
+            logger.error(
+                "Could not record edit for message %s in chat %s - database unreachable (Docker down?).",
+                message.id,
+                event.chat_id,
             )
         except Exception:
             logger.exception(

@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 
 from telethon import events
 from sqlalchemy import text as sql_text
+from sqlalchemy.exc import OperationalError
 
 import db
 
@@ -69,32 +70,43 @@ def _persist_deletions(
     Checks out one pooled connection for the whole event (every message here arrived in a single Telegram update, so it's treated as one unit of work)
     rather than one connection per message.
     """
-    with db.get_connection() as conn:
-        if chat_id is not None:
-            # Happy path: we know exactly which chat these belong to
-            for msg_id in deleted_ids:
-                try:
-                    db.queries.flag_deleted(
-                        conn, tg_message_id=msg_id, chat_id=chat_id, self_id=self_id
-                    )
-                except Exception:
-                    logger.exception(
-                        f"Failed to flag deletion for message {msg_id} in chat {chat_id}."
-                    )
-        else:
-            # Degraded path: private chat or legacy group deletion.
-            # We have the message IDs but not the chat.
-            # Flag whatever we can find by ID alone and log the ambiguity.
-            logger.debug(
-                f"Deletion event with no chat_id - attempting fallback for {len(deleted_ids)} message(s)."
-            )
-            for msg_id in deleted_ids:
-                try:
-                    _flag_deleted_without_chat(conn, msg_id, self_id)
-                except Exception:
-                    logger.exception(
-                        f"Failed fallback deletion flag for message {msg_id}."
-                    )
+    try:
+        with db.get_connection() as conn:
+            if chat_id is not None:
+                # Happy path: we know exactly which chat these belong to
+                for msg_id in deleted_ids:
+                    try:
+                        db.queries.flag_deleted(
+                            conn, tg_message_id=msg_id, chat_id=chat_id, self_id=self_id
+                        )
+                    except Exception:
+                        logger.exception(
+                            f"Failed to flag deletion for message {msg_id} in chat {chat_id}."
+                        )
+            else:
+                # Degraded path: private chat or legacy group deletion.
+                # We have the message IDs but not the chat.
+                # Flag whatever we can find by ID alone and log the ambiguity.
+                logger.debug(
+                    f"Deletion event with no chat_id - attempting fallback for {len(deleted_ids)} message(s)."
+                )
+                for msg_id in deleted_ids:
+                    try:
+                        _flag_deleted_without_chat(conn, msg_id, self_id)
+                    except Exception:
+                        logger.exception(
+                            f"Failed fallback deletion flag for message {msg_id}."
+                        )
+    except OperationalError:
+        # Previously this whole function had no outer guard at all,
+        # so a connectivity failure at db.get_connection() itself propagated uncaught out of asyncio.to_thread()
+        # and up into Telethon's own generic handler-exception logging instead of ours.
+        logger.error(
+            f"Could not process {len(deleted_ids)} deletion(s) for chat {chat_id} - "
+            "database unreachable (Docker down?)."
+        )
+    except Exception:
+        logger.exception(f"Failed to process deletion event for chat {chat_id}.")
 
 
 def _flag_deleted_without_chat(conn, tg_message_id: int, self_id: int) -> None:
