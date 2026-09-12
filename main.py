@@ -126,6 +126,19 @@ async def main() -> None:
     # it assumes migrations have already been applied.
     db.init_db(settings.database_url)
 
+    # init_db() only builds the Engine - it doesn't open a connection (see db/connection.py's docstring).
+    # Without this check, an unreachable Postgres (e.g. Docker not running) wouldn't surface here at all -
+    # the archiver would report itself as running normally and only hang, silently, on the first real message.
+    try:
+        db.check_connection()
+    except Exception:
+        logger.error(
+            "Cannot reach the database - is Docker (Postgres) running? "
+            "Check `docker compose ps` and settings.database_url."
+        )
+        db.close_db()
+        sys.exit(1)
+
     # ------------------------------------------------------------------ #
     # 3. Telethon client
     # ------------------------------------------------------------------ #

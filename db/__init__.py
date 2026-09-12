@@ -13,7 +13,7 @@ Any remaining `db.apply_schema(conn)` call site (main.py, backfill.py, as of thi
 will raise AttributeErroruntil those call sites are updated to drop the call entirely.
 """
 
-from db.connection import init_db, close_db, get_connection, get_readonly_connection
+from db.connection import init_db, close_db, get_connection, get_readonly_connection, check_connection
 from db import queries
 from .read_queries import (
     get_chats,
@@ -26,4 +26,4 @@ from .read_queries import (
 )
 
 
-__all__ = ["init_db", "close_db", "get_connection", "get_readonly_connection", "queries", "get_chats", "get_chat", "get_messages", "get_chat_messages", "get_message_detail", "get_stats", "get_message_count"]
+__all__ = ["init_db", "close_db", "check_connection", "get_connection", "get_readonly_connection", "queries", "get_chats", "get_chat", "get_messages", "get_chat_messages", "get_message_detail", "get_stats", "get_message_count"]

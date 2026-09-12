@@ -63,13 +63,36 @@ def init_db(database_url: str) -> Engine:
     pool_pre_ping=True: before handing out a pooled connection, SQLAlchemy issues a cheap "is this still alive" check and transparently reconnects if not.
     Worth having for an always-on VPS process
     - a Postgres restart or a network blip between messages shouldn't surface as a mysterious error on whatever handler happens to run next.
+
+    connect_args={"connect_timeout": 5}: without this, a TCP connection attempt to an unreachable Postgres (e.g. Docker not running)
+    has no time limit of its own - it hangs until the OS/network stack eventually gives up, which can take a long time and varies by platform.
+    Every connection attempt this Engine ever makes - not just the first one - is bounded by this, so a DB that disappears mid-run fails the same way.
+    5 seconds is generous for a local/VPS Postgres; callers get a clear error instead of an indefinite hang.
     """
     global _engine
 
     logger.info("Creating database engine")
-    _engine = create_engine(database_url, pool_pre_ping=True)
+    _engine = create_engine(database_url, pool_pre_ping=True, connect_args={"connect_timeout": 5})
     logger.info("Database engine created.")
     return _engine
+
+
+def check_connection() -> None:
+    """
+    Verify the database is actually reachable, by checking out a connection and running a trivial query.
+
+    init_db() only builds the Engine - it deliberately does not open a connection (see this function's docstring above),
+    so a dead/unreachable Postgres doesn't surface until something tries to actually use it.
+    For an always-on process, that "something" was previously the first live message/edit/deletion,
+    and the resulting hang there (bounded only as far as connect_timeout now bounds it) looked indistinguishable from the archiver silently doing nothing.
+
+    Callers that want to know immediately - main.py and backfill.py, both right after init_db() - call this instead,
+    so a Docker-not-running situation is a clear, fast, startup-time failure rather than a silent one discovered later.
+    Raises whatever the underlying connect attempt raises (typically sqlalchemy.exc.OperationalError);
+    left uncaught here since "unreachable at startup" should be reported differently by each entry point.
+    """
+    with get_connection() as conn:
+        conn.execute(text("SELECT 1"))
 
 
 def get_engine() -> Engine:

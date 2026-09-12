@@ -229,6 +229,20 @@ async def run(
     # Schema application is now `alembic upgrade head`, run explicitly as a deploy step - not called here (see db/schema.py's module docstring for why).
     # This assumes migrations have already been applied.
     db.init_db(settings.database_url)
+
+    # init_db() only builds the Engine - it doesn't open a connection (see db/connection.py's docstring).
+    # Without this check, an unreachable Postgres (e.g. Docker not running) would only surface once the loop
+    # below actually tried to insert something - same silent-hang failure mode main.py had.
+    try:
+        db.check_connection()
+    except Exception:
+        logger.error(
+            "Cannot reach the database - is Docker (Postgres) running? "
+            "Check `docker compose ps` and settings.database_url."
+        )
+        db.close_db()
+        sys.exit(1)
+
     conn = db.get_connection()
 
     # A second, separate pooled connection dedicated to backfill_runs bookkeeping (the status row's start/finish, not the archived data itself)
