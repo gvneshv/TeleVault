@@ -74,6 +74,7 @@ async def _heartbeat_loop(path: Path) -> None:
     without any direct coupling beyond this file.
     """
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         while True:
             path.write_text(json.dumps({"pid": os.getpid(), "updated_at": time.time()}))
             await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)

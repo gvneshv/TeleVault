@@ -16,6 +16,7 @@ def atomic_write_json(path: Path, data: dict) -> None:
     so retry a handful of times with a short pause instead of letting a transient conflict crash the whole process
     (which is exactly what happened - an unhandled PermissionError here took down an entire backfill run).
     """
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data))
     last_error = None
