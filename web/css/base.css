@@ -106,6 +106,7 @@ input:focus-visible {
   background: transparent;
   width: 100%;
   text-align: left;
+  transition: var(--transition-theme), box-shadow 0.2s ease;
 }
 
 .app-nav__link:hover {
@@ -117,7 +118,10 @@ input:focus-visible {
   background: var(--color-bg-raised);
   color: var(--color-ink);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--color-focus);
+  box-shadow:
+    0 0 0 1px var(--color-focus),
+    0 0 6px 1px var(--color-focus-glow),
+    0 0 14px 3px var(--color-focus-glow);
 }
 
 .app-nav__spacer {

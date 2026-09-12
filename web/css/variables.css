@@ -27,6 +27,7 @@
   --color-patina: #3f6c60;
   --color-patina-bg: #e3ede9;
   --color-focus: #2d5f8a;
+  --color-focus-glow: rgba(45, 95, 138, 0.55);
   --color-shadow: rgba(28, 32, 36, 0.08);
   --color-highlight-bg: #f0cf6b;
 }
@@ -43,6 +44,7 @@
   --color-patina: #6fa696;
   --color-patina-bg: #1f2e2a;
   --color-focus: #6fa8dc;
+  --color-focus-glow: rgba(111, 168, 220, 0.65);
   --color-shadow: rgba(0, 0, 0, 0.35);
   --color-highlight-bg: #5c4a1a;
 }
