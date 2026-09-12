@@ -68,11 +68,30 @@ def init_db(database_url: str) -> Engine:
     has no time limit of its own - it hangs until the OS/network stack eventually gives up, which can take a long time and varies by platform.
     Every connection attempt this Engine ever makes - not just the first one - is bounded by this, so a DB that disappears mid-run fails the same way.
     5 seconds is generous for a local/VPS Postgres; callers get a clear error instead of an indefinite hang.
+
+    keepalives_idle/interval/count:
+    connect_timeout above only bounds establishing a NEW connection
+    - it does nothing for a connection that was already open when Postgres disappeared (e.g. Docker stopped mid-run).
+    In that case the OS doesn't get a clean close (no FIN/RST),
+    so pool_pre_ping's liveness check just sits there until the OS's own TCP retransmission timeout gives up
+    - a couple of minutes by default on both Windows and Linux.
+    These settings turn on TCP keepalives and shorten that:
+    after 5s idle, probe every 3s, and declare the connection dead after 3 failed probes (5 + 3*3 = 14s worst case) instead of minutes.
     """
     global _engine
 
     logger.info("Creating database engine")
-    _engine = create_engine(database_url, pool_pre_ping=True, connect_args={"connect_timeout": 5})
+    _engine = create_engine(
+        database_url,
+        pool_pre_ping=True,
+        connect_args={
+            "connect_timeout": 5,
+            "keepalives": 1,
+            "keepalives_idle": 5,
+            "keepalives_interval": 3,
+            "keepalives_count": 3,
+        },
+    )
     logger.info("Database engine created.")
     return _engine
 
