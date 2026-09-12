@@ -28,7 +28,9 @@ import sys
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Depends
+from math import ceil
+
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import Connection
@@ -38,6 +40,7 @@ from config import settings
 
 from api.dependencies import get_db
 from api.process_utils import pid_alive
+from db.read_queries import get_backfill_history as fetch_backfill_history
 from utils.atomic_write import atomic_write_json
 
 router = APIRouter(prefix="/backfill", tags=["backfill"])
@@ -183,16 +186,17 @@ def get_backfill_status():
 
 
 @router.get("/history")
-def get_backfill_history(db: Connection = Depends(get_db)):
-    rows = (
-        db.execute(
-            sql_text(
-                "SELECT id, started_at, finished_at, status, chats_total, chats_done, "
-                "messages_stored, messages_skipped, error_message FROM backfill_runs "
-                "ORDER BY started_at DESC LIMIT 50"
-            )
-        )
-        .mappings()
-        .all()
-    )
-    return [dict(row) for row in rows]
+def get_backfill_history(
+    page: int = Query(1, ge=1, description="Page number (1-based)."),
+    per_page: int = Query(20, ge=1, le=200, description="Results per page."),
+    db: Connection = Depends(get_db),
+):
+    result = fetch_backfill_history(db, page=page, per_page=per_page)
+    total = result["total"]
+    return {
+        "items": result["items"],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": max(1, ceil(total / per_page)),
+    }

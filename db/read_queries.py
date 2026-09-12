@@ -568,3 +568,32 @@ def get_message_count(conn: Connection) -> int:
     Returns total row count from the messages table.
     """
     return conn.execute(sql_text("SELECT COUNT(*) FROM messages")).scalar()
+
+
+# ---------------------------------------------------------------------------
+# Backfill
+# ---------------------------------------------------------------------------
+
+
+def get_backfill_history(
+    conn: Connection, page: int = 1, per_page: int = 20
+) -> dict[str, Any]:
+    """
+    Return past backfill runs, most recent first.
+
+    Was previously a plain `LIMIT 50` in api/routes/backfill.py with no paging - fine while there were only ever a handful of runs,
+    but the history table only grows, never trims itself.
+    Switched to the same _paginate() envelope every other list endpoint (chats/messages) already uses,
+    so the frontend can reuse the shared pagination component instead of everything landing on one page.
+
+    Columns returned:
+        id, started_at, finished_at, status, chats_total, chats_done,
+        messages_stored, messages_skipped, error_message
+    """
+    sql = """
+        SELECT id, started_at, finished_at, status, chats_total, chats_done,
+               messages_stored, messages_skipped, error_message
+        FROM backfill_runs
+        ORDER BY started_at DESC
+    """
+    return _paginate(sql, {}, conn, page, per_page)

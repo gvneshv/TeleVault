@@ -13,6 +13,12 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { describeError } from "../lib/errors.js";
+import {
+  render as renderPagination,
+  attach as attachPaginationHandlers,
+} from "../lib/pagination.js";
+
+const HISTORY_PER_PAGE = 20;
 
 const POLL_INTERVAL_MS = 3000;
 // Slower than the backfill-progress poll,
@@ -46,6 +52,7 @@ const backfillViewState = {
   historyEverFetched: false,
   historyHtml: null,
   historyData: null,
+  historyPage: 1,
   lastSeenState: null,
   renderGeneration: 0,
   awaitingStart: false,
@@ -170,8 +177,9 @@ function renderProgress(status) {
   `;
 }
 
-function renderHistory(history) {
-  if (!history || history.length === 0)
+function renderHistory(data) {
+  const history = data?.items ?? [];
+  if (history.length === 0)
     return `<div class="empty-state">${t("backfill.noHistory")}</div>`;
   const stateLabels = {
     running: t("backfill.stateRunning"),
@@ -202,6 +210,7 @@ function renderHistory(history) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${renderPagination(data.page, data.pages)}
   `;
 }
 
@@ -252,13 +261,53 @@ async function fetchBackfillStatus() {
   }
 }
 
-async function fetchBackfillHistory() {
+async function fetchBackfillHistory(page = 1) {
   try {
-    const res = await fetch("/api/backfill/history");
+    const res = await fetch(
+      `/api/backfill/history?page=${page}&per_page=${HISTORY_PER_PAGE}`,
+    );
     if (!res.ok) throw new Error();
     return await res.json();
   } catch {
-    return [];
+    return {
+      items: [],
+      total: 0,
+      page: 1,
+      per_page: HISTORY_PER_PAGE,
+      pages: 1,
+    };
+  }
+}
+
+/**
+ * Wire up the pagination control inside #backfill-history-root (if present) for the given PaginatedResponse.
+ * Needed both right after a fresh fetch and after renderRoot() re-inserts previously-cached history HTML
+ * (tab revisits, language switches, cancel/start re-renders) - renderPagination()'s markup has no listeners of its own until this runs.
+ */
+function attachHistoryPagination(data) {
+  const historyRoot = document.getElementById("backfill-history-root");
+  if (!historyRoot || !data?.items?.length) return;
+  attachPaginationHandlers(historyRoot, data.page, data.pages, (page) => {
+    loadHistoryPage(page);
+  });
+}
+
+/** Fetch one page of backfill history, cache it, and paint it into #backfill-history-root. */
+async function loadHistoryPage(page) {
+  if (backfillViewState.historyFetchInFlight) return;
+  backfillViewState.historyFetchInFlight = true;
+  backfillViewState.historyPage = page;
+  try {
+    const data = await fetchBackfillHistory(page);
+    backfillViewState.historyData = data;
+    backfillViewState.historyHtml = renderHistory(data);
+    const historyRoot = document.getElementById("backfill-history-root");
+    if (historyRoot) {
+      historyRoot.innerHTML = backfillViewState.historyHtml;
+      attachHistoryPagination(data);
+    }
+  } finally {
+    backfillViewState.historyFetchInFlight = false;
   }
 }
 
@@ -380,6 +429,11 @@ async function renderRoot(root) {
       await renderRoot(root);
     });
 
+  // Reattach pagination click handlers for whatever history HTML was just painted above - renderPagination()'s markup carries no listeners of its own,
+  // and this render may be reusing backfillViewState.historyHtml from a previous fetch
+  // (tab revisit, language switch, etc.) rather than going through the fresh-fetch path below.
+  attachHistoryPagination(backfillViewState.historyData);
+
   if (status.state === "running") {
     startPolling(root);
     backfillViewState.awaitingStart = false;
@@ -419,17 +473,10 @@ async function renderRoot(root) {
   // flight, don't pile another one on top of an already-busy database.
   if (shouldFetchHistory && !backfillViewState.historyFetchInFlight) {
     backfillViewState.historyEverFetched = true;
-    backfillViewState.historyFetchInFlight = true;
-    fetchBackfillHistory()
-      .then((history) => {
-        backfillViewState.historyData = history;
-        backfillViewState.historyHtml = renderHistory(history);
-        const historyRoot = document.getElementById("backfill-history-root");
-        if (historyRoot) historyRoot.innerHTML = backfillViewState.historyHtml;
-      })
-      .finally(() => {
-        backfillViewState.historyFetchInFlight = false;
-      });
+    // A run that just finished adds a new row at the top of the (newest-first) history - jump back to page 1 so it's actually visible,
+    // rather than staying on whatever page the user happened to be paginated to before.
+    if (justFinished) backfillViewState.historyPage = 1;
+    loadHistoryPage(backfillViewState.historyPage);
   }
 }
 

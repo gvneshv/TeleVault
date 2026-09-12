@@ -23,7 +23,8 @@ from .read_queries import (
     get_message_detail,
     get_stats,
     get_message_count,
+    get_backfill_history,
 )
 
 
-__all__ = ["init_db", "close_db", "check_connection", "get_connection", "get_readonly_connection", "queries", "get_chats", "get_chat", "get_messages", "get_chat_messages", "get_message_detail", "get_stats", "get_message_count"]
+__all__ = ["init_db", "close_db", "check_connection", "get_connection", "get_readonly_connection", "queries", "get_chats", "get_chat", "get_messages", "get_chat_messages", "get_message_detail", "get_stats", "get_message_count", "get_backfill_history"]
