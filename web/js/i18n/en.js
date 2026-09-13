@@ -152,4 +152,9 @@ export const en = {
     "The live archiver is currently connected. Stop it first — a backfill and the live archiver can't use the same Telegram session at the same time.",
   "error.backfillRunning":
     "A backfill is currently running. Stop it first — it and the live archiver can't use the same Telegram session at the same time.",
+
+  "chatFilter.allChats": "All chats",
+  "chatFilter.nChatsSelected": "{n} chats selected",
+  "chatFilter.searchPlaceholder": "Search chats…",
+  "chatFilter.noMatches": "No chats match your search.",
 };

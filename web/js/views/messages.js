@@ -20,6 +20,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
+import { createChatFilter } from "../lib/chat-filter.js";
 import {
   render as renderPagination,
   attach as attachPagination,
@@ -38,12 +39,20 @@ const messagesViewState = {
   q: "",
   onlyEdited: false,
   order: "desc",
+  // Populated from the chat filter's persisted (localStorage) selection - see initFilterBar().
+  // Empty array means "All chats" - no chat_ids param is sent in that case.
+  chatIds: [],
   lastData: null,
   // True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
   initialized: false,
 };
 
 let searchDebounceTimer = null;
+// Created lazily on the first initFilterBar() call and reused on every later call (language
+// changes rebuild the whole filter bar from scratch) - re-creating it would just reload the same
+// persisted selection from localStorage, but re-mounting the existing instance into the freshly
+// rebuilt container is simpler than reasoning about whether a rebuild changed anything.
+let messagesChatFilter = null;
 
 /**
  * Format an ISO 8601 datetime using the current UI language's locale.
@@ -137,6 +146,9 @@ async function loadMessages(root) {
     order: messagesViewState.order,
   });
   if (messagesViewState.q) params.set("q", messagesViewState.q);
+  messagesViewState.chatIds.forEach((id) =>
+    params.append("chat_ids", String(id)),
+  );
 
   let data;
   try {
@@ -173,8 +185,27 @@ function initFilterBar(filterBarRoot, listRoot) {
       <span class="tv-checkbox__box"></span>
       <span>${t("messages.onlyEditedLabel")}</span>
     </label>
+    <div id="messages-chat-filter-mount"></div>
     ${renderOrderToggle("messages-order", messagesViewState.order)}
   `;
+
+  if (!messagesChatFilter) {
+    messagesChatFilter = createChatFilter({
+      id: "messages-chat-filter",
+      storageKey: "televault.messagesChatFilter",
+      onChange: (chatIds) => {
+        messagesViewState.chatIds = chatIds;
+        messagesViewState.page = 1;
+        loadMessages(listRoot);
+      },
+    });
+    // The constructor loads any persisted selection synchronously (before mount() even resolves)
+    // - pick it up now so the very first loadMessages() call below already respects it.
+    messagesViewState.chatIds = messagesChatFilter.getSelectedIds();
+  }
+  messagesChatFilter.mount(
+    filterBarRoot.querySelector("#messages-chat-filter-mount"),
+  );
 
   const searchInput = filterBarRoot.querySelector("#messages-search");
   searchInput.addEventListener("input", () => {

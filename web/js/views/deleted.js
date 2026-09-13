@@ -21,6 +21,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
+import { createChatFilter } from "../lib/chat-filter.js";
 import {
   render as renderPagination,
   attach as attachPagination,
@@ -37,6 +38,9 @@ const deletedViewState = {
   page: 1,
   q: "",
   order: "desc",
+  // Populated from the chat filter's persisted (localStorage) selection - see initDeletedFilterBar().
+  // Empty array means "All chats" - no chat_ids param is sent in that case.
+  chatIds: [],
   lastData: null,
   initialized: false,
   /** message_id -> DeletionOut-shaped detail object, or "error".
@@ -50,6 +54,10 @@ const deletedViewState = {
 };
 
 let deletedSearchDebounceTimer = null;
+// Created lazily on the first initDeletedFilterBar() call and reused on every later call
+// - see the identical comment in messages.js's messagesChatFilter, which this mirrors.
+// A SEPARATE instance (and separate storageKey) from messages.js's - filtering Deleted down to one chat deliberately doesn't also filter Messages, and vice versa.
+let deletedChatFilter = null;
 
 /** @param {string | null} iso @returns {string} */
 function formatDeletedTimestamp(iso) {
@@ -276,6 +284,9 @@ async function loadDeleted(root) {
     order: deletedViewState.order,
   });
   if (deletedViewState.q) params.set("q", deletedViewState.q);
+  deletedViewState.chatIds.forEach((id) =>
+    params.append("chat_ids", String(id)),
+  );
 
   let data;
   try {
@@ -305,8 +316,27 @@ function initDeletedFilterBar(filterBarRoot, listRoot) {
       class="messages-filter__search"
       placeholder="${t("deleted.searchPlaceholder")}"
     />
+    <div id="deleted-chat-filter-mount"></div>
     ${renderOrderToggle("deleted-order", deletedViewState.order)}
   `;
+
+  if (!deletedChatFilter) {
+    deletedChatFilter = createChatFilter({
+      id: "deleted-chat-filter",
+      storageKey: "televault.deletedChatFilter",
+      onChange: (chatIds) => {
+        deletedViewState.chatIds = chatIds;
+        deletedViewState.page = 1;
+        loadDeleted(listRoot);
+      },
+    });
+    // The constructor loads any persisted selection synchronously (before mount() even resolves)
+    // - pick it up now so the very first loadDeleted() call below already respects it.
+    deletedViewState.chatIds = deletedChatFilter.getSelectedIds();
+  }
+  deletedChatFilter.mount(
+    filterBarRoot.querySelector("#deleted-chat-filter-mount"),
+  );
 
   const searchInput = filterBarRoot.querySelector("#deleted-search");
   searchInput.addEventListener("input", () => {
