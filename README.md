@@ -6,12 +6,18 @@ browse, search, and review what's been archived.
 
 **Phase 1 (userbot):** text messages only, all chat types, PostgreSQL storage.
 **Phase 2 (web UI):** read-only REST API + installable PWA — Chats, Messages,
-Deleted, Stats, and Health views, with EN/UK language support and light/dark themes.
+Deleted, Stats, and Health views, backfill for historical messages, a
+per-view chat filter, EN/UK language support, and light/dark themes.
 
-> **Status:** PostgreSQL is now the storage layer (SQLAlchemy Core + Alembic
+> **Status:** PostgreSQL is the storage layer (SQLAlchemy Core + Alembic
 > migrations), replacing the SQLite-based storage from
-> [`v1.2.0`](CHANGELOG.md#120--2026-09-07) and earlier. See the CHANGELOG for
-> the full migration writeup and what's next.
+> [`v1.2.0`](CHANGELOG.md#120--2026-09-07) and earlier. The migration
+> itself shipped in [`v2.0.0`](CHANGELOG.md#200--2026-09-10); a round of
+> reliability fixes found under real usage since then (a stopped Docker
+> container, a deleted `data/` directory, Postgres disappearing mid-run),
+> plus the chat filter and Backfill pagination, shipped in
+> [`v2.1.0`](CHANGELOG.md#210--2026-09-13). See the CHANGELOG for the full
+> writeup and what's next.
 
 ---
 
@@ -227,41 +233,89 @@ A few things worth knowing:
 
 ```
 televault/
-├── alembic/             # Schema migrations (Alembic) - source of truth is db/schema.py
-│   └── versions/
-├── api/                 # REST API (FastAPI) — read-only, serves web/ as static files
-│   ├── routes/          # chats.py, messages.py, deleted.py, stats.py, health.py, backfill.py
-│   ├── schemas/         # Pydantic v2 response models
-│   ├── dependencies.py  # get_db() — read-only Postgres connection per request
-│   └── server.py        # FastAPI app + static file mount
-├── main.py              # Userbot entry point
-├── config.py            # Settings loader (.env -> Settings dataclass)
+├── alembic/                  # Schema migrations (Alembic) - source of truth is db/schema.py
+│   ├── versions/
+│   │   └── ..._baseline_schema.py
+│   ├── env.py
+│   └── script.py.mako
+├── alembic.ini
+├── api/                      # REST API (FastAPI) — read-only, serves web/ as static files
+│   ├── routes/
+│   │   ├── chats.py
+│   │   ├── messages.py
+│   │   ├── deleted.py
+│   │   ├── stats.py
+│   │   ├── health.py
+│   │   ├── backfill.py
+│   │   └── telethon.py       # archiver process status/start/stop, backed by the heartbeat file - read by the nav rail's toggle and the Backfill page
+│   ├── schemas/               # Pydantic v2 response models
+│   │   ├── chat.py
+│   │   ├── message.py
+│   │   ├── stats.py
+│   │   └── common.py          # PaginatedResponse, HealthOut
+│   ├── dependencies.py        # get_db() — read-only Postgres connection per request
+│   ├── process_utils.py       # single-instance guard + heartbeat-file reading, shared by main.py and the telethon status route
+│   └── server.py              # FastAPI app + static file mount
+├── backfill.py                # Historical-message import - separate entry point from main.py; can't run at the same time as the live archiver (same Telegram session)
+├── main.py                    # Userbot entry point
+├── config.py                  # Settings loader (.env -> Settings dataclass)
 ├── db/
-│   ├── connection.py    # Postgres connection pool (SQLAlchemy Engine + psycopg)
-│   ├── schema.py        # Table definitions (SQLAlchemy Core) - read by Alembic, not applied at runtime
-│   ├── queries.py       # All write operations (used by the userbot)
-│   └── read_queries.py  # All read operations (used by the API)
+│   ├── connection.py          # Postgres connection pool (SQLAlchemy Engine + psycopg)
+│   ├── schema.py               # Table definitions (SQLAlchemy Core) - read by Alembic, not applied at runtime
+│   ├── queries.py               # All write operations (used by the userbot)
+│   └── read_queries.py          # All read operations (used by the API)
 ├── scripts/
 │   ├── migrate_sqlite_to_postgres.py  # One-time SQLite -> Postgres data migration
-│   ├── toggle_archiver.ps1 / .bat     # Windows shortcut to start/stop the live archiver
+│   └── toggle_archiver.ps1 / .bat     # Windows shortcut to start/stop the live archiver
 ├── handlers/
 │   ├── helpers.py       # Shared Telethon entity utilities
 │   ├── on_message.py    # NewMessage handler
 │   ├── on_delete.py     # MessageDeleted handler
 │   └── on_edit.py       # MessageEdited handler
-├── web/                 # Vanilla JS/HTML/CSS PWA — no build step
+├── web/                  # Vanilla JS/HTML/CSS PWA — no build step
 │   ├── css/
+│   │   ├── base.css
+│   │   └── variables.css
 │   ├── js/
-│   │   ├── lib/         # Shared helpers (DOM escaping, pagination)
-│   │   ├── views/       # One controller per nav tab
-│   │   └── i18n/        # en.js, uk.js
+│   │   ├── i18n/
+│   │   │   ├── en.js
+│   │   │   └── uk.js
+│   │   ├── lib/               # Shared helpers
+│   │   │   ├── chat-filter.js
+│   │   │   ├── dom.js
+│   │   │   ├── errors.js
+│   │   │   ├── order-toggle.js
+│   │   │   └── pagination.js
+│   │   ├── views/              # One controller per nav tab
+│   │   │   ├── backfill.js
+│   │   │   ├── chats.js
+│   │   │   ├── deleted.js
+│   │   │   ├── health.js
+│   │   │   ├── messages.js
+│   │   │   └── stats.js
+│   │   ├── app.js              # Entry point, loaded as an ES module - routes between views
+│   │   ├── archiver-toggle.js   # Start/stop control + status polling, shared by the nav rail and Backfill page
+│   │   ├── i18n.js              # t(), language switching, dispatches televault:langchange
+│   │   └── theme.js              # Light/dark theme toggle - loaded as a plain script, before the module graph
+│   ├── icons/
+│   │   ├── icon-192.png
+│   │   └── icon-512.png
+│   ├── favicon.ico
 │   ├── index.html
 │   ├── sw.js
 │   └── manifest.webmanifest
-├── docker-compose.yml   # Local dev Postgres
-├── docker/init/         # Runs once, first time the Postgres container starts (enables pg_trgm)
-└── utils/
-    └── logging_setup.py # Console + rotating file logging
+├── docker-compose.yml    # Local dev Postgres
+├── docker/init/
+│   └── 01-extensions.sql   # Runs once, first time the Postgres container starts (enables pg_trgm)
+├── utils/
+│   ├── atomic_write.py    # Crash-safe JSON writes (used for the heartbeat + backfill-status files)
+│   └── logging_setup.py   # Console + rotating file logging
+├── .env.example        # Environment variable template
+├── .gitattributes      # Enforces LF line endings on Windows checkouts
+├── .gitignore
+├── requirements.txt    # Pinned dependencies
+├── CHANGELOG.md
+└── README.md
 ```
 
 ---
@@ -305,8 +359,9 @@ A few things worth checking on periodically once this is deployed and running lo
   including deleted messages. Fine for `127.0.0.1`-only local use; if you
   deploy this on a VPS reachable from the internet, put it behind something
   that authenticates first (e.g. Nginx with basic auth, a VPN, or an
-  SSH tunnel) rather than exposing the port directly. Login/auth for the web
-  UI itself isn't planned yet.
+  SSH tunnel) rather than exposing the port directly. Login/registration
+  for the web UI itself is planned next (see CHANGELOG's Unreleased
+  section) but not built yet.
 - **Local development needs Postgres running.** Unlike SQLite, there's no
   "just open the file" - the Postgres container (or however you're running
   Postgres) needs to be up any time you want to connect to the database,

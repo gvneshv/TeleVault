@@ -11,9 +11,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Planned — Phase 3 (Advanced Features)
 
-- Full-text search via SQLite FTS5 virtual table
-- Backfill: archive historical messages sent before TeleVault was running
-- Chat filter: allowlist/blocklist to control which chats are archived
+- Authentication for the web UI (registration + login) — the API has no
+  auth today (see README's Notes section); planned as the next piece of
+  work after [2.1.0]
+- Ingestion-time chat filter: allowlist/blocklist to control which chats
+  get *archived* in the first place — distinct from the display-time chat
+  filter (which chats a view *shows* from what's already archived) shipped
+  in [2.1.0]
 - Storage mode: `all` (default) vs `deletions_only`
 - Display name overrides: map a friendly label to a sender ID
 - Username change tracking (`username_history` table)
@@ -21,11 +25,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Data management: clear all data, clear per-chat data (with irreversibility warning)
 - Message ignore rules: filter by chat or text pattern before archiving
 - TTL / retention policy: auto-delete archived messages older than N months
-- Migrate `web/js/*.js` to ES modules — currently all classic scripts sharing
-  one global lexical scope, which caused a real page-breaking `const`
-  collision during Phase 2 (see [1.1.0]'s Fixed section); ES modules make
-  this class of bug structurally impossible instead of a naming-discipline
-  concern
 - Saved Messages actor inference: `deleted_by_inference = 'self'` when a
   message's `chat_id` equals the archiving account's own Telegram user ID
   (only that one chat is deterministic this way — see [1.1.0]'s note on why
@@ -48,7 +47,80 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [2.0.0] — 2026-09-10
+## [2.1.0] — 2026-09-13
+
+### Summary
+
+Reliability fixes for the Postgres migration shipped in [2.0.0] — several
+of which only surfaced under real usage after that release (a stopped
+Docker container, a deleted `data/` directory, Postgres disappearing
+mid-run) — plus two new features: a chat filter for the Messages and
+Deleted views, and pagination for the Backfill history table.
+
+### Added
+
+- Chat filter dropdown (Messages, Deleted views) — checkbox multi-select
+  across every archived chat, with a pinned "All chats" default, in-panel
+  search, and a per-view persisted selection (`localStorage` — Messages
+  and Deleted deliberately keep independent selections). Backed by a new
+  `GET /api/chats/options` endpoint (unpaginated `{chat_id, name}` list)
+  and a repeatable `chat_ids` query param on `/api/messages` and
+  `/api/deleted`
+- Pagination for the Backfill history table — `GET /api/backfill/history`
+  now takes `page`/`per_page` (default 20) and returns the same
+  `PaginatedResponse` envelope every other list endpoint uses, replacing
+  an unpaginated `LIMIT 50`
+- `db/connection.py`'s `check_connection()` — lets `main.py`/`backfill.py`
+  verify Postgres is actually reachable immediately at startup, instead of
+  only discovering it's not on the first real query
+
+### Fixed
+
+- **Heartbeat file crash on shutdown, and a resulting false "not running"
+  status** — nothing ensured `data/` existed before writing into it; this
+  was previously an implicit side effect of SQLite living there, and broke
+  once storage moved to Postgres and that directory was later deleted. The
+  very first heartbeat write then failed with `FileNotFoundError`, an
+  exception that only surfaced on shutdown (when it was finally awaited),
+  while the heartbeat file itself was never actually written — so the web
+  UI never showed the archiver as running, and the single-instance guard
+  (which reads that same file) let a second `main.py` start and corrupt
+  Telethon's own session file. Fixed by ensuring `data/` exists before
+  every heartbeat/status write (`main.py`, `utils/atomic_write.py`)
+- **`main.py`/`backfill.py` reporting healthy with no reachable
+  Postgres** — `init_db()` only builds the SQLAlchemy `Engine`, it never
+  opens a connection, so a stopped Docker container went unnoticed until
+  the first real query hung. Both now call `check_connection()` right
+  after `init_db()` and exit with a clear message if it fails
+- **Multi-minute hang, then a forced double Ctrl-C, when Postgres
+  disappeared mid-run** — the `connect_timeout` added alongside
+  `check_connection()` only bounds establishing a *new* connection; an
+  already-open one that goes dead without a clean FIN/RST fell back to the
+  OS's own TCP retransmission timeout (on the order of minutes). Added TCP
+  keepalives (`keepalives_idle`/`interval`/`count`) so a dead connection is
+  noticed in roughly 14 seconds instead
+- **DB-connectivity failures logged as a full connection-pool traceback**
+  in `handlers/on_message.py`, `on_edit.py`, `on_delete.py` — now caught
+  specifically as `sqlalchemy.exc.OperationalError` and logged as one
+  readable line; genuinely unexpected errors still get the full traceback.
+  `on_delete.py`'s `_persist_deletions()` additionally had no exception
+  handling at all around its DB connection, so a failure there escaped to
+  Telethon's own generic handler instead of TeleVault's own logging — now
+  caught the same way
+
+### Changed
+
+- Active nav-tab styling (Chats/Messages/Deleted/Stats/Health) — replaced
+  the plain inset left-border accent with a glowing ring
+  (`--color-focus-glow`, a new per-theme CSS variable), in both light and
+  dark themes
+- **Breaking (internal API):** `/api/messages` and `/api/deleted` no
+  longer accept the singular `chat_id` query param — replaced by a
+  repeatable `chat_ids`, matching the new chat-filter dropdown. Not
+  externally versioned (single-user, self-hosted), but noted here since
+  it's a genuine parameter removal, not an addition
+
+---
 
 ### Summary
 
@@ -418,7 +490,8 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at)
 
 ---
 
-[Unreleased]: https://github.com/Gvneshv/TeleVault/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Gvneshv/TeleVault/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Gvneshv/TeleVault/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Gvneshv/TeleVault/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/Gvneshv/TeleVault/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Gvneshv/TeleVault/compare/v1.0.0...v1.1.0
