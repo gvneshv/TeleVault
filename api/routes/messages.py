@@ -27,7 +27,9 @@ def list_messages(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     q: str | None = Query(None, description="Substring search within message text."),
-    chat_id: int | None = Query(None, description="Restrict to one chat."),
+    chat_ids: list[int] | None = Query(
+        None, description="Restrict to one or more chats."
+    ),
     sender_id: int | None = Query(None, description="Restrict to one sender."),
     date_from: str | None = Query(
         None, description="ISO 8601 inclusive lower bound on message date."
@@ -59,7 +61,7 @@ def list_messages(
         page=page,
         per_page=per_page,
         q=q,
-        chat_id=chat_id,
+        chat_ids=chat_ids,
         sender_id=sender_id,
         date_from=date_from,
         date_to=date_to,

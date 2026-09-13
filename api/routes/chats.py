@@ -2,6 +2,7 @@
 Chat-related endpoints:
 
     GET /api/chats                      — paginated list of all known chats
+    GET /api/chats/options              — every chat's {chat_id, name}, unpaginated (for filter dropdowns)
     GET /api/chats/{chat_id}            — single chat with aggregate counts
     GET /api/chats/{chat_id}/messages   — paginated messages within one chat
 """
@@ -13,8 +14,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.dependencies import get_db
-from api.schemas import ChatOut, MessageOut, PaginatedResponse
-from db.read_queries import get_chat, get_chats, get_chat_messages
+from api.schemas import ChatOut, ChatOption, MessageOut, PaginatedResponse
+from db.read_queries import get_chat, get_chats, get_chat_options, get_chat_messages
 
 router = APIRouter(tags=["chats"])
 
@@ -52,6 +53,22 @@ def list_chats(
     """
     result = get_chats(db, page=page, per_page=per_page, order=order)
     return _build_page(result, page, per_page)
+
+
+@router.get(
+    "/chats/options",
+    response_model=list[ChatOption],
+    summary="List every chat's id and name, unpaginated",
+)
+def list_chat_options(db: Connection = Depends(get_db)) -> list[ChatOption]:
+    """
+    Return {chat_id, name} for every chat TeleVault has seen, with no pagination.
+
+    Powers the chat-filter dropdown on the Messages/Deleted views,
+    which needs the full list to build its checkbox options - unlike GET /api/chats, this is not meant for a paginated sidebar.
+    Registered ahead of /chats/{chat_id} below so "options" is matched as this literal path, not swallowed as an attempted (and invalid) {chat_id} value.
+    """
+    return get_chat_options(db)
 
 
 @router.get(

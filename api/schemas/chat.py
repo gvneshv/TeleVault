@@ -27,6 +27,18 @@ class ChatSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChatOption(BaseModel):
+    """
+    Minimal {chat_id, name} pair used to populate the chat-filter dropdown on the Messages/Deleted views (GET /api/chats/options).
+    Deliberately smaller than ChatSummary - the dropdown only ever displays a name, never a type badge.
+    """
+
+    chat_id: int
+    name: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class ChatOut(BaseModel):
     """
     Full chat record returned by GET /api/chats and GET /api/chats/{chat_id}.

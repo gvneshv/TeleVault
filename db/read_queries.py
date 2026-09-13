@@ -194,6 +194,23 @@ def get_chats(
     return _paginate(sql, {}, conn, page, per_page)
 
 
+def get_chat_options(conn: Connection) -> list[dict[str, Any]]:
+    """
+    Return every chat's {chat_id, name}, unpaginated - for populating the chat-filter dropdown on the Messages/Deleted views,
+    not for the main chat list (which stays paginated via get_chats()).
+
+    Named chats sort alphabetically (case-insensitive) first;
+    chats with no name yet (name IS NULL - possible right after first contact, before Telegram's own metadata arrives)
+    sort last, ordered by chat_id, rather than clumping at the top of an alphabetical sort.
+    """
+    sql = """
+        SELECT chat_id, name
+        FROM chats
+        ORDER BY (name IS NULL) ASC, LOWER(name) ASC, chat_id ASC
+    """
+    return _rows_to_dicts(conn.execute(sql_text(sql)))
+
+
 def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
     """
     Return a single chat record with aggregate counts.
@@ -252,7 +269,7 @@ def get_messages(
     page: int = 1,
     per_page: int = 50,
     q: str | None = None,
-    chat_id: int | None = None,
+    chat_ids: list[int] | None = None,
     sender_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -270,7 +287,7 @@ def get_messages(
 
     Filter behaviour:
         q            : case-insensitive substring match on message text.
-        chat_id      : restrict to one chat.
+        chat_ids     : restrict to one or more chats (the Messages/Deleted views' chat-filter dropdown - empty/None means no restriction, i.e. all chats).
         sender_id    : restrict to one sender.
         date_from    : ISO 8601 string, inclusive lower bound on m.date.
         date_to      : ISO 8601 string, inclusive upper bound on m.date.
@@ -318,9 +335,14 @@ def get_messages(
     if q:
         conditions.append("m.text ILIKE :q_pattern")
         params["q_pattern"] = _like_pattern(q)
-    if chat_id is not None:
-        conditions.append("m.chat_id = :chat_id")
-        params["chat_id"] = chat_id
+    if chat_ids:
+        # Named, individually-bound placeholders (:chat_id_0, :chat_id_1, ...) rather than a single array bound to ANY(:chat_ids)
+        # - keeps this consistent with every other filter here (plain named params, no driver-specific array adaptation to reason about)
+        # at the cost of one param per selected chat, which is fine for a dropdown of realistically at most a few hundred chats.
+        placeholders = ", ".join(f":chat_id_{i}" for i in range(len(chat_ids)))
+        conditions.append(f"m.chat_id IN ({placeholders})")
+        for i, cid in enumerate(chat_ids):
+            params[f"chat_id_{i}"] = cid
     if sender_id is not None:
         conditions.append("m.sender_id = :sender_id")
         params["sender_id"] = sender_id
