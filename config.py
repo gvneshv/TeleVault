@@ -12,8 +12,8 @@ Why a dataclass rather than reading os.environ inline?
   - Type annotations document what each setting is supposed to be.
   - Missing required values fail loudly at startup, not halfway through a run.
  
-Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE
-Optional (have defaults): DB_PATH, DATABASE_URL, SESSION_NAME, LOG_LEVEL, LOG_FILE
+Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE, FERNET_KEY, JWT_SECRET
+Optional (have defaults): DB_PATH, DATABASE_URL, CONTROL_DATABASE_URL, SESSION_NAME, LOG_LEVEL, LOG_FILE
 """
 
 import os
@@ -93,6 +93,30 @@ class Settings:
     # Defaults to matching docker-compose.yml's local dev Postgres service. ---
     database_url: str
 
+    # --- Storage (control DB - auth/multi-user feature) ---
+    # Deliberately a SEPARATE database from database_url above, not just a separate schema/table prefix within it:
+    # database_url points at ONE user's archive (chats/messages/etc.);
+    # this points at the single shared DB holding accounts, invites, refresh tokens, and audit log -
+    # see control_db/schema.py's module docstring for the full reasoning.
+    # Same Postgres instance as database_url by default (just a different database name) - nothing stops pointing
+    # this at a different host/instance entirely later, since it's a fully independent connection string.
+    control_database_url: str
+
+    # --- Encryption (control DB credential columns: users.telegram_api_id/api_hash/session_string) ---
+    # Symmetric (Fernet) key used by utils/crypto.py to encrypt/decrypt those three columns before they touch the database.
+    # Required, not optional-with-a-default:
+    # an auto-generated default here would mean every fresh checkout silently gets its OWN key,
+    # unable to decrypt anything encrypted under a previous run's default - a missing key should fail loudly at startup
+    # (see this file's module docstring), not silently generate a new one that can't read existing data.
+    fernet_key: str
+
+    # --- Auth (JWT access/refresh tokens - see utils/security.py) ---
+    # Separate from fernet_key above on purpose: that key ENCRYPTS values for storage (reversible, needs the exact same key to read them back later);
+    # this one SIGNS tokens (HMAC) so the server can verify a token wasn't forged/tampered with.
+    # Different operations, different blast radius if leaked - keeping them as two independent secrets means rotating one
+    # (e.g. to invalidate all outstanding tokens) doesn't also break every already-encrypted credential column, and vice versa.
+    jwt_secret: str
+
     # --- Logging ---
     log_level: str          # 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
     log_file: str | None    # None means log to console only
@@ -126,6 +150,9 @@ def _load() -> Settings:
         session_name=           _optional("SESSION_NAME", "televault"),
         db_path=                _optional("DB_PATH", "data/televault.db"),
         database_url=           _optional("DATABASE_URL", "postgresql+psycopg://televault:televault@localhost:5432/televault"),
+        control_database_url=   _optional("CONTROL_DATABASE_URL", "postgresql+psycopg://televault:televault@localhost:5432/televault_control"),
+        fernet_key=             _require("FERNET_KEY"),
+        jwt_secret=             _require("JWT_SECRET"),
         log_level=              _optional("LOG_LEVEL", "INFO"),
         log_file=               log_file,
         heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),
