@@ -1,0 +1,13 @@
+-- Creates the separate 'control' database for the auth/multi-user feature (users, invites, refresh_tokens,
+-- auth_audit_log - see control_db/schema.py for why this is a separate database from the main archive one).
+--
+-- Same Postgres instance/container as the main 'televault' database (POSTGRES_DB above in docker-compose.yml),
+-- just a second database within it - matches CONTROL_DATABASE_URL's default in config.py/.env.example.
+--
+-- Numbered 00- (before 01-extensions.sql) purely so init order is explicit/predictable;
+-- the two scripts don't actually depend on each other
+-- (01-extensions.sql's CREATE EXTENSION applies to POSTGRES_DB, unaffected by whether this database exists yet).
+--
+-- Only takes effect on a fresh data volume - same one-time-only caveat as 01-extensions.sql
+-- (docker-entrypoint-initdb.d scripts only run against an empty volume, not on every container restart).
+CREATE DATABASE televault_control OWNER televault;
