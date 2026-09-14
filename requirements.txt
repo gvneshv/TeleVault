@@ -14,3 +14,8 @@ pydantic>=2.0       # schemas use Pydantic v2 model_config and field syntax
 sqlalchemy>=2.0     # Core (not the ORM) - see db/ for why
 psycopg[binary]>=3.1  # Postgres driver; [binary] avoids needing build tools locally
 alembic>=1.13       # schema migrations, replacing the old hand-rolled db/migrations/ scripts
+
+# --- Auth (control DB - see control_db/ and utils/crypto.py, utils/security.py) ---
+cryptography>=42    # Fernet symmetric encryption for users' Telegram-credential columns
+passlib[argon2]>=1.7  # argon2 password hashing for users.password_hash
+pyjwt>=2.8           # JWT access/refresh token issuing and verification
