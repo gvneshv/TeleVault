@@ -9,13 +9,47 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Planned — Phase 3 (Advanced Features)
+### Added
 
-- Authentication for the web UI (registration + login) — the API has no
-  auth today (see README's Notes section); planned as the next piece of
-  work after [2.1.0]
+- **Multi-user authentication (backend)** - `POST /auth/register` (invite-token based),
+  `/auth/login`, `/auth/refresh`, `/auth/logout`, `GET /auth/me`. Backed by a new, separate
+  control database (`control_db/`, `alembic_control/` - see `control_db/schema.py` for why
+  account data lives in its own database rather than alongside the per-user archive schema)
+  - Refresh tokens rotate on every use and record *why* a token was revoked
+    (`refresh_tokens.revoked_reason`: `rotated` / `logout` / `reuse_detected` / `account_locked`).
+    Redeeming an already-rotated or already-reuse-flagged token revokes every other active
+    session for that account (a legitimate client always moves on to its replacement, so seeing
+    an old one again is a theft signal) - but an ordinary logout is recognized as exactly that,
+    and does *not* trigger the same account-wide revocation
+  - Login throttling is keyed per-account (5 failed attempts / 15 minutes blocks further attempts
+    on that account specifically) rather than per-IP, so one person mistyping their password on a
+    shared network/VPN can never lock anyone else's account out. A narrower IP-keyed fallback
+    only applies to repeated guesses against usernames that don't exist at all, where there's no
+    real account for it to affect
+- `scripts/manage_admin.py` - `create`/`promote` subcommands to bootstrap or grant the first
+  admin account outside the invite flow (which otherwise has no way to create user #1, since
+  every invite must itself be created by an existing user)
+- **Archive access is now gated to its owning account** - `require_owner` (`api/dependencies.py`)
+  restricts `/api/chats`, `/messages`, `/deleted`, `/stats`, `/telethon/*`, and `/backfill/*` to
+  the single account named by the new required `OWNER_USER_ID` setting. Deliberately NOT "any
+  authenticated user" and NOT "any admin" - this archive is one person's private message
+  history, and admin status (account management) is kept fully independent of archive access, so
+  promoting a second admin (`manage_admin.py promote`) never grants them your messages. `/auth/*`
+  and `/health` remain open, since they're what let an account prove who it is in the first
+  place. `OWNER_USER_ID` has no default; the app refuses to start without it set correctly
+  (see `.env.example`)
+  - **Known gap this introduces:** the existing frontend (`web/js/`) has no login page or token
+    storage yet, so its Chats/Messages/Deleted/Stats/Backfill views will now show errors - they
+    never attach the `Authorization` header `require_owner` needs. Use `/api/docs`'s "Authorize"
+    button in the meantime (see README step 8)
+
+### Planned - Phase 3 (Advanced Features)
+
+- Admin endpoints (invite creation, listing/locking users) and frontend login/register pages for
+  the auth backend added above - the endpoints exist, but there's currently no way to create an
+  invite except by hand against the database, and no UI to use any of this yet
 - Ingestion-time chat filter: allowlist/blocklist to control which chats
-  get *archived* in the first place — distinct from the display-time chat
+  get *archived* in the first place - distinct from the display-time chat
   filter (which chats a view *shows* from what's already archived) shipped
   in [2.1.0]
 - Storage mode: `all` (default) vs `deletions_only`
@@ -27,95 +61,95 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TTL / retention policy: auto-delete archived messages older than N months
 - Saved Messages actor inference: `deleted_by_inference = 'self'` when a
   message's `chat_id` equals the archiving account's own Telegram user ID
-  (only that one chat is deterministic this way — see [1.1.0]'s note on why
+  (only that one chat is deterministic this way - see [1.1.0]'s note on why
   private/group chats generally aren't). Needs the account's own ID
   captured once at startup and stored somewhere `flag_deleted()` can reach
-  it — not done yet, `main.py` currently only uses `get_me()` for a log line
+  it - not done yet, `main.py` currently only uses `get_me()` for a log line
 - Expose `SenderOut.resolved_name` as a computed API field instead of the
   same priority logic being duplicated in three places (the backend
   property, `messages.js`, `deleted.js`)
 - Preserve a Deleted-view row's expanded detail panel across pagination and
-  language switches (currently collapses — a deliberate trade-off, not a bug)
+  language switches (currently collapses - a deliberate trade-off, not a bug)
 
-### Planned — Phase 4 (Infrastructure & Expansion)
+### Planned - Phase 4 (Infrastructure & Expansion)
 
 - Media archiving (photos, documents, voice notes) with disk management
 - Orphan cleanup scheduler: reconcile DB records vs files on disk
 - Notifications: Web Push via service worker (requires HTTPS)
 - Read receipt inference: track `read_inbox_max_id` per chat (private chats only)
-- Reactions tracking (`message_reactions` snapshot table) — low priority
+- Reactions tracking (`message_reactions` snapshot table) - low priority
 
 ---
 
-## [2.1.0] — 2026-09-13
+## [2.1.0] - 2026-09-13
 
 ### Summary
 
-Reliability fixes for the Postgres migration shipped in [2.0.0] — several
+Reliability fixes for the Postgres migration shipped in [2.0.0] - several
 of which only surfaced under real usage after that release (a stopped
 Docker container, a deleted `data/` directory, Postgres disappearing
-mid-run) — plus two new features: a chat filter for the Messages and
+mid-run) - plus two new features: a chat filter for the Messages and
 Deleted views, and pagination for the Backfill history table.
 
 ### Added
 
-- Chat filter dropdown (Messages, Deleted views) — checkbox multi-select
+- Chat filter dropdown (Messages, Deleted views) - checkbox multi-select
   across every archived chat, with a pinned "All chats" default, in-panel
-  search, and a per-view persisted selection (`localStorage` — Messages
+  search, and a per-view persisted selection (`localStorage` - Messages
   and Deleted deliberately keep independent selections). Backed by a new
   `GET /api/chats/options` endpoint (unpaginated `{chat_id, name}` list)
   and a repeatable `chat_ids` query param on `/api/messages` and
   `/api/deleted`
-- Pagination for the Backfill history table — `GET /api/backfill/history`
+- Pagination for the Backfill history table - `GET /api/backfill/history`
   now takes `page`/`per_page` (default 20) and returns the same
   `PaginatedResponse` envelope every other list endpoint uses, replacing
   an unpaginated `LIMIT 50`
-- `db/connection.py`'s `check_connection()` — lets `main.py`/`backfill.py`
+- `db/connection.py`'s `check_connection()` - lets `main.py`/`backfill.py`
   verify Postgres is actually reachable immediately at startup, instead of
   only discovering it's not on the first real query
 
 ### Fixed
 
 - **Heartbeat file crash on shutdown, and a resulting false "not running"
-  status** — nothing ensured `data/` existed before writing into it; this
+  status** - nothing ensured `data/` existed before writing into it; this
   was previously an implicit side effect of SQLite living there, and broke
   once storage moved to Postgres and that directory was later deleted. The
   very first heartbeat write then failed with `FileNotFoundError`, an
   exception that only surfaced on shutdown (when it was finally awaited),
-  while the heartbeat file itself was never actually written — so the web
+  while the heartbeat file itself was never actually written - so the web
   UI never showed the archiver as running, and the single-instance guard
   (which reads that same file) let a second `main.py` start and corrupt
   Telethon's own session file. Fixed by ensuring `data/` exists before
   every heartbeat/status write (`main.py`, `utils/atomic_write.py`)
 - **`main.py`/`backfill.py` reporting healthy with no reachable
-  Postgres** — `init_db()` only builds the SQLAlchemy `Engine`, it never
+  Postgres** - `init_db()` only builds the SQLAlchemy `Engine`, it never
   opens a connection, so a stopped Docker container went unnoticed until
   the first real query hung. Both now call `check_connection()` right
   after `init_db()` and exit with a clear message if it fails
 - **Multi-minute hang, then a forced double Ctrl-C, when Postgres
-  disappeared mid-run** — the `connect_timeout` added alongside
+  disappeared mid-run** - the `connect_timeout` added alongside
   `check_connection()` only bounds establishing a *new* connection; an
   already-open one that goes dead without a clean FIN/RST fell back to the
   OS's own TCP retransmission timeout (on the order of minutes). Added TCP
   keepalives (`keepalives_idle`/`interval`/`count`) so a dead connection is
   noticed in roughly 14 seconds instead
 - **DB-connectivity failures logged as a full connection-pool traceback**
-  in `handlers/on_message.py`, `on_edit.py`, `on_delete.py` — now caught
+  in `handlers/on_message.py`, `on_edit.py`, `on_delete.py` - now caught
   specifically as `sqlalchemy.exc.OperationalError` and logged as one
   readable line; genuinely unexpected errors still get the full traceback.
   `on_delete.py`'s `_persist_deletions()` additionally had no exception
   handling at all around its DB connection, so a failure there escaped to
-  Telethon's own generic handler instead of TeleVault's own logging — now
+  Telethon's own generic handler instead of TeleVault's own logging - now
   caught the same way
 
 ### Changed
 
-- Active nav-tab styling (Chats/Messages/Deleted/Stats/Health) — replaced
+- Active nav-tab styling (Chats/Messages/Deleted/Stats/Health) - replaced
   the plain inset left-border accent with a glowing ring
   (`--color-focus-glow`, a new per-theme CSS variable), in both light and
   dark themes
 - **Breaking (internal API):** `/api/messages` and `/api/deleted` no
-  longer accept the singular `chat_id` query param — replaced by a
+  longer accept the singular `chat_id` query param - replaced by a
   repeatable `chat_ids`, matching the new chat-filter dropdown. Not
   externally versioned (single-user, self-hosted), but noted here since
   it's a genuine parameter removal, not an addition
@@ -126,7 +160,7 @@ Deleted views, and pagination for the Backfill history table.
 
 Full migration of the storage layer from SQLite to PostgreSQL (SQLAlchemy
 Core + Alembic + psycopg v3). A major-version bump rather than a minor one:
-this is not a drop-in upgrade — existing installs need Postgres running
+this is not a drop-in upgrade - existing installs need Postgres running
 (Docker Compose provided), `alembic upgrade head` run once, and, for anyone
 with an existing SQLite archive, a one-time data migration script. The
 application's own behavior (archiving, search, the web UI) is functionally
@@ -135,71 +169,71 @@ setup steps 2–4.
 
 ### Added
 
-- `alembic/` — Alembic initialized, pointed at `db/schema.py`'s metadata and
+- `alembic/` - Alembic initialized, pointed at `db/schema.py`'s metadata and
   `config.py`'s `DATABASE_URL` (not duplicated into `alembic.ini`)
-- `alembic/versions/..._baseline_schema.py` — baseline migration: all 7
+- `alembic/versions/..._baseline_schema.py` - baseline migration: all 7
   tables and 9 indexes (autogenerated from `db/schema.py`), plus
   hand-written `CREATE EXTENSION pg_trgm` and 6 PL/pgSQL trigger functions
   maintaining `chats`' denormalized counters (`message_count`,
   `deleted_count`, `edited_count`, `first_message_at`, `last_message_at`,
-  `last_message_preview`) — ported from the old SQLite migration 005's
+  `last_message_preview`) - ported from the old SQLite migration 005's
   triggers. Two genuine (not just syntactic) translation issues: SQLite's
   2-argument `MIN`/`MAX` scalar functions have no Postgres equivalent
-  (Postgres's are aggregate-only) — replaced with `LEAST`/`GREATEST`; and
+  (Postgres's are aggregate-only) - replaced with `LEAST`/`GREATEST`; and
   `is_edited`/`is_deleted` are native `BOOLEAN` now, so counter arithmetic
   needs an explicit `::int` cast. Verified end-to-end against a live
   Postgres instance (upgrade, trigger behavior under real writes,
   downgrade, re-upgrade).
-- `scripts/migrate_sqlite_to_postgres.py` — one-time data migration for
+- `scripts/migrate_sqlite_to_postgres.py` - one-time data migration for
   existing SQLite archives. Per-chat atomic transactions make it safely
-  resumable after any interruption — verified with a real simulated
+  resumable after any interruption - verified with a real simulated
   mid-chat crash (confirmed zero partial rows persist, and a re-run cleanly
   completes only the interrupted chat). Handles two distinct datetime
   string formats present in the same source database, verified against the
   actual pre-migration code rather than assumed. `--dry-run` and `--verify`
   modes; built-in post-migration row-count verification across all 7 tables.
-- `docker-compose.yml`, `docker/init/01-extensions.sql` — local dev Postgres
+- `docker-compose.yml`, `docker/init/01-extensions.sql` - local dev Postgres
   16 instance with `pg_trgm` enabled on first start
-- `db/connection.py`'s `get_readonly_connection()` — read-only session
+- `db/connection.py`'s `get_readonly_connection()` - read-only session
   enforcement via `SET default_transaction_read_only`, replacing SQLite's
   `file:...?mode=ro` URI trick
 
 ### Changed
 
-- `db/schema.py` — rewritten from raw SQLite DDL strings to SQLAlchemy Core
+- `db/schema.py` - rewritten from raw SQLite DDL strings to SQLAlchemy Core
   `Table` objects. `BigInteger` for every Telegram ID column (SQLite's
   `INTEGER` was already 64-bit, silently hiding the fact that Postgres's
   plain `integer` is only 32-bit), `TIMESTAMPTZ` replacing TEXT-stored ISO
   datetimes, native `BOOLEAN` replacing `INTEGER` 0/1, and a single
   `pg_trgm` GIN index directly on `messages.text` replacing the FTS5
   virtual table + 3 sync triggers
-- `db/connection.py` — single global `sqlite3.Connection` replaced with a
+- `db/connection.py` - single global `sqlite3.Connection` replaced with a
   SQLAlchemy `Engine` + connection pool (psycopg v3). `get_connection()` is
   now "checkout, use, close" rather than "the one connection held open for
-  the app's lifetime" — a real contract change, not just an implementation
+  the app's lifetime" - a real contract change, not just an implementation
   swap; verified against live Postgres, including a rollback-ordering bug
   caught in testing (a rejected write on a read-only connection left it in
   an aborted-transaction state that had to be explicitly cleared before
   returning it to the pool)
-- `db/queries.py`, `db/read_queries.py` — ported to SQLAlchemy Core.
+- `db/queries.py`, `db/read_queries.py` - ported to SQLAlchemy Core.
   `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`, `cursor.lastrowid` →
   `RETURNING id`, `UPDATE OR IGNORE` (no Postgres equivalent) → a
   `NOT EXISTS`-guarded bulk `UPDATE` in `merge_chat()`. FTS5 `MATCH` search
-  replaced with `ILIKE` + `pg_trgm` — verified wildcard-escaping actually
+  replaced with `ILIKE` + `pg_trgm` - verified wildcard-escaping actually
   works (a bare `%` or `_` search matches only literal characters, not
   every row) rather than assumed
-- `handlers/on_message.py`, `on_delete.py`, `on_edit.py` — DB writes now run
+- `handlers/on_message.py`, `on_delete.py`, `on_edit.py` - DB writes now run
   via `asyncio.to_thread()` rather than inline: a Postgres round-trip would
   otherwise block Telethon's entire event loop for its duration, unlike
   SQLite's negligible local file I/O. Verified DB work genuinely runs off
   the event-loop thread, not just wrapped
-- `api/dependencies.py` — `get_db()` now yields from
+- `api/dependencies.py` - `get_db()` now yields from
   `get_readonly_connection()` instead of opening a raw `sqlite3` connection
   in `ro` URI mode
-- `main.py`, `backfill.py` — `init_db()` now takes a `DATABASE_URL`, not a
+- `main.py`, `backfill.py` - `init_db()` now takes a `DATABASE_URL`, not a
   file path; schema application is `alembic upgrade head` (a deploy step),
   not a function called at every startup
-- `api/routes/backfill.py` — cancel endpoint's write path fixed: it was
+- `api/routes/backfill.py` - cancel endpoint's write path fixed: it was
   opening a raw `sqlite3` connection directly in a route file, which would
   have broken outright with SQLite gone, and was also a genuine write that
   can't go through `get_db()`'s now-read-only connection
@@ -208,16 +242,16 @@ setup steps 2–4.
 
 - `handlers/on_delete.py`'s no-`chat_id` fallback path
   (`_flag_deleted_without_chat`) had its own untouched raw SQL using SQLite
-  `?` placeholders and `is_deleted = 0` — would have errored immediately
+  `?` placeholders and `is_deleted = 0` - would have errored immediately
   against Postgres's native `BOOLEAN` column type the first time a
   private-chat deletion arrived with no `chat_id`
-- `handlers/on_edit.py` — sender-upsert guard condition was inverted
+- `handlers/on_edit.py` - sender-upsert guard condition was inverted
   (`is None` instead of `is not None`), passing `None` into a non-optional
   parameter. Pre-existing bug, unrelated to this migration; found and fixed
   while already touching this file
 - 5 route files (`deleted.py`, `messages.py`, `stats.py`, `chats.py`,
   `health.py`) had stale `sqlite3.Connection` type hints left over from
-  before `api/dependencies.py`'s return type changed — cosmetic only (these
+  before `api/dependencies.py`'s return type changed - cosmetic only (these
   routes never touch `sqlite3` directly; `db/read_queries.py` handles their
   actual queries), corrected for accuracy
 
@@ -245,7 +279,7 @@ backfill_runs     (id PK IDENTITY, started_at, finished_at, status,
 ### Technical decisions
 
 - SQLAlchemy Core (not the ORM) + psycopg v3 + Alembic
-- `asyncio.to_thread()` wraps only the 3 live-handler DB call sites — not a
+- `asyncio.to_thread()` wraps only the 3 live-handler DB call sites - not a
   move to full async, since API routes are sync (`def`) and don't need
   converting
 - `pg_trgm` chosen for full-text search over native Postgres `tsvector`,
@@ -255,16 +289,16 @@ backfill_runs     (id PK IDENTITY, started_at, finished_at, status,
 - Existing SQLite archives are migrated via a dedicated one-time script
   with its own atomicity/resumability guarantees, not folded into
   `db/queries.py`'s normal write path
-- `is_edited`/`is_deleted` moved from `INTEGER` 0/1 to native `BOOLEAN` —
+- `is_edited`/`is_deleted` moved from `INTEGER` 0/1 to native `BOOLEAN` -
   decided over keeping 0/1 for parity, since psycopg maps `BOOLEAN` straight
   to Python `True`/`False`
 
 ---
 
-## [1.2.0] — 2026-09-07
+## [1.2.0] - 2026-09-07
 
-Last release on the SQLite-based storage layer — the PostgreSQL migration
-begins from here (see "Planned — Phase 4" above).
+Last release on the SQLite-based storage layer - the PostgreSQL migration
+begins from here (see "Planned - Phase 4" above).
 
 ### Fixed
 
@@ -275,7 +309,7 @@ begins from here (see "Planned — Phase 4" above).
   `"idle"` before the new subprocess has written anything.
 - `main.py` and `backfill.py`, when launched directly from a terminal,
   bypassed the mutual-exclusion checks that only fired when started through
-  the API/web UI — allowing two live Telethon sessions, or a session and an
+  the API/web UI - allowing two live Telethon sessions, or a session and an
   in-progress backfill, to run concurrently. Most likely cause of a spurious
   2FA re-prompt seen in practice. Both entry points now guard themselves
   directly, via a new shared `is_archiver_running()` / `is_backfill_running()`
@@ -287,52 +321,52 @@ begins from here (see "Planned — Phase 4" above).
 
 ### Added
 
-- `scripts/toggle_archiver.ps1` / `.bat` — a double-click Windows shortcut
+- `scripts/toggle_archiver.ps1` / `.bat` - a double-click Windows shortcut
   that starts or stops the live archiver directly (reads/writes the same
   heartbeat file `main.py` itself uses; no API server required).
 
 ---
 
-## [1.1.0] — 2026-07-09
+## [1.1.0] - 2026-07-09
 
 ### Summary
 
 Phase 2 complete: a read-only REST API and a full vanilla-JS/HTML/CSS PWA
 web UI, covering all five planned views (Chats, Messages, Deleted, Stats,
-Health). Backward-compatible with Phase 1 — the userbot process is
+Health). Backward-compatible with Phase 1 - the userbot process is
 unchanged; the API server is a separate process that only reads the
 shared SQLite file.
 
-### Added — Archiving (`handlers/`)
+### Added - Archiving (`handlers/`)
 
 - Call service messages now stored with humanized text labels (e.g.
   `[Missed call]`, `[Voice call · N min]`) instead of `NULL`
 
-### Added — API (`api/` package)
+### Added - API (`api/` package)
 
 - FastAPI + Uvicorn REST API, mounted under `/api`, with the static web UI
   served from `/` by the same process (`api/server.py`)
-- Read-only DB access via `api/dependencies.py`'s `get_db()` — opens SQLite
+- Read-only DB access via `api/dependencies.py`'s `get_db()` - opens SQLite
   in `mode=ro` URI mode so the driver hard-errors on any accidental write,
   since the userbot and API share one file
 - Routes: `GET /api/chats`, `/api/chats/{id}`, `/api/chats/{id}/messages`,
   `/api/messages`, `/api/messages/{id}`, `/api/deleted`, `/api/stats`,
   `/api/health`
-- `db/read_queries.py` — read-only query layer backing all routes above;
+- `db/read_queries.py` - read-only query layer backing all routes above;
   returns plain dicts, no ORM
 - Pydantic v2 response schemas (`api/schemas/`): `ChatOut`, `ChatSummary`,
   `MessageOut`, `MessageDetail`, `SenderOut`, `EditOut`, `DeletionOut`,
   `StatsOut`, `ChatStatRow`, `PaginatedResponse`, `HealthOut`
-- `LOWER_UNICODE()` custom SQL function registered per-connection — SQLite's
+- `LOWER_UNICODE()` custom SQL function registered per-connection - SQLite's
   built-in `LOWER()` only folds ASCII case, so this was needed for
   case-insensitive search across non-Latin scripts (e.g. Cyrillic)
 
-### Added — Web UI (`web/` package)
+### Added - Web UI (`web/` package)
 
 - App shell: nav-rail + content-pane layout, "archive paper" (light) /
   "vault steel" (dark) themes via CSS custom properties, EN/UK i18n
   persisted to `localStorage`, PWA manifest + service worker (deliberately
-  excludes `/api/*` from the cache — this is private data, and stale cached
+  excludes `/api/*` from the cache - this is private data, and stale cached
   results would be actively misleading, not just stale)
 - **Chats** view: paginated list with per-chat message/deleted counts and a
   last-message preview
@@ -343,34 +377,34 @@ shared SQLite file.
 - **Stats** view: global totals as stat cards (with client-computed
   deleted/edited percentages) plus a per-chat breakdown table
 - **Health** view: liveness checklist (DB readable, session exists, message
-  count) with manual refresh — no polling
+  count) with manual refresh - no polling
 - Shared `web/js/lib/`: `dom.js` (`escapeHtml`, `highlightMatches`),
-  `pagination.js` (render + wire-up) — extracted once a second view needed
+  `pagination.js` (render + wire-up) - extracted once a second view needed
   identical logic, rather than duplicated per view
 - The "wax-seal" `seal-badge` signature element, reused for deleted-message
   counts
 
-### Added — Deletion actor inference (channel-only)
+### Added - Deletion actor inference (channel-only)
 
 - `deleted_by_inference` now actually computes something: `'channel_admin'`
   for messages deleted from a broadcast channel, since regular subscribers
-  cannot delete channel posts — only admins can, making this a structural
+  cannot delete channel posts - only admins can, making this a structural
   fact rather than a guess
-- Deliberately **not** implemented for private/group/supergroup chats —
+- Deliberately **not** implemented for private/group/supergroup chats -
   Telegram allows any party to delete a message for everyone with no time
   limit and no record of who did it, so a sender_id/timing guess there
   would be closer to a coin flip than a signal. This was the original
   Phase 1 plan (see migration 001); reviewed and dropped during Phase 2 in
   favor of leaving those permanently `'unknown'`
-- New migration `db/migrations/002_channel_admin_only_inference.py` —
+- New migration `db/migrations/002_channel_admin_only_inference.py` -
   rebuilds `message_deletions`' CHECK constraint from
-  `('self', 'other', 'unknown')` (never actually used — see Fixed below) to
+  `('self', 'other', 'unknown')` (never actually used - see Fixed below) to
   `('channel_admin', 'unknown')`
 
 ### Fixed
 
 - **`chat`/`sender` always null in `/api/messages`, `/api/deleted`, and
-  `/api/messages/{id}`** — the SQL correctly joined `senders`/`chats`, but
+  `/api/messages/{id}`** - the SQL correctly joined `senders`/`chats`, but
   nothing reshaped the flat, prefixed columns (`sender_id`, `chat_name`...)
   into the nested objects `MessageOut` expects, so Pydantic silently
   defaulted both to `null` on every row. Added `_shape_message_row()` in
@@ -378,35 +412,35 @@ shared SQLite file.
   it was missing entirely. Verified against a live SQLite DB, not just
   parse-checked
 - **Docstrings describing deletion-actor inference as implemented when it
-  wasn't** — migration 001's and `DeletionOut`'s docstrings both described
+  wasn't** - migration 001's and `DeletionOut`'s docstrings both described
   a "best-effort guess based on sender_id and timing" that, on inspection,
   no code anywhere actually computed; every row got `'unknown'` purely from
   the column default. Corrected to describe the actual (and, since this
   release, final) channel-only design
 - **Page-breaking `const` redeclaration** between `messages.js` and
-  `deleted.js` (both declared an unprefixed `SEARCH_DEBOUNCE_MS`) — none of
+  `deleted.js` (both declared an unprefixed `SEARCH_DEBOUNCE_MS`) - none of
   `web/js/*.js` use ES modules, so top-level `const`/`let` share one global
   lexical scope across every `<script>`-loaded file; the second file to
   load threw a `SyntaxError` at parse time, breaking the entire page.
   Renamed to per-view-prefixed constants; see Phase 3's planned ES-module
   migration above for the structural fix
-- Favicon 404 — file was placed at the project root, which `uvicorn` never
+- Favicon 404 - file was placed at the project root, which `uvicorn` never
   serves (only `web/` is mounted); moved to `web/favicon.ico`, added an
   explicit `<link rel="icon">` tag
 - `seal-badge`'s signature tilt (`rotate(-1.5deg)`) misaligning rows in the
-  Chats view — a fixed rotation angle displaces wider boxes higher than
+  Chats view - a fixed rotation angle displaces wider boxes higher than
   narrower ones, and badge width varies with the deleted-count text.
   Scoped `transform: none` override for that context only; the tilt is
   unchanged everywhere it's used in isolation
 - Chats-view labels (deleted count, chat type, pagination) not re-translating
-  on a language switch — they're built dynamically from fetched data, not
+  on a language switch - they're built dynamically from fetched data, not
   marked `data-i18n`, so `applyTranslations()` had no way to reach them.
   `i18n.js` now dispatches a `televault:langchange` event after switching;
   views listen and re-render their cached data
 
 ### Changed
 
-- `.chat-type-badge` renamed to `.info-badge` — needed as a generic neutral
+- `.chat-type-badge` renamed to `.info-badge` - needed as a generic neutral
   pill by a third, unrelated use (deletion actor-inference labels), not
   just chat type
 - `.chat-pagination*` CSS classes and `chats.pageOf`/`prev`/`next`/`type.*`
@@ -426,7 +460,7 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at,
 ### Known Telegram protocol behaviours (documented)
 
 - `updateDeleteChannelMessages` (the event type that carries a `chat_id`)
-  fires for **both channels and supergroups**, not channels exclusively —
+  fires for **both channels and supergroups**, not channels exclusively -
   important because they have different deletion permissions (channels:
   admins only; supergroups: members can typically delete their own
   messages). The channel-only actor inference above checks `chat_type`
@@ -434,7 +468,7 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at,
 
 ---
 
-## [1.0.0] — 2026-05-30
+## [1.0.0] - 2026-05-30
 
 ### Summary
 
@@ -444,21 +478,21 @@ Stable enough for always-on deployment.
 
 ### Added
 
-- `main.py` — async entry point; graceful shutdown on Ctrl-C (all platforms) and SIGTERM (Unix)
-- `config.py` — frozen `Settings` dataclass loaded from `.env` via `python-dotenv`
-- `db/connection.py` — SQLite connection with WAL mode, FK enforcement, and ISO 8601 datetime adapter
-- `db/schema.py` — DDL for `chats`, `senders`, `messages`, `message_edits`, `message_deletions` tables; applied on every startup
-- `db/queries.py` — all read/write operations with explicit `commit` / `rollback` (no context-manager transactions)
-- `db/__init__.py` — package interface re-exporting `init_db`, `get_connection`, `close_db`, `apply_schema`
-- `handlers/on_message.py` — `NewMessage` handler; upserts chat and sender rows defensively before inserting the message
-- `handlers/on_delete.py` — `MessageDeleted` handler; falls back to `tg_message_id`-only lookup for private/group chats where `chat_id` is absent
-- `handlers/on_edit.py` — `MessageEdited` handler; skips recording when `old_text == new_text` (Telegram fires edits for non-text changes)
-- `handlers/helpers.py` — shared utilities: `get_chat_type()`, `get_sender_fields()`
-- `utils/logging_setup.py` — console + rotating file handler (5 MB × 3 backups); Telethon pinned to WARNING
-- `.env.example` — documented environment variable template
-- `.gitattributes` — enforces LF line endings on Windows checkouts
-- `requirements.txt` — pinned dependencies: `telethon`, `python-dotenv`
-- `README.md` — setup guide, smoke test instructions, project structure, Telegram ToS note
+- `main.py` - async entry point; graceful shutdown on Ctrl-C (all platforms) and SIGTERM (Unix)
+- `config.py` - frozen `Settings` dataclass loaded from `.env` via `python-dotenv`
+- `db/connection.py` - SQLite connection with WAL mode, FK enforcement, and ISO 8601 datetime adapter
+- `db/schema.py` - DDL for `chats`, `senders`, `messages`, `message_edits`, `message_deletions` tables; applied on every startup
+- `db/queries.py` - all read/write operations with explicit `commit` / `rollback` (no context-manager transactions)
+- `db/__init__.py` - package interface re-exporting `init_db`, `get_connection`, `close_db`, `apply_schema`
+- `handlers/on_message.py` - `NewMessage` handler; upserts chat and sender rows defensively before inserting the message
+- `handlers/on_delete.py` - `MessageDeleted` handler; falls back to `tg_message_id`-only lookup for private/group chats where `chat_id` is absent
+- `handlers/on_edit.py` - `MessageEdited` handler; skips recording when `old_text == new_text` (Telegram fires edits for non-text changes)
+- `handlers/helpers.py` - shared utilities: `get_chat_type()`, `get_sender_fields()`
+- `utils/logging_setup.py` - console + rotating file handler (5 MB × 3 backups); Telethon pinned to WARNING
+- `.env.example` - documented environment variable template
+- `.gitattributes` - enforces LF line endings on Windows checkouts
+- `requirements.txt` - pinned dependencies: `telethon`, `python-dotenv`
+- `README.md` - setup guide, smoke test instructions, project structure, Telegram ToS note
 
 ### Schema (v3)
 
@@ -474,16 +508,16 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at)
 
 ### Known Telegram protocol behaviours (documented)
 
-- `MessageDeleted` carries no `chat_id` in private/group chats — fallback searches by `tg_message_id` alone
-- Scheduled/auto-posted messages bypass `NewMessage`; arrive only as edit events — handled by defensive upsert
-- Anonymous admin posts use the group's own (negative) ID as `sender_id` — stored as-is
-- `MessageEdited` fires for link preview attachment, keyboard updates, view count increments — skipped when text is unchanged
+- `MessageDeleted` carries no `chat_id` in private/group chats - fallback searches by `tg_message_id` alone
+- Scheduled/auto-posted messages bypass `NewMessage`; arrive only as edit events - handled by defensive upsert
+- Anonymous admin posts use the group's own (negative) ID as `sender_id` - stored as-is
+- `MessageEdited` fires for link preview attachment, keyboard updates, view count increments - skipped when text is unchanged
 
 ### Technical decisions
 
 - All datetimes stored as local-timezone ISO 8601 strings without milliseconds
-- `detect_types` removed from SQLite connection — converter does not fire reliably in Python 3.14 module context
-- `with conn:` (context manager) replaced with explicit `commit` / `rollback` — Python 3.12+ changed context manager semantics, breaking FK visibility across sequential writes
+- `detect_types` removed from SQLite connection - converter does not fire reliably in Python 3.14 module context
+- `with conn:` (context manager) replaced with explicit `commit` / `rollback` - Python 3.12+ changed context manager semantics, breaking FK visibility across sequential writes
 - Each DDL statement committed individually to avoid FK constraint failures under WAL snapshot isolation
 - `upsert_chat` / `upsert_sender` accept `commit=False` to allow grouping all inserts into one transaction
 - `loop.add_signal_handler(SIGTERM)` wrapped in `try/except NotImplementedError` for Windows compatibility

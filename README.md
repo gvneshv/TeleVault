@@ -97,11 +97,16 @@ TG_PHONE=+1234567890          # your number in international format
 The other settings have sensible defaults - you can leave them as-is for
 now. `DATABASE_URL` already matches the Postgres container started in step 2.
 
+`FERNET_KEY`, `JWT_SECRET`, `CONTROL_DATABASE_URL`, and `OWNER_USER_ID` are
+for the auth/multi-user control database - see the next section for the
+order they actually need to be filled in (it's not top-to-bottom, since
+`OWNER_USER_ID` can't be known until an account exists).
+
 ---
 
 ## 4. Set up the database
 
-With Postgres running (step 2), apply the schema:
+With Postgres running (step 2), apply the archive schema:
 
 ```bash
 alembic upgrade head
@@ -110,6 +115,42 @@ alembic upgrade head
 This creates all tables, indexes, and the `pg_trgm` extension used for
 search. Safe to run again later after pulling new schema changes - Alembic
 only applies migrations that haven't run yet.
+
+Then apply the separate control-database schema (accounts/invites/refresh
+tokens/audit log - kept apart from the archive above, see
+`control_db/schema.py` for why):
+
+```bash
+alembic -c alembic_control.ini upgrade head
+```
+
+### Bootstrapping your own account
+
+There's no self-registration yet - every account needs an invite, and every
+invite needs an existing user to have created it, so the very first account
+(yours) has to be created directly:
+
+```bash
+python scripts/manage_admin.py create --username youruser
+```
+
+This prompts for a password (never pass one as a CLI argument - see the
+script's own module docstring for why), creates an admin account bypassing
+the invite requirement entirely, and prints the new account's id, e.g.
+`Created admin user 'youruser' (id=1).` - no API server or login needed to
+get this value, since the script talks to the control database directly.
+It's the only supported way to create the first account; see
+`control_db/schema.py`'s `invites` table for why that's a hard requirement
+rather than an oversight.
+
+Put that id in `.env` as `OWNER_USER_ID` before starting the API server
+(step 8) - it refuses to start without this set, on purpose (see
+`.env.example`'s comment on `OWNER_USER_ID` for why a missing/wrong value
+here is treated as a hard stop rather than something to default around).
+
+Inviting anyone else currently means inserting a row into the control
+database's `invites` table by hand - there's no admin endpoint for it yet
+(see this README's Notes section).
 
 ### Migrating an existing SQLite archive
 
@@ -207,6 +248,17 @@ uvicorn api.server:app --host 127.0.0.1 --port 8000
 
 Then open **http://localhost:8000** in a browser. You should see the Chats
 view load first, with Messages, Deleted, Stats, and Health in the nav rail.
+
+> **The Chats/Messages/Deleted/Stats/Backfill views will show errors right
+> now.** They call `/api/*` endpoints that require a bearer token
+> (`require_owner` - see this README's Notes section), and the frontend
+> (`web/js/`) has no login page or token storage yet - it never sends an
+> `Authorization` header at all. Until a frontend login flow exists, use
+> **http://localhost:8000/api/docs** instead: click "Authorize", paste the
+> `access_token` from `POST /auth/login` (see the Bootstrapping section in
+> step 4), and you can exercise every endpoint from there. `GET /api/health`
+> is the one view that will keep working in the browser UI itself, since it
+> stays unauthenticated.
 
 A few things worth knowing:
 
@@ -354,14 +406,22 @@ A few things worth checking on periodically once this is deployed and running lo
 - **Media messages** (photos, stickers, voice notes) are silently skipped in
   Phase 1. The log will show a `DEBUG` line for each skipped message if you
   set `LOG_LEVEL=DEBUG` in `.env`.
-- **The web UI has no authentication.** `api/server.py` doesn't check any
-  credentials — anyone who can reach the port can read your entire archive,
-  including deleted messages. Fine for `127.0.0.1`-only local use; if you
-  deploy this on a VPS reachable from the internet, put it behind something
-  that authenticates first (e.g. Nginx with basic auth, a VPN, or an
-  SSH tunnel) rather than exposing the port directly. Login/registration
-  for the web UI itself is planned next (see CHANGELOG's Unreleased
-  section) but not built yet.
+- **The archive/archiver endpoints require the account named by `OWNER_USER_ID`.**
+  `/api/chats`, `/api/messages`, `/api/deleted`, `/api/stats`, `/api/telethon/*`,
+  and `/api/backfill/*` all reject anyone except that one account — not "any
+  logged-in user," and deliberately not "any admin" either: admin status
+  governs account management only, never archive access (see
+  `api/dependencies.py`'s `require_owner()`). `POST /auth/register`, `/login`,
+  `/refresh`, `/logout`, and `GET /auth/me` stay open to anyone with an
+  invite, since those are what let an account prove who it is in the first
+  place. `GET /api/health` also stays open — it's a liveness probe with no
+  archive data in it. You still need `OWNER_USER_ID` set correctly in `.env`
+  (see `.env.example`) — if it's wrong or unset, the app refuses to start
+  rather than risk silently granting archive access to the wrong account.
+  Admin endpoints (invite creation) and frontend login/register pages are
+  not built yet, so today an invite has to be inserted into the control DB
+  by hand (or via `scripts/manage_admin.py` for the account itself, not
+  invites).
 - **Local development needs Postgres running.** Unlike SQLite, there's no
   "just open the file" - the Postgres container (or however you're running
   Postgres) needs to be up any time you want to connect to the database,
