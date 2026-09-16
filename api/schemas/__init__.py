@@ -10,6 +10,7 @@ from .chat import ChatOut, ChatSummary, ChatOption
 from .message import SenderOut, EditOut, DeletionOut, MessageOut, MessageDetail
 from .stats import ChatStatRow, StatsOut
 from .common import PaginatedResponse, HealthOut
+from .auth import RegisterIn, LoginIn, RefreshIn, LogoutIn, TokenPair, UserOut
  
 __all__ = [
     # chat
@@ -28,4 +29,11 @@ __all__ = [
     # common
     "PaginatedResponse",
     "HealthOut",
+    # auth
+    "RegisterIn",
+    "LoginIn",
+    "RefreshIn",
+    "LogoutIn",
+    "TokenPair",
+    "UserOut",
 ]
