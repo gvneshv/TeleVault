@@ -5,6 +5,9 @@ Process topology reminder:
     The userbot (main.py) and this API server are two separate processes sharing one PostgreSQL database.
     The userbot writes; this server only reads.
     Never open a write connection here — use db.get_readonly_connection() from api/dependencies.py exclusively.
+    Exception:
+    the CONTROL database (accounts/invites/refresh tokens/audit log, api/routes/auth.py) - this server is that database's only writer, by design.
+    See control_db/connection.py's module docstring for the full reasoning; the rule above is about the ARCHIVE database specifically.
 
 Running in development:
     uvicorn televault.api.server:app --reload --port 8000
@@ -18,13 +21,15 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
+import control_db
 import db
+from api.dependencies import require_owner
 from config import settings
 
-from .routes import chats, messages, deleted, stats, health, backfill, telethon
+from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +50,15 @@ async def lifespan(app: FastAPI):
     This is genuinely required now, unlike the old SQLite version (a raw sqlite3.connect() per request needed no prior setup at all).
 
     Shutdown: disposes the pool (db.close_db()) - closes every pooled connection cleanly rather than leaving them to the OS on process exit.
+
+    Also starts/stops the CONTROL database's own, separate pool (control_db.init_control_db() / control_db.close_db()) -
+    see control_db/connection.py's module docstring for why it's a second, independent Engine rather than a second function bolted onto db.init_db().
     """
     logger.info("TeleVault API starting up.")
     db.init_db(settings.database_url)
+    control_db.init_control_db(settings.control_database_url)
     yield
+    control_db.close_db()
     db.close_db()
     logger.info("TeleVault API shutting down.")
 
@@ -75,15 +85,22 @@ app = FastAPI(
 
 # ---------------------------------------------------------------------------
 # API routes — all prefixed with /api to allow Nginx to proxy them cleanly
+#
+# chats/messages/deleted/stats/backfill/telethon are gated on require_owner (api/dependencies.py):
+# this instance's archive belongs to exactly one account (config.settings.owner_user_id),
+# and only that account may read it or control its archiver/backfill - not "any logged-in user", not "any admin".
+# auth and health stay open: auth issues the tokens require_owner then checks,
+# and health is a liveness probe with no archive data in it (see health.py's own docstring).
 # ---------------------------------------------------------------------------
 
+app.include_router(auth.router,      prefix="/api")
 app.include_router(health.router,    prefix="/api")
-app.include_router(chats.router,     prefix="/api")
-app.include_router(messages.router,  prefix="/api")
-app.include_router(deleted.router,   prefix="/api")
-app.include_router(stats.router,     prefix="/api")
-app.include_router(backfill.router,  prefix="/api")
-app.include_router(telethon.router,  prefix="/api")
+app.include_router(chats.router,     prefix="/api", dependencies=[Depends(require_owner)])
+app.include_router(messages.router,  prefix="/api", dependencies=[Depends(require_owner)])
+app.include_router(deleted.router,   prefix="/api", dependencies=[Depends(require_owner)])
+app.include_router(stats.router,     prefix="/api", dependencies=[Depends(require_owner)])
+app.include_router(backfill.router,  prefix="/api", dependencies=[Depends(require_owner)])
+app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(require_owner)])
 
 
 # ---------------------------------------------------------------------------
