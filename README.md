@@ -1,11 +1,11 @@
 # TeleVault
 
 A personal Telegram userbot that archives all your messages in real time and
-preserves deleted ones so you can retrieve them later — with a web UI to
+preserves deleted ones so you can retrieve them later - with a web UI to
 browse, search, and review what's been archived.
 
 **Phase 1 (userbot):** text messages only, all chat types, PostgreSQL storage.
-**Phase 2 (web UI):** read-only REST API + installable PWA — Chats, Messages,
+**Phase 2 (web UI):** read-only REST API + installable PWA - Chats, Messages,
 Deleted, Stats, and Health views, backfill for historical messages, a
 per-view chat filter, EN/UK language support, and light/dark themes.
 
@@ -238,7 +238,7 @@ flushed and closed cleanly before the process exits.
 
 ## 8. Launch the web UI
 
-The web UI is a separate process from the userbot — both can run at the same
+The web UI is a separate process from the userbot - both can run at the same
 time, reading/writing the same Postgres database (the API only ever reads,
 via a read-only connection - see `api/dependencies.py`).
 
@@ -266,18 +266,18 @@ A few things worth knowing:
   address bar or browser menu) since it ships a PWA manifest and service
   worker. Installed or not, it works the same.
 - **Offline behaviour:** the app shell (HTML/CSS/JS) is cached for offline
-  loading, but data always requires a live connection — `/api/*` is
+  loading, but data always requires a live connection - `/api/*` is
   deliberately excluded from the cache, since this is private data and a
   stale cached result would be misleading, not just old.
 - **Theme and language:** toggle at the bottom of the nav rail (☀/☾ for
-  theme, EN/UK for language) — on narrow/mobile screens, where the nav
+  theme, EN/UK for language) - on narrow/mobile screens, where the nav
   collapses to a top bar, they move to the right end of that bar instead.
   Both persist across visits via `localStorage`.
 - **Interactive API docs:** available at `http://localhost:8000/api/docs`
   (Swagger UI) if you want to explore the endpoints directly.
 - **Deployment note:** for always-on use, run this the same way as the
   userbot (systemd, etc.), with Nginx proxying `/api/*` to this process and
-  serving `/` — see `api/server.py`'s docstring for the exact setup.
+  serving `/` - see `api/server.py`'s docstring for the exact setup.
 
 ---
 
@@ -291,7 +291,7 @@ televault/
 │   ├── env.py
 │   └── script.py.mako
 ├── alembic.ini
-├── api/                      # REST API (FastAPI) — read-only, serves web/ as static files
+├── api/                      # REST API (FastAPI) - read-only, serves web/ as static files
 │   ├── routes/
 │   │   ├── chats.py
 │   │   ├── messages.py
@@ -305,7 +305,7 @@ televault/
 │   │   ├── message.py
 │   │   ├── stats.py
 │   │   └── common.py          # PaginatedResponse, HealthOut
-│   ├── dependencies.py        # get_db() — read-only Postgres connection per request
+│   ├── dependencies.py        # get_db() - read-only Postgres connection per request
 │   ├── process_utils.py       # single-instance guard + heartbeat-file reading, shared by main.py and the telethon status route
 │   └── server.py              # FastAPI app + static file mount
 ├── backfill.py                # Historical-message import - separate entry point from main.py; can't run at the same time as the live archiver (same Telegram session)
@@ -324,7 +324,7 @@ televault/
 │   ├── on_message.py    # NewMessage handler
 │   ├── on_delete.py     # MessageDeleted handler
 │   └── on_edit.py       # MessageEdited handler
-├── web/                  # Vanilla JS/HTML/CSS PWA — no build step
+├── web/                  # Vanilla JS/HTML/CSS PWA - no build step
 │   ├── css/
 │   │   ├── base.css
 │   │   └── variables.css
@@ -376,20 +376,20 @@ televault/
 
 A few things worth checking on periodically once this is deployed and running long-term - nothing urgent, just good habits:
 
-- **`docker system prune`** — Docker images/layers accumulate over time (old
+- **`docker system prune`** - Docker images/layers accumulate over time (old
   Postgres image versions, dangling build layers). Run
   `docker system prune` occasionally to reclaim disk space. This does **not**
   touch the `televault_pgdata` volume or your data (`docker system prune`
   never removes volumes unless you explicitly pass `--volumes` - avoid that
   flag). Check disk usage first with `docker system df` if you want to see
   what's actually being reclaimed before running it.
-- **Database backups** — `docker compose exec postgres pg_dump -U televault televault > backup.sql`
+- **Database backups** - `docker compose exec postgres pg_dump -U televault televault > backup.sql`
   gives you a plain-text SQL dump you can restore from later. Worth
   automating (a cron job) once this is deployed somewhere that matters.
-- **Disk usage on the VPS generally** — the archive only grows; check
+- **Disk usage on the VPS generally** - the archive only grows; check
   available disk space periodically (`df -h`), especially once media
   archiving lands (Phase 4 - see CHANGELOG).
-- **`alembic current`** — shows which migration is currently applied. Useful
+- **`alembic current`** - shows which migration is currently applied. Useful
   after pulling updates, to confirm `alembic upgrade head` actually ran and
   the database schema matches what the code expects.
 
@@ -408,15 +408,15 @@ A few things worth checking on periodically once this is deployed and running lo
   set `LOG_LEVEL=DEBUG` in `.env`.
 - **The archive/archiver endpoints require the account named by `OWNER_USER_ID`.**
   `/api/chats`, `/api/messages`, `/api/deleted`, `/api/stats`, `/api/telethon/*`,
-  and `/api/backfill/*` all reject anyone except that one account — not "any
+  and `/api/backfill/*` all reject anyone except that one account - not "any
   logged-in user," and deliberately not "any admin" either: admin status
   governs account management only, never archive access (see
   `api/dependencies.py`'s `require_owner()`). `POST /auth/register`, `/login`,
   `/refresh`, `/logout`, and `GET /auth/me` stay open to anyone with an
   invite, since those are what let an account prove who it is in the first
-  place. `GET /api/health` also stays open — it's a liveness probe with no
+  place. `GET /api/health` also stays open - it's a liveness probe with no
   archive data in it. You still need `OWNER_USER_ID` set correctly in `.env`
-  (see `.env.example`) — if it's wrong or unset, the app refuses to start
+  (see `.env.example`) - if it's wrong or unset, the app refuses to start
   rather than risk silently granting archive access to the wrong account.
   Admin endpoints (invite creation) and frontend login/register pages are
   not built yet, so today an invite has to be inserted into the control DB

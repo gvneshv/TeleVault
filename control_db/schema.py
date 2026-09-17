@@ -122,6 +122,7 @@ refresh_tokens = Table(
     Column("issued_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
     Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
     Column("revoked_at", TIMESTAMP(timezone=True)),
+    Column("revoked_reason", Text),
     # Covers "revoke every refresh token for this user" (password change / admin lock) and "list this user's active sessions" -
     # both filter on user_id first.
     Index("idx_refresh_tokens_user_id", "user_id"),
