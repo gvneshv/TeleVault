@@ -27,28 +27,18 @@ class LoginIn(BaseModel):
     password: str
 
 
-class RefreshIn(BaseModel):
-    """Body for POST /auth/refresh."""
-
-    refresh_token: str
-
-
-class LogoutIn(BaseModel):
-    """Body for POST /auth/logout."""
-
-    refresh_token: str
-
-
-class TokenPair(BaseModel):
+class AccessTokenOut(BaseModel):
     """
     Returned by /auth/register, /auth/login, and /auth/refresh.
+
+    Only the access token - the refresh token travels exclusively as an httpOnly cookie now (see api/routes/auth.py's module docstring for why),
+    never in a JSON body a client could read with JavaScript and stash somewhere persistent.
 
     token_type is always "bearer" (RFC 6750) -
     included so the client can build the `Authorization: Bearer <access_token>` header without hard-coding the scheme name itself.
     """
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
 

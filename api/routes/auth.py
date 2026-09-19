@@ -6,10 +6,34 @@ narrow exception to this API server's usual "read-only against the archive DB" r
 See control_db/connection.py's module docstring for the full reasoning;
 nothing in this file ever touches db.get_db() (the archive DB).
 
+Token transport (read this before touching anything cookie-related below):
+    The refresh token travels ONLY as an httpOnly cookie (REFRESH_COOKIE_NAME),
+    never in a JSON response body and never sent by the client in a request body either - register()/login()/refresh() set it via Response.set_cookie(),
+    and refresh()/logout() read it via request.cookies.get(), not from a Pydantic body model.
+    This is deliberate, not the previous design: an httpOnly cookie is invisible to JavaScript entirely, so a refresh token (30 days,REFRESH_TOKEN_DAYS)
+    sitting in it can't be read by an XSS payload the way a value in localStorage or a JS variable could be.
+    The access token still travels in the JSON response body as before - the frontend keeps it in memory only (see web/js/lib/auth.js), never persisted;
+    its short lifetime (ACCESS_TOKEN_MINUTES) makes that an acceptable residual exposure in a way a 30-day token wouldn't be.
+
+    Cookie attributes: httponly=True (always), samesite="strict"
+    (the browser never attaches it to a cross-site request at all - forms, links,
+    anything - which is most of what CSRF protection would otherwise need to do by hand),
+    path=REFRESH_COOKIE_PATH (scoped to only the auth endpoints, so it's never even sent alongside a /api/chats request),
+    and secure=<True iff this request arrived over https> (see _cookie_is_secure() below).
+
+    DEPLOYMENT CAVEAT, same shape as the X-Forwarded-For one already on this module:
+    behind Nginx, request.url.scheme only reflects the real original scheme (https) if Nginx forwards
+    X-Forwarded-Proto AND Uvicorn is run with --proxy-headers (or an equivalent ProxyHeadersMiddleware) to trust it.
+    Without that, every request looks like http to this process,
+    so the cookie is set without the Secure attribute even when the browser-to-Nginx hop was https -
+    the cookie still works (httponly+samesite are unaffected), it just loses the "never sent over plain http" backstop.
+    Confirm this on the actual VPS, same as the X-Forwarded-For setting below.
+
 Login throttling (read this before changing MAX_FAILED_LOGIN_ATTEMPTS / LOGIN_LOCKOUT_WINDOW):
     Keyed on the ACCOUNT (user_id) when the attempted username exists,
     and only falls back to client IP for the narrow case of a username that doesn't exist at all -
-    see control_db/queries.py's count_recent_login_failures_for_user() count_recent_login_failures_for_unknown_username() docstrings for the full reasoning.
+    see control_db/queries.py's count_recent_login_failures_for_user() count_recent_login_failures_for_unknown_username()
+    docstrings for the full reasoning.
     This matters: an earlier version of this throttle was keyed purely on IP address,
     which meant one person mistyping their password repeatedly on a shared network (office Wi-Fi, a household router, a VPN)
     could lock every OTHER account on that same network out of logging in too - they'd never touched the wrong password themselves.
@@ -22,9 +46,9 @@ Login throttling (read this before changing MAX_FAILED_LOGIN_ATTEMPTS / LOGIN_LO
     That header is only trustworthy if Nginx (per api/server.py's module docstring, this API always sits behind it)
     is actually configured to set it, e.g. `proxy_set_header X-Forwarded-For $remote_addr;`.
     Without that, every request arrives looking like it came from Nginx's own loopback address.
-    Post-fix, the blast radius of that misconfiguration is much smaller than it used to be:
-    it only affects the unknown-username counter (see count_recent_login_failures_for_unknown_username()'s own docstring),
-    never a real account's ability to log in. Still worth confirming on the actual VPS, not assumed here.
+    Post-fix, the blast radius of that misconfiguration is much smaller than it used to be: it only affects the unknown-username counter
+    (see count_recent_login_failures_for_unknown_username()'s own docstring), never a real account's ability to log in.
+    Still worth confirming on the actual VPS, not assumed here.
 
 What this file deliberately does NOT do:
     - No admin/invite-creation endpoints (POST /admin/invites etc.) - out of scope for now, see project brief.
@@ -33,15 +57,15 @@ What this file deliberately does NOT do:
       the automatic throttle here is a separate, self-clearing mechanism (see above).
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from api.dependencies import get_control_db, get_current_user
-from api.schemas import LoginIn, LogoutIn, RefreshIn, RegisterIn, TokenPair, UserOut
+from api.schemas import AccessTokenOut, LoginIn, RegisterIn, UserOut
 from control_db import queries as cq
 from utils.security import (
     DecodedAccessToken,
@@ -56,6 +80,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 MAX_FAILED_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_WINDOW = timedelta(minutes=15)
+
+REFRESH_COOKIE_NAME = "televault_refresh"
+REFRESH_COOKIE_PATH = "/api/auth"
 
 
 # ---------------------------------------------------------------------------
@@ -76,25 +103,51 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _issue_token_pair(conn: Connection, user_id: int, is_admin: bool) -> TokenPair:
-    """Create a fresh access/refresh pair and persist the refresh token's revocation record.
-    Shared by register() and login(), the two "start a new session from scratch" endpoints."""
+def _cookie_is_secure(request: Request) -> bool:
+    """Whether to set the Secure attribute on the refresh cookie - see this module's docstring for the deployment caveat this depends on."""
+    return request.url.scheme == "https"
+
+
+def _set_refresh_cookie(response: Response, request: Request, refresh_token: str, expires_at: datetime) -> None:
+    max_age = max(0, int((expires_at - datetime.now(expires_at.tzinfo)).total_seconds()))
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        max_age=max_age,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        samesite="strict",
+        secure=_cookie_is_secure(request),
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH)
+
+
+def _issue_tokens(conn: Connection, response: Response, request: Request, user_id: int, is_admin: bool) -> AccessTokenOut:
+    """
+    Create a fresh access/refresh pair, persist the refresh token's revocation record, set it as the httpOnly cookie,
+    and return only the access token for the JSON body.
+    Shared by register() and login(), the two "start a new session from scratch" endpoints.
+    """
     access_token = create_access_token(user_id, is_admin)
     refresh_token, jti, expires_at = create_refresh_token(user_id)
     cq.insert_refresh_token(conn, user_id, jti, expires_at)
-    return TokenPair(access_token=access_token, refresh_token=refresh_token)
+    _set_refresh_cookie(response, request, refresh_token, expires_at)
+    return AccessTokenOut(access_token=access_token)
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.post("/register", response_model=TokenPair, status_code=201, summary="Consume an invite token to create an account")
-def register(body: RegisterIn, request: Request, conn: Connection = Depends(get_control_db)) -> TokenPair:
+@router.post("/register", response_model=AccessTokenOut, status_code=201, summary="Consume an invite token to create an account")
+def register(body: RegisterIn, request: Request, response: Response, conn: Connection = Depends(get_control_db)) -> AccessTokenOut:
     """
     Create a new (non-admin) user from a valid, unused invite token and log them straight in.
 
-    Auto-login on success (returning a token pair here rather than requiring a separate POST /auth/login right after) -
+    Auto-login on success (returning an access token here rather than requiring a separate POST /auth/login right after) -
     the person just proved they hold a legitimate invite AND chose a password in the same request;
     there's no additional factor a follow-up login would check that this request hasn't already established.
     """
@@ -120,13 +173,13 @@ def register(body: RegisterIn, request: Request, conn: Connection = Depends(get_
         # so this connection is safe to keep using.
         raise HTTPException(status_code=409, detail="That username is already taken.")
 
-    return _issue_token_pair(conn, user_id, is_admin=False)
+    return _issue_tokens(conn, response, request, user_id, is_admin=False)
 
 
-@router.post("/login", response_model=TokenPair, summary="Exchange a username/password for a token pair")
-def login(body: LoginIn, request: Request, conn: Connection = Depends(get_control_db)) -> TokenPair:
+@router.post("/login", response_model=AccessTokenOut, summary="Exchange a username/password for a fresh session")
+def login(body: LoginIn, request: Request, response: Response, conn: Connection = Depends(get_control_db)) -> AccessTokenOut:
     """
-    Verify credentials and issue a new token pair.
+    Verify credentials and issue a new session (access token in the body, refresh token as an httpOnly cookie - see this module's docstring).
 
     Deliberately returns the SAME 401 message ("Incorrect username or password") whether the username doesn't exist or the password is wrong -
     distinguishing the two in the response would let a caller enumerate valid usernames.
@@ -159,26 +212,33 @@ def login(body: LoginIn, request: Request, conn: Connection = Depends(get_contro
         raise HTTPException(status_code=401, detail="Incorrect username or password.")
 
     cq.record_login_success(conn, user["id"], ip_address, user_agent)
-    return _issue_token_pair(conn, user["id"], user["is_admin"])
+    return _issue_tokens(conn, response, request, user["id"], user["is_admin"])
 
 
-@router.post("/refresh", response_model=TokenPair, summary="Rotate a refresh token for a new access/refresh pair")
-def refresh(body: RefreshIn, request: Request, conn: Connection = Depends(get_control_db)) -> TokenPair:
+@router.post("/refresh", response_model=AccessTokenOut, summary="Rotate the refresh cookie for a new access token")
+def refresh(request: Request, response: Response, conn: Connection = Depends(get_control_db)) -> AccessTokenOut:
     """
-    Redeem a still-valid, not-yet-revoked refresh token for a new pair, revoking the one presented.
+    Redeem the httpOnly refresh cookie for a new access token, rotating the cookie itself in the same response.
+    No request body - the refresh token comes only from the cookie (see this module's docstring), never from JSON the frontend would have to hold onto.
 
     Expiry itself is enforced by decode_refresh_token() reading the JWT's own `exp` claim
     (the control-DB row's expires_at was set to that exact same instant when the token was issued -
     see utils.security.create_refresh_token() - so there's nothing left for this function to re-check independently).
     """
+    raw_refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if raw_refresh_token is None:
+        raise HTTPException(status_code=401, detail="No refresh session found. Please log in again.")
+
     try:
-        decoded = decode_refresh_token(body.refresh_token)
+        decoded = decode_refresh_token(raw_refresh_token)
     except jwt.InvalidTokenError:
+        _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
 
     row = cq.get_refresh_token_and_owner(conn, decoded["jti"])
     if row is None:
         # A validly-signed token whose jti was never actually issued (or the row was deleted some other way) - nothing in the DB to revoke, just reject.
+        _clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Invalid refresh token.")
 
     ip_address = _client_ip(request)
@@ -188,6 +248,7 @@ def refresh(body: RefreshIn, request: Request, conn: Connection = Depends(get_co
         # This exact jti was already revoked once before - but WHY matters,
         # and revoked_reason (control_db/schema.py) is what lets us tell an ordinary logout apart from something actually suspicious,
         # instead of treating every revoked token as equally alarming.
+        _clear_refresh_cookie(response)
         if row["revoked_reason"] == "logout":
             # The legitimate owner deliberately ended this session.
             # Reject, but there's nothing to investigate and nothing else to revoke - a stale client
@@ -198,8 +259,8 @@ def refresh(body: RefreshIn, request: Request, conn: Connection = Depends(get_co
             # but a DIFFERENT still-cached client presenting one of the other tokens that got swept up in that same lock can land here -
             # same account, same answer.
             raise HTTPException(status_code=403, detail="This account is locked. Contact an administrator.")
-        # revoked_reason is 'rotated', 'reuse_detected', or NULL (revoked before this column existed -
-        # treated as suspicious by default, since the real reason is unknown).
+        # revoked_reason is 'rotated', 'reuse_detected', or NULL
+        # (revoked before this column existed - treated as suspicious by default, since the real reason is unknown).
         # Per the rotation model documented on refresh_tokens in control_db/schema.py,
         # a legitimate client would have moved on to its replacement rather than presenting this one again -
         # treat the whole session as compromised, not just this token.
@@ -210,29 +271,33 @@ def refresh(body: RefreshIn, request: Request, conn: Connection = Depends(get_co
         )
 
     if row["owner_is_locked"]:
+        _clear_refresh_cookie(response)
         cq.revoke_all_refresh_tokens_and_log(conn, row["user_id"], "account_locked", "refresh_blocked_locked", ip_address, user_agent)
         raise HTTPException(status_code=403, detail="This account is locked. Contact an administrator.")
 
     new_access_token = create_access_token(row["user_id"], row["owner_is_admin"])
     new_refresh_token, new_jti, new_expires_at = create_refresh_token(row["user_id"])
     cq.rotate_refresh_token(conn, decoded["jti"], row["user_id"], new_jti, new_expires_at, ip_address, user_agent)
-    return TokenPair(access_token=new_access_token, refresh_token=new_refresh_token)
+    _set_refresh_cookie(response, request, new_refresh_token, new_expires_at)
+    return AccessTokenOut(access_token=new_access_token)
 
 
-@router.post("/logout", summary="Revoke a refresh token")
-def logout(body: LogoutIn, request: Request, conn: Connection = Depends(get_control_db)) -> dict:
+@router.post("/logout", summary="Revoke the current refresh cookie")
+def logout(request: Request, response: Response, conn: Connection = Depends(get_control_db)) -> dict:
     """
-    Revoke the given refresh token so it can no longer be redeemed via /auth/refresh.
+    Revoke the refresh token in the httpOnly cookie (if any) and clear the cookie itself.
 
-    Takes the refresh token itself, not a bearer access token, as proof of what to revoke -
-    an access token could easily already be expired by the time someone wants to log out (its lifetime is only ACCESS_TOKEN_MINUTES),
-    while the whole point of logout is revoking the longer-lived refresh token anyway.
-
-    Always reports success, even for an already-invalid/expired token: the caller's goal
-    ("stop trusting this refresh token") is already satisfied in that case, so there's nothing to correct.
+    Always reports success, even for an already-invalid/expired/missing cookie:
+    the caller's goal("stop trusting this session") is already satisfied in that case, so there's nothing to correct.
     """
+    _clear_refresh_cookie(response)
+
+    raw_refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if raw_refresh_token is None:
+        return {"logged_out": True}
+
     try:
-        decoded = decode_refresh_token(body.refresh_token)
+        decoded = decode_refresh_token(raw_refresh_token)
     except jwt.InvalidTokenError:
         return {"logged_out": True}
 
