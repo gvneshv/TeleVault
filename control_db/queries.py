@@ -190,8 +190,9 @@ def count_recent_login_failures_for_unknown_username(conn: Connection, ip_addres
     and there's no column anywhere recording the raw attempted username).
 
     CAVEAT (read before relying on this in production): if this API sits behind Nginx as documented in api/server.py,
-    ip_address here is whatever the request handler was given - if Nginx isn't configured to forward the real client IP (`proxy_set_header X-Forwarded-For $remote_addr;` or equivalent), every request arrives from Nginx's own loopback address,
-    collapsing this counter across every real client.
+    ip_address here is whatever the request handler was given - if Nginx isn't configured to forward the real client IP
+    (`proxy_set_header X-Forwarded-For $remote_addr;` or equivalent),
+    every request arrives from Nginx's own loopback address, collapsing this counter across every real client.
     Since this path only ever throttles guesses against nonexistent usernames (never a real account),
     the worst case of that misconfiguration is a shared delay on username-guessing attempts, not a lockout of anyone's actual account.
     """
@@ -344,8 +345,8 @@ def revoke_all_refresh_tokens_and_log(
     and reuse of an already-revoked refresh token whose OWN revoked_reason indicates it wasn't just an ordinary logout - a strong signal of theft,
     since the legitimate holder would have moved on to its replacement
     (revoked_reason='reuse_detected', event_type='refresh_reuse_detected';
-    see refresh_tokens' docstring in control_db/schema.py and api/routes/auth.py's refresh() for the reasoning behind that inference and why plain
-    'logout' is deliberately NOT treated this way).
+    see refresh_tokens' docstring in control_db/schema.py and api/routes/auth.py's refresh() for the reasoning behind that inference
+    and why plain logout' is deliberately NOT treated this way).
 
     revoked_reason and event_type are passed separately (rather than derived from one another)
     because they serve different audiences at different granularity: revoked_reason is a short,
@@ -430,6 +431,38 @@ def promote_user_to_admin(conn: Connection, user_id: int) -> bool:
         raise
 
 
+def set_archive_db_ref(conn: Connection, user_id: int, archive_db_ref: str) -> bool:
+    """
+    Set a user's archive_db_ref directly.
+    Returns False if no such user exists, True on success.
+
+    Only ever called from scripts/manage_admin.py's `set-archive` subcommand - a manual stand-in for real provisioning,
+    which doesn't exist yet (see that script's module docstring and api/dependencies.py's get_archive_connection()).
+    This function only RECORDS the reference;
+    it does not create, verify, or migrate the database that reference names -
+    the caller is responsible for making sure `archive_db_ref` actually names a real,
+    already-migrated Postgres database on the same server as control_database_url before pointing a user at it,
+    since get_archive_connection() will happily try to connect to whatever is written here.
+
+    Deliberately touches ONLY archive_db_ref - never password_hash, never is_admin, never the telegram_* credential columns,
+    for the same reason promote_user_to_admin() above stays narrow: one script subcommand should do exactly the one thing its name says.
+    """
+    try:
+        result = conn.execute(
+            sql_text("UPDATE users SET archive_db_ref = :archive_db_ref WHERE id = :user_id"),
+            {"user_id": user_id, "archive_db_ref": archive_db_ref},
+        )
+        if result.rowcount == 0:
+            conn.rollback()
+            return False
+        _insert_audit_log(conn, event_type="archive_db_ref_set_via_script", user_id=user_id)
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -443,7 +476,8 @@ def _insert_audit_log(
     user_agent: str | None = None,
 ) -> None:
     """
-    Append one row to auth_audit_log. Does NOT commit - the caller commits as part of its own transaction,
+    Append one row to auth_audit_log.
+    Does NOT commit - the caller commits as part of its own transaction,
     since every audit entry so far is written alongside another state change it's documenting
     (a login, a rotation, a promotion) and the two must land together or not at all.
     """

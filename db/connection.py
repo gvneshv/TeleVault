@@ -37,13 +37,25 @@ from contextlib import contextmanager
 from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Connection, Engine, make_url
 
 logger = logging.getLogger(__name__)
 
 # Module-level variable - holds the single Engine instance (and, through it, the connection pool).
 # None until init_db() is called.
 _engine: Optional[Engine] = None
+
+# psycopg connect_args shared by every Engine this module creates -
+# init_db()'s primary engine AND every per-tenant engine get_tenant_engine() below builds.
+# Factored out once rather than duplicated, since the reasoning (see init_db()'s docstring: bounded connect timeout,
+# TCP keepalives so a vanished Postgres is noticed in ~14s instead of the OS's multi-minute default) applies identically to both.
+_CONNECT_ARGS = {
+    "connect_timeout": 5,
+    "keepalives": 1,
+    "keepalives_idle": 5,
+    "keepalives_interval": 3,
+    "keepalives_count": 3,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -84,13 +96,7 @@ def init_db(database_url: str) -> Engine:
     _engine = create_engine(
         database_url,
         pool_pre_ping=True,
-        connect_args={
-            "connect_timeout": 5,
-            "keepalives": 1,
-            "keepalives_idle": 5,
-            "keepalives_interval": 3,
-            "keepalives_count": 3,
-        },
+        connect_args=_CONNECT_ARGS,
     )
     logger.info("Database engine created.")
     return _engine
@@ -191,3 +197,94 @@ def get_readonly_connection() -> Generator[Connection, None, None]:
         conn.execute(text("SET default_transaction_read_only = off"))
         conn.commit()
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Per-tenant connections (auth/multi-user feature - API server only)
+#
+# Each user's own archive lives in its own Postgres DATABASE, named by that user's control_db.schema.users.archive_db_ref -
+# see that column's docstring in config.py's owner_user_id-turned-per-tenant-lookup history
+# and api/dependencies.py's get_archive_connection() for the full reasoning.
+# Everything below assumes every tenant database lives on the SAME Postgres server/credentials as the primary database_url
+# (same host, port, username, password - only the database name differs), the same way control_database_url already does.
+# If tenant databases ever need their own separate credentials or a different server, this assumption is the first thing to revisit.
+# ---------------------------------------------------------------------------
+
+_tenant_engines: dict[str, Engine] = {}
+
+
+def _primary_database_name() -> str | None:
+    """The database name embedded in this process's own database_url (init_db()'s argument), or None if init_db() hasn't run yet."""
+    if _engine is None:
+        return None
+    return _engine.url.database
+
+
+def get_primary_database_name() -> str | None:
+    """
+    Public accessor for _primary_database_name() - used by api/dependencies.py's require_instance_owner() to check whether a user's archive_db_ref matches the database THIS running instance's userbot (main.py) actually archives into.
+    See get_tenant_engine()'s docstring for the broader reasoning this supports.
+    """
+    return _primary_database_name()
+
+
+def get_tenant_engine(db_name: str) -> Engine:
+    """
+    Return a (possibly cached) Engine for the Postgres database named `db_name`,
+    on the same server/credentials as the primary database_url - see this section's module-level docstring.
+
+    If `db_name` happens to BE the primary engine's own database
+    (true for whichever single user this running instance's userbot - main.py - currently archives into,
+    until real per-user provisioning spins up separate userbot processes per tenant),
+    returns the EXISTING primary engine rather than opening a second pool pointed at the identical database -
+    no reason to double the open connections to one physical database just because it's being reached through two different code paths
+    (main.py's live archiver vs. this per-tenant lookup).
+
+    Otherwise, builds and caches a new Engine the first time `db_name` is seen, reusing it on every later call -
+    opening a fresh Engine (and its own connection pool) per request would be wasteful
+    and would defeat pooling entirely for a name that's requested repeatedly (which every archive view does, once per page load).
+    """
+    if db_name == _primary_database_name():
+        return get_engine()
+
+    if db_name in _tenant_engines:
+        return _tenant_engines[db_name]
+
+    base_url = make_url(get_engine().url)
+    tenant_url = base_url.set(database=db_name)
+    logger.info("Creating tenant database engine for %r", db_name)
+    engine = create_engine(
+        tenant_url,
+        pool_pre_ping=True,
+        connect_args=_CONNECT_ARGS,
+    )
+    _tenant_engines[db_name] = engine
+    return engine
+
+
+@contextmanager
+def get_tenant_readonly_connection(db_name: str) -> Generator[Connection, None, None]:
+    """
+    Same contract as get_readonly_connection() above, but against the tenant database named `db_name` instead of the primary database_url.
+    See api/dependencies.py's get_archive_connection() for the one caller of this today.
+    """
+    conn = get_tenant_engine(db_name).connect()
+    conn.execute(text("SET default_transaction_read_only = on"))
+    conn.commit()
+    try:
+        yield conn
+    finally:
+        conn.rollback()
+        conn.execute(text("SET default_transaction_read_only = off"))
+        conn.commit()
+        conn.close()
+
+
+def close_tenant_engines() -> None:
+    """Dispose every cached tenant engine's pool. Called alongside close_db() on shutdown (see api/server.py's lifespan)
+    so no pooled connection is left open on exit."""
+    global _tenant_engines
+    for db_name, engine in _tenant_engines.items():
+        engine.dispose()
+        logger.info("Tenant database engine for %r disposed.", db_name)
+    _tenant_engines = {}

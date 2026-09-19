@@ -13,7 +13,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.dependencies import get_db
+from api.dependencies import get_archive_connection
 from api.schemas import ChatOut, ChatOption, MessageOut, PaginatedResponse
 from db.read_queries import get_chat, get_chats, get_chat_options, get_chat_messages
 
@@ -44,7 +44,7 @@ def list_chats(
         "desc",
         description="Sort by most recent activity descending (default) or ascending (least recently active first).",
     ),
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_archive_connection),
 ) -> PaginatedResponse[ChatOut]:
     """
     Return all chats TeleVault has seen, sorted by most recent message (same ordering as the Telegram sidebar) by default.
@@ -60,7 +60,7 @@ def list_chats(
     response_model=list[ChatOption],
     summary="List every chat's id and name, unpaginated",
 )
-def list_chat_options(db: Connection = Depends(get_db)) -> list[ChatOption]:
+def list_chat_options(db: Connection = Depends(get_archive_connection)) -> list[ChatOption]:
     """
     Return {chat_id, name} for every chat TeleVault has seen, with no pagination.
 
@@ -78,7 +78,7 @@ def list_chat_options(db: Connection = Depends(get_db)) -> list[ChatOption]:
 )
 def get_chat_by_id(
     chat_id: int,
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_archive_connection),
 ) -> ChatOut:
     """
     Return a single chat record with aggregate counts.
@@ -115,7 +115,7 @@ def list_chat_messages(
         "desc",
         description="Sort by date ascending (oldest first) or descending (newest first, default).",
     ),
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_archive_connection),
 ) -> PaginatedResponse[MessageOut]:
     """
     Return messages within a single chat, newest first by default.

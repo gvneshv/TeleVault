@@ -28,7 +28,6 @@ from sqlalchemy.exc import OperationalError
 
 import control_db
 import db
-from config import settings
 from utils.security import DecodedAccessToken, decode_access_token
 
 
@@ -124,22 +123,67 @@ def get_current_user(token: str = Depends(_oauth2_scheme)) -> DecodedAccessToken
         ) from exc
 
 
-def require_owner(current: DecodedAccessToken = Depends(get_current_user)) -> DecodedAccessToken:
+def get_archive_connection(
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> Generator[Connection, None, None]:
     """
-    Gate for every route that touches THIS instance's archive or archiver
-    (chats/messages/deleted/stats/telethon/backfill - applied at the router level in api/server.py, not per-route here).
-    Only the one account named by settings.owner_user_id may pass.
+    Resolve the CALLING user's own archive (control_db.schema.users.archive_db_ref) and yield a read-only connection to it.
+    Used by chats/messages/deleted/stats in place of a fixed get_db() call - each user sees their own archive, not a single instance-wide one.
 
-    Deliberately NOT "any authenticated user" and NOT "any admin" - see config.py's owner_user_id docstring for the full reasoning, but in short:
-    this archive is one person's private message history. is_admin answers a completely different question
-    ("can this account manage other accounts") and must never double as "can this account read someone else's messages" -
-    an admin promoted later (see scripts/manage_admin.py) should never gain access to an archive just by being an admin.
-    Ownership and adminship are independent; this dependency checks only the former.
+    Replaces the earlier require_owner design (a single settings.owner_user_id gate on one static archive):
+    that assumed exactly one archive per running instance,
+    which isn't the actual model - every user is meant to get their own archive_db_ref once they finish linking Telegram
+    (see the confirmed design note reproduced in db/connection.py's per-tenant-connections docstring).
+    is_admin plays NO role in this check, on purpose - admin status governs account management, never archive access
+    (see scripts/manage_admin.py's own docstring for why an admin promoted later must never gain another user's messages just by being an admin).
 
-    Raises HTTPException 403 for any authenticated-but-wrong account (a valid token that isn't the owner's) -
-    distinct from get_current_user()'s 401 for no-token-at-all/invalid-token,
-    so a client can tell "you're not logged in" apart from "you're logged in as the wrong account".
+    Raises:
+        HTTPException 409 if this account has no archive_db_ref yet - NOT a 403,
+        because this isn't "you don't have access", it's "there is nothing here to have access to yet".
+        The distinct status lets the frontend show "finish linking Telegram" rather than "access denied".
+        HTTPException 503 if the archive database exists as a reference but isn't actually reachable right now
+        (e.g. Postgres restarted, or - once real provisioning exists - mid-provisioning).
     """
-    if current["user_id"] != settings.owner_user_id:
-        raise HTTPException(status_code=403, detail="This account does not have access to this archive.")
+    user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
+    if user is None or user["archive_db_ref"] is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Your archive hasn't been set up yet. Finish linking your Telegram account to provision it.",
+        )
+
+    cm = db.get_tenant_readonly_connection(user["archive_db_ref"])
+    try:
+        conn = cm.__enter__()
+    except OperationalError as exc:
+        raise HTTPException(status_code=503, detail=f"Your archive database is currently unavailable: {exc}") from exc
+
+    try:
+        yield conn
+    finally:
+        cm.__exit__(None, None, None)
+
+
+def require_instance_owner(
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> DecodedAccessToken:
+    """
+    Gate for telethon.py/backfill.py: controlling THIS running process's one live userbot
+    (main.py - a single Telethon session against a single database_url) is inherently a single-owner action today,
+    since there is only one physical userbot for this instance to control, regardless of how many control_db accounts exist.
+    Only the account whose own archive_db_ref matches this instance's actual database_url may start/stop/backfill it.
+
+    This is NOT the same question get_archive_connection() answers (which archive should I read FROM),
+    even though today, for the one account this is true of, both happen to resolve to the same database -
+    they're independent checks that will diverge the moment real per-user provisioning exists and a second physical userbot process serves a second user:
+    that second user's get_archive_connection() would resolve to their own database,
+    but they would never pass require_instance_owner() on THIS process, because this process's userbot was never theirs to control in the first place.
+
+    Raises HTTPException 403 if the account has no archive_db_ref yet, or one that doesn't match this instance's own database_url.
+    """
+    user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
+    instance_db_name = db.get_primary_database_name()
+    if user is None or user["archive_db_ref"] is None or user["archive_db_ref"] != instance_db_name:
+        raise HTTPException(status_code=403, detail="This account does not control this instance's Telegram connection.")
     return current

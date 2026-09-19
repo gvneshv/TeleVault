@@ -11,7 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.dependencies import get_db
+from api.dependencies import get_archive_connection
 from api.schemas import MessageDetail, MessageOut, PaginatedResponse
 from db.read_queries import get_message_detail, get_messages
 
@@ -46,7 +46,7 @@ def list_messages(
         "desc",
         description="Sort by date ascending (oldest first) or descending (newest first, default).",
     ),
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_archive_connection),
 ) -> PaginatedResponse[MessageOut]:
     """
     Return all archived messages across all chats, newest first by default.
@@ -87,7 +87,7 @@ def list_messages(
 )
 def get_message(
     message_id: int,
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_archive_connection),
 ) -> MessageDetail:
     """
     Return a single archived message by its internal TeleVault ID (not the Telegram message ID, which is only unique within a chat).

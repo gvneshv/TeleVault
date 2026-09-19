@@ -12,7 +12,7 @@ Why a dataclass rather than reading os.environ inline?
   - Type annotations document what each setting is supposed to be.
   - Missing required values fail loudly at startup, not halfway through a run.
  
-Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE, FERNET_KEY, JWT_SECRET, OWNER_USER_ID
+Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE, FERNET_KEY, JWT_SECRET
 Optional (have defaults): DB_PATH, DATABASE_URL, CONTROL_DATABASE_URL, SESSION_NAME, LOG_LEVEL, LOG_FILE
 """
 
@@ -117,17 +117,6 @@ class Settings:
     # (e.g. to invalidate all outstanding tokens) doesn't also break every already-encrypted credential column, and vice versa.
     jwt_secret: str
 
-    # --- Ownership (auth/multi-user feature) ---
-    # The control_db users.id of whoever this SPECIFIC running instance's archive (database_url above) belongs to.
-    # Instance-local config, deliberately not looked up dynamically from any database - this running process is bound to exactly one archive,
-    # the same way database_url itself is one connection string per instance, not a lookup table of many.
-    #
-    # Required, not optional-with-a-default, for the same reason fernet_key/jwt_secret are required above:
-    # this is the value api/dependencies.py's require_owner() checks every protected request against (see that function's docstring).
-    # A missing or wrong default here wouldn't just misbehave visibly - it could silently let the wrong account read this archive,
-    # which is exactly the kind of mistake that should fail loudly at startup instead of at someone's first successful unauthorized request.
-    owner_user_id: int
-
     # --- Logging ---
     log_level: str          # 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
     log_file: str | None    # None means log to console only
@@ -151,14 +140,6 @@ def _load() -> Settings:
             f"[config] TG_API_ID must be an integer, got: {raw_api_id!r}"
         )
 
-    raw_owner_user_id = _require("OWNER_USER_ID")
-    try:
-        owner_user_id = int(raw_owner_user_id)
-    except ValueError:
-        sys.exit(
-            f"[config] OWNER_USER_ID must be an integer (a control_db users.id), got: {raw_owner_user_id!r}"
-        )
-
     log_file_raw = _optional("LOG_FILE", "")
     log_file = log_file_raw if log_file_raw else None
 
@@ -172,7 +153,6 @@ def _load() -> Settings:
         control_database_url=   _optional("CONTROL_DATABASE_URL", "postgresql+psycopg://televault:televault@localhost:5432/televault_control"),
         fernet_key=             _require("FERNET_KEY"),
         jwt_secret=             _require("JWT_SECRET"),
-        owner_user_id=          owner_user_id,
         log_level=              _optional("LOG_LEVEL", "INFO"),
         log_file=               log_file,
         heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),

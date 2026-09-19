@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 import control_db
 import db
-from api.dependencies import require_owner
+from api.dependencies import require_instance_owner
 from config import settings
 
 from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
     Shutdown: disposes the pool (db.close_db()) - closes every pooled connection cleanly rather than leaving them to the OS on process exit.
 
-    Also starts/stops the CONTROL database's own, separate pool (control_db.init_control_db() / control_db.close_db()) -
+    Also starts/stops the CONTROL database's own, separate pool (control_db.init_control_db() control_db.close_db()) -
     see control_db/connection.py's module docstring for why it's a second, independent Engine rather than a second function bolted onto db.init_db().
     """
     logger.info("TeleVault API starting up.")
@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
     control_db.init_control_db(settings.control_database_url)
     yield
     control_db.close_db()
+    db.close_tenant_engines()
     db.close_db()
     logger.info("TeleVault API shutting down.")
 
@@ -86,21 +87,30 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 # API routes — all prefixed with /api to allow Nginx to proxy them cleanly
 #
-# chats/messages/deleted/stats/backfill/telethon are gated on require_owner (api/dependencies.py):
-# this instance's archive belongs to exactly one account (config.settings.owner_user_id),
-# and only that account may read it or control its archiver/backfill - not "any logged-in user", not "any admin".
-# auth and health stay open: auth issues the tokens require_owner then checks,
+# chats/messages/deleted/stats:
+# each ROUTE (not the router as a whole) depends on # api.dependencies.get_archive_connection instead of get_db -
+# it resolves the CALLING user's own archive (control_db.users.archive_db_ref) per request,
+# so this is a per-user gate applied inside each route function's own Depends(),
+# not a blanket router-level one - see that dependency's docstring for why a single shared gate here would be the wrong shape
+# (there is no longer one instance-wide archive to gate as a whole).
+#
+# backfill/telethon:
+# gated at the router level on require_instance_owner,
+# since controlling this one running process's one live userbot is inherently single-owner regardless of how many control_db accounts exist -
+# see that dependency's docstring for why it's deliberately a different question from get_archive_connection's, even though they resolve the same today.
+#
+# auth and health stay open: auth issues the tokens everything else then checks,
 # and health is a liveness probe with no archive data in it (see health.py's own docstring).
 # ---------------------------------------------------------------------------
 
 app.include_router(auth.router,      prefix="/api")
 app.include_router(health.router,    prefix="/api")
-app.include_router(chats.router,     prefix="/api", dependencies=[Depends(require_owner)])
-app.include_router(messages.router,  prefix="/api", dependencies=[Depends(require_owner)])
-app.include_router(deleted.router,   prefix="/api", dependencies=[Depends(require_owner)])
-app.include_router(stats.router,     prefix="/api", dependencies=[Depends(require_owner)])
-app.include_router(backfill.router,  prefix="/api", dependencies=[Depends(require_owner)])
-app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(require_owner)])
+app.include_router(chats.router,     prefix="/api")
+app.include_router(messages.router,  prefix="/api")
+app.include_router(deleted.router,   prefix="/api")
+app.include_router(stats.router,     prefix="/api")
+app.include_router(backfill.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
+app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
 
 
 # ---------------------------------------------------------------------------

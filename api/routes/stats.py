@@ -6,7 +6,7 @@ from sqlalchemy.engine import Connection
 
 from fastapi import APIRouter, Depends
 
-from api.dependencies import get_db
+from api.dependencies import get_archive_connection
 from api.schemas import StatsOut
 from db.read_queries import get_stats
 
@@ -18,7 +18,7 @@ router = APIRouter(tags=["stats"])
     response_model=StatsOut,
     summary="Global archive statistics",
 )
-def archive_stats(db: Connection = Depends(get_db)) -> StatsOut:
+def archive_stats(db: Connection = Depends(get_archive_connection)) -> StatsOut:
     """
     Return aggregate statistics for the dashboard:
 

@@ -14,7 +14,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 
-from api.dependencies import get_db
+from api.dependencies import get_archive_connection
 from api.schemas import MessageOut, PaginatedResponse
 from db.read_queries import get_messages
 
@@ -44,7 +44,7 @@ def list_deleted(
         "desc",
         description="Sort by original message date ascending (oldest first) or descending (newest first, default).",
     ),
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_archive_connection),
 ) -> PaginatedResponse[MessageOut]:
     """
     Return all messages that have been flagged as deleted, newest first by default.

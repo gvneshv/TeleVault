@@ -13,9 +13,12 @@ Why this has to exist at all:
     it supports two modes rather than being a disposable one-shot:
 
     create  - insert a brand-new user with is_admin=True from scratch (bypasses the invite flow entirely - this is the ONLY way to do that, by design;
-            there is no equivalent HTTP endpoint and there shouldn't be one).
+              there is no equivalent HTTP endpoint and there shouldn't be one).
     promote - flip is_admin=True on a user who already registered normally through an invite
-            (e.g. you want a second admin without sharing your own account).
+              (e.g. you want a second admin without sharing your own account).
+    set-archive - point a user's archive_db_ref at an already-existing, already-migrated Postgres database name.
+              A manual stand-in for real provisioning (POST /telegram/credentials triggering automatic database creation),
+              which doesn't exist yet - see api/dependencies.py's get_archive_connection() for what actually reads this value.
 
 Safety boundaries this script holds itself to (read before extending it):
     - Never touches telegram_api_id / telegram_api_hash / telegram_session_string / archive_db_ref for ANY user, in EITHER mode.
@@ -45,14 +48,16 @@ Usage (run on the server, by whoever already has Postgres/VPS access - this is a
     python scripts/manage_admin.py create --username alice
     python scripts/manage_admin.py promote --username alice
     python scripts/manage_admin.py promote --id 3
+    python scripts/manage_admin.py set-archive --username alice --db-name alice_archive
 
 `create` prompts for the new password twice (entry + confirmation),
 same 8-character minimum as POST /auth/register (api/schemas/auth.py) -
 there's no reason a script-created admin account should be allowed to be weaker than one created through the normal flow.
 
-After `create`: the account has no Telegram credentials linked yet. Log in via POST /auth/login with the password just set,
-then link Telegram through the normal POST /telegram/link/send-code + /telegram/link/confirm + POST /telegram/credentials flow -
-this script only ever touches the account/admin side of things, never Telegram linking.
+After `create`: the account has no Telegram credentials linked yet, and no archive_db_ref either - run `set-archive`
+(against a database name you've already created and migrated by hand with `alembic upgrade head` pointed at it)
+before that account can use /api/chats, /messages, /deleted, or /stats,
+since get_archive_connection() (api/dependencies.py) 409s on a NULL archive_db_ref.
 """
 
 import argparse
@@ -142,6 +147,29 @@ def cmd_promote(user_id: int | None, username: str | None) -> None:
         conn.close()
 
 
+def cmd_set_archive(user_id: int | None, username: str | None, db_name: str) -> None:
+    conn = control_db.get_connection()
+    try:
+        user = cq.get_user_by_id(conn, user_id) if user_id is not None else cq.get_user_by_username(conn, username)
+        if user is None:
+            identifier = f"id={user_id}" if user_id is not None else f"username='{username}'"
+            sys.exit(f"No user found with {identifier}. Nothing was written.")
+
+        print(f"\nAbout to set archive_db_ref for '{user['username']}' (id={user['id']}) to '{db_name}'.")
+        if user["archive_db_ref"] is not None:
+            print(f"This OVERWRITES the existing value: '{user['archive_db_ref']}'.")
+        print("This only records the reference - it does NOT create or migrate the database.")
+        print(f"Make sure '{db_name}' already exists and has had `alembic upgrade head` run against it.")
+        if not _confirm("Proceed?"):
+            print("Cancelled. Nothing was written.")
+            return
+
+        cq.set_archive_db_ref(conn, user["id"], db_name)
+        print(f"'{user['username']}' (id={user['id']}) now points at archive database '{db_name}'.")
+    finally:
+        conn.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -154,6 +182,12 @@ def main() -> None:
     target.add_argument("--id", type=int, dest="user_id")
     target.add_argument("--username", dest="username")
 
+    p_set_archive = subparsers.add_parser("set-archive", help="Point a user's archive_db_ref at an already-existing, already-migrated database.")
+    target2 = p_set_archive.add_mutually_exclusive_group(required=True)
+    target2.add_argument("--id", type=int, dest="user_id")
+    target2.add_argument("--username", dest="username")
+    p_set_archive.add_argument("--db-name", required=True, dest="db_name")
+
     args = parser.parse_args()
 
     control_db.init_control_db(settings.control_database_url)
@@ -162,6 +196,8 @@ def main() -> None:
             cmd_create(args.username)
         elif args.command == "promote":
             cmd_promote(getattr(args, "user_id", None), getattr(args, "username", None))
+        elif args.command == "set-archive":
+            cmd_set_archive(getattr(args, "user_id", None), getattr(args, "username", None), args.db_name)
     finally:
         control_db.close_db()
 
