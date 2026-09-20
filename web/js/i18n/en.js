@@ -157,4 +157,28 @@ export const en = {
   "chatFilter.nChatsSelected": "{n} chats selected",
   "chatFilter.searchPlaceholder": "Search chats…",
   "chatFilter.noMatches": "No chats match your search.",
+
+  // Auth additions
+  "nav.logout": "Log out",
+
+  "login.subtitle": "Sign in to your archive",
+  "login.usernameLabel": "Username",
+  "login.passwordLabel": "Password",
+  "login.submit": "Sign in",
+  "login.loggingIn": "Signing in…",
+  "login.error": "Something went wrong. Please try again.",
+  "login.registerPrompt": "Have an invite?",
+  "login.registerLink": "Create an account",
+
+  "register.subtitle": "Create your account",
+  "register.inviteLabel": "Invite token",
+  "register.usernameLabel": "Username",
+  "register.passwordLabel": "Password",
+  "register.confirmLabel": "Confirm password",
+  "register.submit": "Create account",
+  "register.creating": "Creating account…",
+  "register.error": "Something went wrong. Please try again.",
+  "register.passwordMismatch": "Passwords don't match.",
+  "register.loginPrompt": "Already have an account?",
+  "register.loginLink": "Sign in",
 };

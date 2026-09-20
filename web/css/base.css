@@ -56,6 +56,118 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
+   Auth gate — index.html's own loading/app-shell visibility, driven by [data-auth] on <html> ("checking" | "in" - see web/js/lib/auth.js).
+   login.html/register.html don't set [data-auth] at all - see .auth-page below, which is unconditionally visible on those two pages.
+   ------------------------------------------------------------------- */
+
+:root[data-auth="checking"] .app-shell,
+:root[data-auth="out"] .app-shell {
+  display: none;
+}
+
+.auth-loading {
+  display: none;
+}
+
+:root[data-auth="checking"] .auth-loading {
+  display: block;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+/* ---------------------------------------------------------------------
+   Auth pages (login.html, register.html) — the centered-card layout shared by both standalone auth pages.
+   ------------------------------------------------------------------- */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  transition: var(--transition-theme);
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 340px;
+  padding: 32px 28px;
+  margin: 16px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 24px var(--color-shadow);
+}
+
+.auth-card__wordmark {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--color-ink);
+}
+
+.auth-card__subtitle {
+  margin: -8px 0 4px;
+  text-align: center;
+  color: var(--color-ink-muted);
+  font-size: 13px;
+}
+
+.auth-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+
+.auth-card__field input {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+}
+
+.auth-card__error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
+  font-size: 12.5px;
+}
+
+.auth-card__switch {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
+
+.auth-card__switch a {
+  color: var(--color-focus);
+}
+
+.auth-card button[type="submit"] {
+  margin-top: 4px;
+  padding: 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-focus);
+  color: #fff;
+  font-weight: 600;
+}
+
+.auth-card button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------
    App shell
    ------------------------------------------------------------------- */
 

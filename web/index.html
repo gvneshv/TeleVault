@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-auth="checking">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -23,6 +23,15 @@
   <script src="/js/theme.js"></script>
 </head>
 <body>
+  <!--
+    data-auth on <html> starts as "checking" (set above) so only .auth-loading shows below;
+    once the first apiFetch()-triggered refresh (see lib/auth.js) resolves,
+    it either flips to "in" (showing .app-shell) or redirects the whole page to /login.html -
+    there's no in-place login form on this page to fall back to instead
+    (see login.html / lib/auth.js's module docstring for the reasoning behind the three-page split).
+  -->
+  <div class="auth-loading" aria-hidden="true"></div>
+
   <div class="app-shell">
     <nav class="app-nav" aria-label="Main navigation">
       <div class="app-nav__wordmark" data-i18n="app.wordmark">TeleVault</div>
@@ -55,6 +64,7 @@
           <span class="archiver-toggle__dot" aria-hidden="true"></span>
           <span class="archiver-toggle__label"></span>
         </button>
+        <button id="logout-button" data-i18n="nav.logout">Log out</button>
         <div class="app-nav__controls-row">
           <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
           <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">

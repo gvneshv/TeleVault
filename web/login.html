@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeleVault — Sign in</title>
+  <meta name="theme-color" content="#14181d" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+
+  <!-- Theme applies before first paint to avoid a flash of the wrong theme - same reasoning as index.html. -->
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div class="auth-page">
+    <form id="login-form" class="auth-card" autocomplete="on">
+      <div class="auth-card__wordmark" data-i18n="app.wordmark">TeleVault</div>
+      <p class="auth-card__subtitle" data-i18n="login.subtitle">Sign in to your archive</p>
+
+      <label class="auth-card__field">
+        <span data-i18n="login.usernameLabel">Username</span>
+        <input id="login-username" name="username" type="text" autocomplete="username" required />
+      </label>
+
+      <label class="auth-card__field">
+        <span data-i18n="login.passwordLabel">Password</span>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+      </label>
+
+      <p id="login-error" class="auth-card__error" role="alert" hidden></p>
+
+      <button type="submit" data-i18n="login.submit">Sign in</button>
+
+      <p class="auth-card__switch">
+        <span data-i18n="login.registerPrompt">Have an invite?</span>
+        <a href="/register.html" data-i18n="login.registerLink">Create an account</a>
+      </p>
+    </form>
+  </div>
+
+  <script type="module" src="/js/views/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeleVault — Create account</title>
+  <meta name="theme-color" content="#14181d" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+
+  <!-- Theme applies before first paint to avoid a flash of the wrong theme - same reasoning as index.html. -->
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div class="auth-page">
+    <form id="register-form" class="auth-card" autocomplete="on">
+      <div class="auth-card__wordmark" data-i18n="app.wordmark">TeleVault</div>
+      <p class="auth-card__subtitle" data-i18n="register.subtitle">Create your account</p>
+
+      <label class="auth-card__field">
+        <span data-i18n="register.inviteLabel">Invite token</span>
+        <input id="register-invite" name="invite_token" type="text" autocomplete="off" required />
+      </label>
+
+      <label class="auth-card__field">
+        <span data-i18n="register.usernameLabel">Username</span>
+        <input id="register-username" name="username" type="text" autocomplete="username" required />
+      </label>
+
+      <label class="auth-card__field">
+        <span data-i18n="register.passwordLabel">Password</span>
+        <input id="register-password" name="password" type="password" autocomplete="new-password" minlength="8" required />
+      </label>
+
+      <label class="auth-card__field">
+        <span data-i18n="register.confirmLabel">Confirm password</span>
+        <input id="register-confirm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required />
+      </label>
+
+      <p id="register-error" class="auth-card__error" role="alert" hidden></p>
+
+      <button type="submit" data-i18n="register.submit">Create account</button>
+
+      <p class="auth-card__switch">
+        <span data-i18n="register.loginPrompt">Already have an account?</span>
+        <a href="/login.html" data-i18n="register.loginLink">Sign in</a>
+      </p>
+    </form>
+  </div>
+
+  <script type="module" src="/js/views/register.js"></script>
+</body>
+</html>

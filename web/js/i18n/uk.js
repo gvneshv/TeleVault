@@ -153,4 +153,28 @@ export const uk = {
   "chatFilter.nChatsSelected": "Вибрано чатів: {n}",
   "chatFilter.searchPlaceholder": "Пошук чатів…",
   "chatFilter.noMatches": "Немає чатів, що відповідають пошуку.",
+
+  // Auth additions
+  "nav.logout": "Вийти",
+
+  "login.subtitle": "Увійдіть у свій архів",
+  "login.usernameLabel": "Ім'я користувача",
+  "login.passwordLabel": "Пароль",
+  "login.submit": "Увійти",
+  "login.loggingIn": "Вхід…",
+  "login.error": "Щось пішло не так. Спробуйте ще раз.",
+  "login.registerPrompt": "Маєте запрошення?",
+  "login.registerLink": "Створити акаунт",
+
+  "register.subtitle": "Створення акаунта",
+  "register.inviteLabel": "Токен запрошення",
+  "register.usernameLabel": "Ім'я користувача",
+  "register.passwordLabel": "Пароль",
+  "register.confirmLabel": "Підтвердіть пароль",
+  "register.submit": "Створити акаунт",
+  "register.creating": "Створення акаунта…",
+  "register.error": "Щось пішло не так. Спробуйте ще раз.",
+  "register.passwordMismatch": "Паролі не збігаються.",
+  "register.loginPrompt": "Вже маєте акаунт?",
+  "register.loginLink": "Увійти",
 };
