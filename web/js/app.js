@@ -23,6 +23,7 @@ import { initDeletedView } from "./views/deleted.js";
 import { initStatsView } from "./views/stats.js";
 import { initHealthView } from "./views/health.js";
 import { initBackfillView } from "./views/backfill.js";
+import { logout } from "./lib/auth.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const links = document.querySelectorAll(".app-nav__link[data-view]");
@@ -55,4 +56,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Default view on load.
   showView("chats");
+
+  // Logout button lives in the nav rail (see #logout-button in index.html),
+  // not inside a .app-view section - reachable regardless of which tab is open, same reasoning as #archiver-toggle above it.
+  const logoutButton = document.getElementById("logout-button");
+  if (logoutButton) {
+    logoutButton.addEventListener("click", async () => {
+      logoutButton.disabled = true;
+      await logout(); // clears the session and redirects to /login.html itself - see lib/auth.js
+    });
+  }
 });

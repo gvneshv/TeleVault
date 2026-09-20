@@ -20,6 +20,7 @@
 
 import { t } from "../i18n.js";
 import { escapeHtml } from "./dom.js";
+import { apiFetch } from "./auth.js";
 
 let cachedChatOptions = null;
 let chatOptionsPromise = null;
@@ -28,7 +29,7 @@ let chatOptionsPromise = null;
 function fetchChatOptions() {
   if (cachedChatOptions) return Promise.resolve(cachedChatOptions);
   if (chatOptionsPromise) return chatOptionsPromise;
-  chatOptionsPromise = fetch("/api/chats/options")
+  chatOptionsPromise = apiFetch("/api/chats/options")
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();

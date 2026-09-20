@@ -17,6 +17,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
+import { apiFetch } from "../lib/auth.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
@@ -165,7 +166,7 @@ async function loadChats(root) {
 
   let data;
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}&order=${chatsViewState.order}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

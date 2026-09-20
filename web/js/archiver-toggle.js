@@ -11,6 +11,7 @@
 
 import { t } from "./i18n.js";
 import { describeError } from "./lib/errors.js";
+import { apiFetch } from "./lib/auth.js";
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -56,7 +57,7 @@ function render(button) {
 /** @param {HTMLElement} button */
 async function refreshStatus(button) {
   try {
-    const res = await fetch("/api/telethon/status");
+    const res = await apiFetch("/api/telethon/status");
     const data = await res.json();
     state.status = data.running ? "running" : "stopped";
   } catch {
@@ -103,7 +104,7 @@ async function handleClick(button) {
   const endpoint = wasRunning ? "stop" : "start";
   let ok = true;
   try {
-    const res = await fetch(`/api/telethon/${endpoint}`, { method: "POST" });
+    const res = await apiFetch(`/api/telethon/${endpoint}`, { method: "POST" });
     if (!res.ok) {
       ok = false;
       const body = await res.json().catch(() => ({}));

@@ -14,6 +14,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
+import { apiFetch } from "../lib/auth.js";
 
 const statsViewState = {
   initialized: false,
@@ -222,7 +223,7 @@ async function loadStats(root) {
 
   let data;
   try {
-    const res = await fetch("/api/stats");
+    const res = await apiFetch("/api/stats");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
   } catch {

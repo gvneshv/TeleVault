@@ -20,6 +20,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
+import { apiFetch } from "../lib/auth.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -162,7 +163,7 @@ async function openDeletedRowDetail(row, messageId) {
 
   let detail;
   try {
-    const res = await fetch(`/api/messages/${messageId}`);
+    const res = await apiFetch(`/api/messages/${messageId}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     detail = data.deletion ?? null;
@@ -290,7 +291,7 @@ async function loadDeleted(root) {
 
   let data;
   try {
-    const res = await fetch(`/api/deleted?${params.toString()}`);
+    const res = await apiFetch(`/api/deleted?${params.toString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
   } catch {

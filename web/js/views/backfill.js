@@ -13,6 +13,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { describeError } from "../lib/errors.js";
+import { apiFetch } from "../lib/auth.js";
 import {
   render as renderPagination,
   attach as attachPaginationHandlers,
@@ -243,7 +244,7 @@ function renderModal() {
 
 async function fetchTelethonStatus() {
   try {
-    const res = await fetch("/api/telethon/status");
+    const res = await apiFetch("/api/telethon/status");
     if (!res.ok) throw new Error();
     backfillViewState.telethonRunning = !!(await res.json()).running;
   } catch {
@@ -253,7 +254,7 @@ async function fetchTelethonStatus() {
 
 async function fetchBackfillStatus() {
   try {
-    const res = await fetch("/api/backfill/status");
+    const res = await apiFetch("/api/backfill/status");
     if (!res.ok) throw new Error();
     return await res.json();
   } catch {
@@ -263,7 +264,7 @@ async function fetchBackfillStatus() {
 
 async function fetchBackfillHistory(page = 1) {
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/backfill/history?page=${page}&per_page=${HISTORY_PER_PAGE}`,
     );
     if (!res.ok) throw new Error();
@@ -353,7 +354,7 @@ async function openModal(root) {
         document.getElementById("backfill-limit-input").value || null;
       let started = false;
       try {
-        const res = await fetch("/api/backfill/start", {
+        const res = await apiFetch("/api/backfill/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat, limit: limit ? Number(limit) : null }),
@@ -422,7 +423,7 @@ async function renderRoot(root) {
       btn.disabled = true;
       btn.textContent = t("common.loading");
       try {
-        await fetch("/api/backfill/cancel", { method: "POST" });
+        await apiFetch("/api/backfill/cancel", { method: "POST" });
       } catch {
         // Best-effort - the render below reflects reality either way.
       }
