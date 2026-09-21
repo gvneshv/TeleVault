@@ -225,3 +225,7 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Postman
+.postman
+/postman
