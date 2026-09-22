@@ -38,6 +38,18 @@ function renderHealthReport(data) {
     </li>
   `;
 
+  // is_instance_owner: there is exactly one physical Telethon session per running instance, and it belongs to one account (see HealthOut's own docstring) -
+  // showing a plain ✗ to every OTHER account would look like a persistent, personal problem rather than "not applicable to you",
+  // so those accounts get an explanatory line instead of a checklist row here.
+  const sessionRow = data.is_instance_owner
+    ? checkRow(t("health.sessionExists"), data.session_exists)
+    : `
+    <li class="health-check health-check--info">
+      <span class="health-check__mark" aria-hidden="true">·</span>
+      <span>${t("health.sessionNotApplicable")}</span>
+    </li>
+  `;
+
   // archive_status distinguishes WHY the database check didn't pass (unattached vs. genuinely unavailable)
   // instead of collapsing both into one flat "not readable" line - see HealthOut's own docstring.
   // "ok" is the only case with an actual message count to show.
@@ -54,7 +66,7 @@ function renderHealthReport(data) {
     </div>
     <ul class="health-check-list">
       ${checkRow(t("health.dbReadable"), data.db_readable)}
-      ${checkRow(t("health.sessionExists"), data.session_exists)}
+      ${sessionRow}
     </ul>
     ${archiveMessage}
     <button id="health-refresh" class="health-refresh-btn" type="button">${t("health.refresh")}</button>

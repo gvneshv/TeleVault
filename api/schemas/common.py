@@ -36,7 +36,8 @@ class HealthOut(BaseModel):
     Liveness response from GET /api/health.
 
     `db_readable` confirms the relevant database (see `archive_status`) is accessible and returns rows.
-    `session_exists` confirms the Telethon .session file is present on disk (it does NOT mean the userbot is currently connected - that would require IPC, which is out of scope for Phase 2).
+    `session_exists` confirms the Telethon .session file is present on disk AND this caller is the instance owner (see `is_instance_owner`) -
+    it does NOT mean the userbot is currently connected to Telegram (that would require IPC, which is out of scope for Phase 2).
     """
 
     status: str = Field(..., description="'ok' or 'degraded'.")
@@ -49,6 +50,15 @@ class HealthOut(BaseModel):
         ),
     )
     db_readable: bool
+    is_instance_owner: bool = Field(
+        ...,
+        description=(
+            "Whether this account is the one whose archive_db_ref matches this running instance's own "
+            "database_url - the same 'instance owner' concept require_instance_owner() checks for "
+            "/telethon/* and /backfill/*. There is exactly one physical Telethon session per instance "
+            "today, and it belongs to this one account, not to 'the instance' in the abstract."
+        ),
+    )
     session_exists: bool
     db_message_count: int | None = Field(
         None, description="Quick sanity check - total rows in messages table. None when archive_status != 'ok'."

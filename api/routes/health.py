@@ -15,8 +15,9 @@ A monitoring script that wants a pure liveness probe with no archive semantics s
 
 What this checks vs. what it doesn't:
     ✓ The caller's own archive database (resolved via control_db.users.archive_db_ref, same lookup get_archive_connection() uses for /chats, /messages, /deleted, /stats)
-    is readable and returns rows
-    ✓ Telethon .session file exists on disk (instance-level - see session_exists' own note below)
+      is readable and returns rows
+    ✓ Whether THIS caller is the one account with a Telegram session at all (see is_instance_owner and session_exists' own notes below -
+      there is exactly one physical Telethon session today, belonging to one account, not "the instance" in the abstract)
     ✗ Whether the userbot is currently connected to Telegram (that requires IPC — a Phase 3 addition, see CHANGELOG)
 """
 
@@ -49,8 +50,14 @@ def health_check(
         - "unattached"  this account has no archive_db_ref yet - nothing to check
         - "unavailable" an archive_db_ref exists but couldn't actually be reached right now
 
-    `status` stays 'ok'/'degraded' for backwards compatibility with the existing UI badge -
-    'ok' requires both archive_status == "ok" and the Telethon session file being present.
+    `is_instance_owner` / `session_exists`: there is exactly one physical Telethon .session file per running instance today
+    (see require_instance_owner()'s docstring in api/dependencies.py) - it belongs to whichever ONE account's archive_db_ref matches this instance's own database_url,
+    the same "instance owner" concept require_instance_owner() checks.
+    For every other account, a Telegram session genuinely doesn't exist yet - there's no per-user linking flow built yet (see project roadmap) -
+    so session_exists is correctly False for them, not a stale/borrowed reading of someone else's session.
+    `status` only folds session_exists into its ok/degraded computation FOR the instance owner:
+    a regular account's overall status shouldn't read "degraded" forever over a check that was never theirs to pass in the first place.
+
     A 200 response is always returned once the caller is authenticated - the body carries the real state, not the HTTP status,
     so partial-health states (e.g. "unattached") render as a normal page state in the UI rather than an error.
     (An invalid/expired/missing token itself still 401s, via get_current_user() above, same as every other authenticated route.)
@@ -72,21 +79,21 @@ def health_check(
         except OperationalError:
             archive_status = "unavailable"
 
-    # Telethon session file: instance-level, not per-user - there is one physical userbot process per instance today
-    # (see require_instance_owner()'s docstring in api/dependencies.py).
-    # Presence means the userbot has authenticated at least once;
-    # absence most likely means first-run setup hasn't completed.
-    # Shown to every caller regardless of archive_status - it describes this instance's userbot process, not any individual account.
+    is_instance_owner = archive_ref is not None and archive_ref == db.get_primary_database_name()
     session_path = Path(settings.session_name).with_suffix(".session")
-    session_exists = session_path.exists()
+    session_exists = is_instance_owner and session_path.exists()
 
     db_readable = archive_status == "ok"
-    status = "ok" if (db_readable and session_exists) else "degraded"
+    if is_instance_owner:
+        status = "ok" if (db_readable and session_exists) else "degraded"
+    else:
+        status = "ok" if db_readable else "degraded"
 
     return HealthOut(
         status=status,
         archive_status=archive_status,
         db_readable=db_readable,
+        is_instance_owner=is_instance_owner,
         session_exists=session_exists,
         db_message_count=message_count,
     )
