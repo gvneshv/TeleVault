@@ -1,9 +1,8 @@
 /**
  * In-memory access token, login/register/logout API calls, and apiFetch() -
  * the one thing every other view module on the authenticated app page (index.html) needs from this file,
- * since it's a drop-in replacement for fetch() against endpoints gated by get_archive_connection / require_instance_owner (api/dependencies.py):
- * /api/chats, /messages, /deleted, /stats, /telethon/*, /backfill/*.
- * GET /api/health stays on plain fetch() everywhere else - it's intentionally still open (see README's Notes section).
+ * since it's a drop-in replacement for fetch() against endpoints gated by get_archive_connection / require_instance_owner / get_current_user (api/dependencies.py):
+ * /api/chats, /messages, /deleted, /stats, /health, /telethon/*, /backfill/*.
  *
  * PAGE SPLIT: login.html, register.html, and index.html (the app itself) are three separate pages,
  * not one page showing/hiding a login form - see login.js/register.js for the two standalone auth pages.
@@ -30,9 +29,11 @@
  * if it fails, apiFetch() redirects to /login.html itself (see redirectToLogin() below) rather than trying to show anything in place -
  * there's no login form embedded in index.html to fall back to.
  *
- * data-auth on <html> ("checking" | "in") is what base.css uses to show/hide .auth-loading vs .app-shell on index.html specifically -
- * login.html/register.html don't use it at all, since they have no protected content to hide behind a check;
- * they redirect away via hasActiveSession() instead if the visitor already has a session.
+ * data-auth on <html> ("checking" | "in" | "out") is what base.css uses to show/hide .auth-loading vs .app-shell on index.html,
+ * and — with the opposite mapping — .auth-loading vs .auth-page on login.html/register.html:
+ * those two pages start at "checking" (hiding the form) and flip to "out" once hasActiveSession() resolves false (see login.js/register.js),
+ * revealing the form only after confirming there's nothing to redirect for.
+ * They never reach "in" themselves - hasActiveSession() resolving true means an immediate window.location redirect away from the page instead.
  */
 
 /** @type {string | null} */
@@ -210,4 +211,4 @@ async function apiFetch(input, init = {}) {
   return fetch(input, withAuth());
 }
 
-export { login, register, logout, hasActiveSession, apiFetch };
+export { login, register, logout, hasActiveSession, apiFetch, setAuthState };

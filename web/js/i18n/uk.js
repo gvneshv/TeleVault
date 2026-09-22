@@ -75,6 +75,10 @@ export const uk = {
   "health.dbReadable": "База даних доступна",
   "health.sessionExists": "Сесію Telegram знайдено",
   "health.messageCount": "Заархівовано повідомлень",
+  "health.unattached":
+    "Ваш архів ще не налаштовано. Завершіть підключення облікового запису Telegram, щоб почати архівування.",
+  "health.unavailable":
+    "Ваш архів тимчасово недоступний. Спробуйте пізніше або зверніться до адміністратора.",
   "health.refresh": "Оновити",
 
   "theme.toggleLabel": "Змінити тему",

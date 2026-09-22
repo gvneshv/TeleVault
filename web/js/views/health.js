@@ -1,8 +1,9 @@
 /**
  * Health view.
  *
- * Fetches GET /api/health and shows the API's own liveness report:
- * whether the SQLite file is readable, whether a Telethon session exists, and the current archived message count.
+ * Fetches GET /api/health (via apiFetch, so the backend resolves THIS account's own archive - see api/routes/health.py's module docstring)
+ * and shows the API's own liveness report:
+ * whether the caller's archive is attached and readable, whether a Telethon session exists, and the current archived message count.
  * See api/routes/health.py for exactly what each check does and doesn't cover
  * (notably: it does NOT confirm the userbot is currently connected to Telegram — that needs IPC, a Phase 3 addition per that file's own docstring).
  *
@@ -14,6 +15,8 @@
  */
 
 import { t } from "../i18n.js";
+import { apiFetch } from "../lib/auth.js";
+import { describeError } from "../lib/errors.js";
 
 const healthViewState = {
   initialized: false,
@@ -35,6 +38,16 @@ function renderHealthReport(data) {
     </li>
   `;
 
+  // archive_status distinguishes WHY the database check didn't pass (unattached vs. genuinely unavailable)
+  // instead of collapsing both into one flat "not readable" line - see HealthOut's own docstring.
+  // "ok" is the only case with an actual message count to show.
+  const archiveMessage =
+    data.archive_status === "unattached"
+      ? `<p class="health-archive-message">${t("health.unattached")}</p>`
+      : data.archive_status === "unavailable"
+        ? `<p class="health-archive-message">${t("health.unavailable")}</p>`
+        : `<p class="health-message-count">${t("health.messageCount")}: ${data.db_message_count}</p>`;
+
   return `
     <div class="health-status">
       <span class="info-badge">${statusLabel}</span>
@@ -43,7 +56,7 @@ function renderHealthReport(data) {
       ${checkRow(t("health.dbReadable"), data.db_readable)}
       ${checkRow(t("health.sessionExists"), data.session_exists)}
     </ul>
-    <p class="health-message-count">${t("health.messageCount")}: ${data.db_message_count}</p>
+    ${archiveMessage}
     <button id="health-refresh" class="health-refresh-btn" type="button">${t("health.refresh")}</button>
   `;
 }
@@ -54,11 +67,19 @@ async function loadHealth(root) {
 
   let data;
   try {
-    const res = await fetch("/api/health");
-    // Not using res.ok here — health.py always returns 200,
-    // even when status is "degraded" (that's the point: the body carries the real state, not the HTTP status — see its docstring).
-    // A non-200 here means something is more seriously wrong (e.g. 503 if the DB file can't be opened at all), which the catch block below handles.
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // apiFetch (not plain fetch) - GET /api/health requires a token like every other route now that each account has its own,
+    // potentially-nonexistent archive (see api/routes/health.py's module docstring):
+    // there's no database to check without first knowing which caller is asking.
+    const res = await apiFetch("/api/health");
+    // Not using res.ok for the normal case — health.py always returns 200, even when status is "degraded"
+    // (that's the point: the body carries the real state, not the HTTP status — see its docstring).
+    // A non-200 here means something is more seriously wrong, e.g. an expired session that apiFetch couldn't silently refresh
+    // (rare on this view - see apiFetch's own docstring for when it redirects instead of returning here).
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      root.innerHTML = `<div class="empty-state">${describeError(body.detail)}</div>`;
+      return;
+    }
     data = await res.json();
   } catch {
     root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;

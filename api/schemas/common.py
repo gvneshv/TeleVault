@@ -34,12 +34,22 @@ class PaginatedResponse(BaseModel, Generic[T]):
 class HealthOut(BaseModel):
     """
     Liveness response from GET /api/health.
- 
-    `db_readable` confirms the SQLite file is accessible and returns rows.
+
+    `db_readable` confirms the relevant database (see `archive_status`) is accessible and returns rows.
     `session_exists` confirms the Telethon .session file is present on disk (it does NOT mean the userbot is currently connected - that would require IPC, which is out of scope for Phase 2).
     """
 
     status: str = Field(..., description="'ok' or 'degraded'.")
+    archive_status: str = Field(
+        ...,
+        description=(
+            "'ok' (the relevant database was read successfully), 'unattached' (this account has no "
+            "archive_db_ref yet - logged-in callers only), or 'unavailable' (a database reference "
+            "exists but couldn't be reached right now)."
+        ),
+    )
     db_readable: bool
     session_exists: bool
-    db_message_count: int = Field(..., description="Quick sanity check - total rows in messages table.")
+    db_message_count: int | None = Field(
+        None, description="Quick sanity check - total rows in messages table. None when archive_status != 'ok'."
+    )

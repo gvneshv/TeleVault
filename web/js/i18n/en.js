@@ -79,6 +79,10 @@ export const en = {
   "health.dbReadable": "Database readable",
   "health.sessionExists": "Telegram session found",
   "health.messageCount": "Archived messages",
+  "health.unattached":
+    "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
+  "health.unavailable":
+    "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
   "health.refresh": "Refresh",
 
   "theme.toggleLabel": "Toggle theme",
