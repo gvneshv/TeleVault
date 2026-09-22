@@ -78,6 +78,8 @@ export const en = {
   "health.statusDegraded": "Degraded",
   "health.dbReadable": "Database readable",
   "health.sessionExists": "Telegram session found",
+  "health.sessionNotApplicable":
+    "Only the account that set up this instance's Telegram connection has a session.",
   "health.messageCount": "Archived messages",
   "health.unattached":
     "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
@@ -156,6 +158,14 @@ export const en = {
     "The live archiver is currently connected. Stop it first — a backfill and the live archiver can't use the same Telegram session at the same time.",
   "error.backfillRunning":
     "A backfill is currently running. Stop it first — it and the live archiver can't use the same Telegram session at the same time.",
+  "error.archiveUnattached":
+    "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
+  "error.archiveUnavailable":
+    "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
+  "error.notInstanceOwner":
+    "This account does not control this instance's Telegram connection.",
+  "error.dbUnavailable":
+    "The database is currently unavailable. Try again shortly, or contact your administrator.",
 
   "chatFilter.allChats": "All chats",
   "chatFilter.nChatsSelected": "{n} chats selected",
