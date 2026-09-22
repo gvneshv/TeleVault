@@ -18,6 +18,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
+import { describeError } from "../lib/errors.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
@@ -169,9 +170,14 @@ async function loadChats(root) {
     const res = await apiFetch(
       `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}&order=${chatsViewState.order}`,
     );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      return;
+    }
     data = await res.json();
   } catch {
+    // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
     return;
   }

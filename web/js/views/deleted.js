@@ -21,6 +21,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
+import { describeError } from "../lib/errors.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -78,13 +79,13 @@ function formatDeletedTimestamp(iso) {
  * Render the deletion-detail panel's inner content once fetched (or errored).
  * Separated from the fetch so it can be called both after a successful fetch and, unmodified, from the cache on a second expand.
  *
- * @param {object | "error"} detail - the `deletion` sub-object from
- *   MessageDetail, or the string "error" if the fetch failed.
+ * @param {object | string} detail - the `deletion` sub-object from
+ *   MessageDetail, or an already-user-facing error message string if the fetch failed.
  * @returns {string}
  */
 function renderDeletionDetail(detail) {
-  if (detail === "error") {
-    return `<div class="deleted-row__detail-error">${t("common.error")}</div>`;
+  if (typeof detail === "string") {
+    return `<div class="deleted-row__detail-error">${escapeHtml(detail)}</div>`;
   }
   if (!detail) {
     // Should not normally happen — every row in this view came from a deleted-only query — but the field is nullable in MessageDetail,
@@ -164,11 +165,16 @@ async function openDeletedRowDetail(row, messageId) {
   let detail;
   try {
     const res = await apiFetch(`/api/messages/${messageId}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    detail = data.deletion ?? null;
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      detail = describeError(body.detail);
+    } else {
+      const data = await res.json();
+      detail = data.deletion ?? null;
+    }
   } catch {
-    detail = "error";
+    // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
+    detail = t("common.error");
   }
 
   deletedViewState.detailCache.set(messageId, detail);
@@ -292,9 +298,14 @@ async function loadDeleted(root) {
   let data;
   try {
     const res = await apiFetch(`/api/deleted?${params.toString()}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      return;
+    }
     data = await res.json();
   } catch {
+    // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
     return;
   }

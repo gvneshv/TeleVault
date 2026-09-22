@@ -15,6 +15,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
+import { describeError } from "../lib/errors.js";
 
 const statsViewState = {
   initialized: false,
@@ -224,9 +225,14 @@ async function loadStats(root) {
   let data;
   try {
     const res = await apiFetch("/api/stats");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      return;
+    }
     data = await res.json();
   } catch {
+    // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
     return;
   }

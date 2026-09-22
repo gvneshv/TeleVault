@@ -20,6 +20,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
+import { describeError } from "../lib/errors.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -154,9 +155,14 @@ async function loadMessages(root) {
   let data;
   try {
     const res = await apiFetch(`/api/messages?${params.toString()}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      return;
+    }
     data = await res.json();
   } catch {
+    // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
     return;
   }
