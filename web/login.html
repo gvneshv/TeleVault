@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-auth="checking">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -22,7 +22,23 @@
   <script src="/js/theme.js"></script>
 </head>
 <body>
+  <!--
+    data-auth on <html> starts as "checking" (set above) so only .auth-loading shows below;
+    once hasActiveSession() (see lib/auth.js) resolves, login.js either redirects to /index.html
+    (an active session already exists) or flips data-auth to "out",
+    revealing the form below - see base.css's Auth gate block and lib/auth.js's module docstring for the full state meanings.
+  -->
+  <div class="auth-loading" aria-hidden="true"></div>
+
   <div class="auth-page">
+    <div class="auth-page__controls">
+      <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+      <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="uk">UK</option>
+      </select>
+    </div>
+
     <form id="login-form" class="auth-card" autocomplete="on">
       <div class="auth-card__wordmark" data-i18n="app.wordmark">TeleVault</div>
       <p class="auth-card__subtitle" data-i18n="login.subtitle">Sign in to your archive</p>

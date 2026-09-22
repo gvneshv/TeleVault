@@ -5,16 +5,20 @@
  */
 
 import { t } from "../i18n.js";
-import { login, hasActiveSession } from "../lib/auth.js";
+import { login, hasActiveSession, setAuthState } from "../lib/auth.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
   // Already have a valid session
   // (e.g. followed a bookmark to /login.html while still logged in, or a still-good httpOnly cookie survived a browser restart) -
   // go straight to the app rather than making them log in again.
+  //
+  // <html> starts at data-auth="checking" (set in login.html) so the form stays hidden behind .auth-loading for this whole check -
+  // only once we know for certain there's no session do we flip to "out" and reveal it, instead of showing the form and yanking it away a moment later.
   if (await hasActiveSession()) {
     window.location.href = "/index.html";
     return;
   }
+  setAuthState("out");
 
   const form = document.getElementById("login-form");
   if (!form) return;

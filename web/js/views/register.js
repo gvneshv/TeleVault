@@ -7,14 +7,16 @@
  */
 
 import { t } from "../i18n.js";
-import { register, hasActiveSession } from "../lib/auth.js";
+import { register, hasActiveSession, setAuthState } from "../lib/auth.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Same reasoning as login.js: don't ask an already-logged-in visitor to register again.
+  // Same reasoning as login.js:
+  // don't ask an already-logged-in visitor to register again, and don't reveal the form (see data-auth="checking" in register.html) until we know for certain we should.
   if (await hasActiveSession()) {
     window.location.href = "/index.html";
     return;
   }
+  setAuthState("out");
 
   const form = document.getElementById("register-form");
   if (!form) return;

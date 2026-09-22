@@ -56,12 +56,22 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
-   Auth gate — index.html's own loading/app-shell visibility, driven by [data-auth] on <html> ("checking" | "in" - see web/js/lib/auth.js).
-   login.html/register.html don't set [data-auth] at all - see .auth-page below, which is unconditionally visible on those two pages.
+   Auth gate — driven by [data-auth] on <html> (see web/js/lib/auth.js's module docstring for the full state meanings).
+   index.html and the two standalone auth pages use the SAME "checking" state to hide their (different) content behind .auth-loading until the initial session check resolves,
+   but diverge after that:
+     - index.html: "in" reveals .app-shell; "out" never happens in practice
+       (a failed check redirects the whole page to /login.html instead - there's no form to fall back to showing here).
+     - login.html/register.html: "out" reveals .auth-page (there's no session, so show the form);
+       "in" never happens in practice (login.js/register.js redirect away immediately instead).
    ------------------------------------------------------------------- */
 
 :root[data-auth="checking"] .app-shell,
 :root[data-auth="out"] .app-shell {
+  display: none;
+}
+
+:root[data-auth="checking"] .auth-page,
+:root[data-auth="in"] .auth-page {
   display: none;
 }
 
@@ -80,12 +90,32 @@ input:focus-visible {
    ------------------------------------------------------------------- */
 
 .auth-page {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--color-bg);
   transition: var(--transition-theme);
+}
+
+/* Theme/language controls - the same two elements #theme-toggle (theme.js) and #lang-select (i18n.js) already wire up on index.html;
+   both modules feature-detect the element with getElementById, so just having this markup on login.html/register.html is enough to make them work here too. */
+.auth-page__controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+}
+
+.auth-page__controls button,
+.auth-page__controls select {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
 }
 
 .auth-card {
