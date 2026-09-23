@@ -16,10 +16,14 @@ What this module deliberately does NOT do:
     Those stay in utils/security.py and utils/crypto.py;
     this module only ever sees already-hashed or already-encrypted values.
     Keeps "how do we prove a password is right" and "how do we store a row" as two separate concerns.
-  - No admin/invite-creation endpoints' queries yet (out of scope - see project brief).
+  - No admin/invite-creation HTTP endpoints yet (out of scope - see project brief) - create_invite() below exists,
+    but its only caller is scripts/manage_admin.py, not a route.
+    An HTTP endpoint calling it later still needs its own is_admin check first;
+    this module doesn't enforce that itself (see this docstring's second point above).
 """
 
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -74,6 +78,46 @@ def get_valid_invite_by_token(conn: Connection, token: str) -> dict[str, Any] | 
         {"token": token},
     ).mappings().first()
     return dict(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# invites - writes
+# ---------------------------------------------------------------------------
+
+def create_invite(conn: Connection, created_by: int, expires_at: datetime) -> str:
+    """
+    Insert a new, single-use invite token and return it.
+
+    The token itself is generated HERE, not by the caller, so there's exactly one place in the codebase that decides what an invite token looks like
+    (secrets.token_urlsafe - cryptographically random, URL-safe, no separators to trip up copy/paste).
+    Currently only called from scripts/manage_admin.py's create-invite subcommand;
+    a future HTTP endpoint for admins to create invites from the UI would call this same function rather than duplicating the generation logic,
+    but would need its own is_admin check before calling it - this function trusts created_by exactly as much as every other write in this module trusts its caller
+    (see this file's own module docstring).
+
+    Does NOT verify created_by is actually an admin, or even that the id exists - a bad id fails loudly via the NOT NULL foreign key constraint on invites.created_by
+    (IntegrityError, uncaught here, same as register_user_via_invite()'s duplicate-username case above) rather than silently.
+
+    actor_id is set to created_by, not left NULL: unlike create_admin_user()'s bootstrap case (no admin exists yet, so there's genuinely no actor to record),
+    an invite always has a real, already-authenticated-or-at-least-script-run admin behind it.
+    """
+    token = secrets.token_urlsafe(24)
+    try:
+        conn.execute(
+            sql_text(
+                """
+                INSERT INTO invites (token, created_by, expires_at)
+                VALUES (:token, :created_by, :expires_at)
+                """
+            ),
+            {"token": token, "created_by": created_by, "expires_at": expires_at},
+        )
+        _insert_audit_log(conn, event_type="invite_created_via_script", actor_id=created_by)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return token
 
 
 # ---------------------------------------------------------------------------

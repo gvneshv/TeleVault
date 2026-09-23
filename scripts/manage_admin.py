@@ -10,7 +10,7 @@ Why this has to exist at all:
     Something outside that loop has to insert the first row directly.
     This script is that something - and, since the need for direct DB access doesn't go away once user #1 exists
     (e.g. granting a second trusted person admin rights without handing them your own login),
-    it supports two modes rather than being a disposable one-shot:
+    it supports four subcommands rather than being a disposable one-shot:
 
     create  - insert a brand-new user with is_admin=True from scratch (bypasses the invite flow entirely - this is the ONLY way to do that, by design;
               there is no equivalent HTTP endpoint and there shouldn't be one).
@@ -19,12 +19,18 @@ Why this has to exist at all:
     set-archive - point a user's archive_db_ref at an already-existing, already-migrated Postgres database name.
               A manual stand-in for real provisioning (POST /telegram/credentials triggering automatic database creation),
               which doesn't exist yet - see api/dependencies.py's get_archive_connection() for what actually reads this value.
+    create-invite - generate a single-use invite token for POST /auth/register, since there's no admin UI for this yet either
+              (see control_db/queries.py's create_invite() for the token generation itself - this subcommand is a thin wrapper:
+              look up the admin by username/id, confirm, call it, print the token).
+              Unlike the other three subcommands, this one needs an EXISTING admin to attribute the invite to (invites.created_by is NOT NULL) -
+              so it can't help with the very first account either;
+              `create` still has to run first, exactly once, before this subcommand has anyone to pass as --created-by.
 
 Safety boundaries this script holds itself to (read before extending it):
-    - Never touches telegram_api_id / telegram_api_hash / telegram_session_string / archive_db_ref for ANY user, in EITHER mode.
-      Both modes call control_db.queries functions (create_admin_user / promote_user_to_admin) that only ever write to username/password_hash/is_admin -
-      see those functions' own docstrings in control_db/queries.py.
-      Promoting or creating an admin must never be a path to reading or altering someone's live Telegram credentials or archive location;
+    - Never touches telegram_api_id / telegram_api_hash / telegram_session_string / archive_db_ref for ANY user, in any subcommand except set-archive itself.
+      create/promote call control_db.queries functions (create_admin_user / promote_user_to_admin) that only ever write to username/password_hash/is_admin,
+      and create-invite's create_invite() only ever writes to the invites table - see those functions' own docstrings in control_db/queries.py.
+      Promoting or creating an admin, or creating an invite, must never be a path to reading or altering someone's live Telegram credentials or archive location;
       this script has no code path that could do that even by accident, because the query layer it calls doesn't expose one.
     - Password is NEVER accepted as a command-line argument.
       A --password flag would land in shell history (~/.bash_history)
@@ -37,8 +43,8 @@ Safety boundaries this script holds itself to (read before extending it):
       specifically so a typo'd --id doesn't silently grant admin to the wrong account.
       It also short-circuits with a plain message (no DB write, no audit row) if the target is already an admin,
       rather than writing a misleading "admin_promoted_via_script" audit entry for something that didn't actually change anything.
-    - Both modes require an interactive y/N confirmation before writing anything.
-      There is no --yes/--force flag - this is a rare, high-privilege operation run by hand,
+    - Every subcommand that writes anything requires an interactive y/N confirmation first.
+      There is no --yes/--force flag - these are rare, high-privilege operations run by hand,
       not something meant to be scripted/automated, so there's no legitimate case for skipping the prompt.
     - Runs directly against control_database_url using this repo's own connection/query modules
       (control_db.connection, control_db.queries) - no ad-hoc SQL lives in this file.
@@ -49,6 +55,8 @@ Usage (run on the server, by whoever already has Postgres/VPS access - this is a
     python scripts/manage_admin.py promote --username alice
     python scripts/manage_admin.py promote --id 3
     python scripts/manage_admin.py set-archive --username alice --db-name alice_archive
+    python scripts/manage_admin.py create-invite --created-by alice
+    python scripts/manage_admin.py create-invite --created-by alice --expires-hours 48
 
 `create` prompts for the new password twice (entry + confirmation),
 same 8-character minimum as POST /auth/register (api/schemas/auth.py) -
@@ -58,11 +66,20 @@ After `create`: the account has no Telegram credentials linked yet, and no archi
 (against a database name you've already created and migrated by hand with `alembic upgrade head` pointed at it)
 before that account can use /api/chats, /messages, /deleted, or /stats,
 since get_archive_connection() (api/dependencies.py) 409s on a NULL archive_db_ref.
+
+`create-invite` refuses to run if --created-by doesn't resolve to an admin - see the Decisions Log:
+invite creation is meant to be an admin-only capability once it's a real HTTP endpoint,
+and there's no reason this script's own version of that action should be looser than the feature it's standing in for.
+Default expiry is 24 hours (--expires-hours to change it);
+the printed token is the whole invite - hand it to the invitee directly (chat, in person, however you'd share a one-time code),
+since anyone who has it can register with it before it expires or you revoke it
+(there's no revoke command yet either - delete the row by hand if you need to invalidate one early).
 """
 
 import argparse
 import getpass
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # This script lives in scripts/, one level below the repo root -
@@ -170,6 +187,34 @@ def cmd_set_archive(user_id: int | None, username: str | None, db_name: str) -> 
         conn.close()
 
 
+def cmd_create_invite(user_id: int | None, username: str | None, expires_hours: int) -> None:
+    conn = control_db.get_connection()
+    try:
+        creator = cq.get_user_by_id(conn, user_id) if user_id is not None else cq.get_user_by_username(conn, username)
+        if creator is None:
+            identifier = f"id={user_id}" if user_id is not None else f"username='{username}'"
+            sys.exit(f"No user found with {identifier}. Nothing was written.")
+
+        if not creator["is_admin"]:
+            sys.exit(
+                f"'{creator['username']}' (id={creator['id']}) isn't an admin. "
+                "Invite creation is an admin-only action - use 'promote' first if this account should be one."
+            )
+
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+        print(f"\nAbout to create an invite as '{creator['username']}' (id={creator['id']}), expiring in {expires_hours}h ({expires_at.isoformat()}).")
+        if not _confirm("Proceed?"):
+            print("Cancelled. Nothing was written.")
+            return
+
+        token = cq.create_invite(conn, creator["id"], expires_at)
+        print(f"\nInvite token: {token}")
+        print(f"Expires: {expires_at.isoformat()}")
+        print("Hand this to the invitee directly - anyone who has it can register with it before it expires.")
+    finally:
+        conn.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -188,6 +233,12 @@ def main() -> None:
     target2.add_argument("--username", dest="username")
     p_set_archive.add_argument("--db-name", required=True, dest="db_name")
 
+    p_create_invite = subparsers.add_parser("create-invite", help="Generate a single-use invite token, attributed to an existing admin.")
+    target3 = p_create_invite.add_mutually_exclusive_group(required=True)
+    target3.add_argument("--id", type=int, dest="user_id")
+    target3.add_argument("--created-by", dest="username", help="Username of the admin this invite is attributed to.")
+    p_create_invite.add_argument("--expires-hours", type=int, default=24, dest="expires_hours")
+
     args = parser.parse_args()
 
     control_db.init_control_db(settings.control_database_url)
@@ -198,6 +249,8 @@ def main() -> None:
             cmd_promote(getattr(args, "user_id", None), getattr(args, "username", None))
         elif args.command == "set-archive":
             cmd_set_archive(getattr(args, "user_id", None), getattr(args, "username", None), args.db_name)
+        elif args.command == "create-invite":
+            cmd_create_invite(getattr(args, "user_id", None), getattr(args, "username", None), args.expires_hours)
     finally:
         control_db.close_db()
 
