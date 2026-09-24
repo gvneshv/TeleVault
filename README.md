@@ -97,10 +97,9 @@ TG_PHONE=+1234567890          # your number in international format
 The other settings have sensible defaults - you can leave them as-is for
 now. `DATABASE_URL` already matches the Postgres container started in step 2.
 
-`FERNET_KEY`, `JWT_SECRET`, `CONTROL_DATABASE_URL`, and `OWNER_USER_ID` are
-for the auth/multi-user control database - see the next section for the
-order they actually need to be filled in (it's not top-to-bottom, since
-`OWNER_USER_ID` can't be known until an account exists).
+`FERNET_KEY`, `JWT_SECRET`, and `CONTROL_DATABASE_URL` are for the
+auth/multi-user control database - see the next section for setting up
+accounts once these are filled in.
 
 ---
 
@@ -127,7 +126,7 @@ alembic -c alembic_control.ini upgrade head
 ### Bootstrapping your own account
 
 There's no self-registration yet - every account needs an invite, and every
-invite needs an existing user to have created it, so the very first account
+invite needs an existing admin to have created it, so the very first account
 (yours) has to be created directly:
 
 ```bash
@@ -141,16 +140,88 @@ the invite requirement entirely, and prints the new account's id, e.g.
 get this value, since the script talks to the control database directly.
 It's the only supported way to create the first account; see
 `control_db/schema.py`'s `invites` table for why that's a hard requirement
-rather than an oversight.
+rather than an oversight. This account starts with no Telegram credentials
+and no archive - both are separate steps below, same as for anyone else who
+registers through an invite afterward.
 
-Put that id in `.env` as `OWNER_USER_ID` before starting the API server
-(step 8) - it refuses to start without this set, on purpose (see
-`.env.example`'s comment on `OWNER_USER_ID` for why a missing/wrong value
-here is treated as a hard stop rather than something to default around).
+### Inviting other people
 
-Inviting anyone else currently means inserting a row into the control
-database's `invites` table by hand - there's no admin endpoint for it yet
-(see this README's Notes section).
+Once at least one admin exists, generate invites from the command line
+instead of writing SQL by hand:
+
+```bash
+python scripts/manage_admin.py create-invite --created-by youruser
+```
+
+Prints a single-use token (default 24h expiry, `--expires-hours` to change
+it) - hand it to the invitee directly. They register with it at
+`POST /auth/register`; the web UI's `register.html` calls this for you once
+you have someone to send the link to.
+
+### Linking a Telegram account
+
+Registering (or being created via `manage_admin.py create`) only makes a
+TeleVault account - it doesn't connect to Telegram yet. That's a separate,
+per-account step, currently only reachable directly against the API (there's
+no settings-page UI for this yet):
+
+1. **Get your own Telegram API credentials** - the same `api_id`/`api_hash`
+   pair from [my.telegram.org](https://my.telegram.org) as step 1 above,
+   but this time it's *this account's own* pair, saved encrypted on its own
+   row (not the `.env` values, which are still only used by `main.py`, the
+   one instance-owner's live archiver - see `api/routes/telegram.py`'s
+   module docstring for how the two relate):
+
+   ```bash
+   curl -X POST http://localhost:8000/api/telegram/credentials \
+     -H "Authorization: Bearer <your access_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"api_id": "12345", "api_hash": "your_api_hash"}'
+   ```
+
+2. **Request a login code**, sent by Telegram to the phone number itself
+   (not stored anywhere - see `TelegramSendCodeIn`'s own docstring):
+
+   ```bash
+   curl -X POST http://localhost:8000/api/telegram/link/send-code \
+     -H "Authorization: Bearer <your access_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"phone": "+15551234567"}'
+   ```
+
+3. **Confirm the code** Telegram sent:
+
+   ```bash
+   curl -X POST http://localhost:8000/api/telegram/link/confirm \
+     -H "Authorization: Bearer <your access_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"code": "12345"}'
+   ```
+
+   If the account has Telegram's own two-factor password enabled, this
+   comes back `{"linked": false, "needs_password": true}` instead of an
+   error - call `/telegram/link/confirm` again with `{"password": "..."}`
+   (not the code again) to finish.
+
+Afterward, this account has an encrypted Telegram session saved, but still
+no archive database to write to - that's still a separate, manual step
+(see below) until automatic provisioning exists.
+
+### Pointing an account at an archive database
+
+Whether or not it's linked Telegram yet, an account needs `archive_db_ref`
+set before it can use `/api/chats`, `/messages`, `/deleted`, or `/stats`
+(they 409 with "hasn't been set up yet" otherwise). Create and migrate a
+database for it the same way you did for `DATABASE_URL` in step 4 above,
+then point the account at it:
+
+```bash
+python scripts/manage_admin.py set-archive --username youruser --db-name youruser_archive
+```
+
+This is a manual stand-in for real provisioning (automatically creating and
+migrating a database as part of linking Telegram), which doesn't exist yet -
+see that script's own module docstring.
 
 ### Migrating an existing SQLite archive
 
@@ -243,22 +314,33 @@ time, reading/writing the same Postgres database (the API only ever reads,
 via a read-only connection - see `api/dependencies.py`).
 
 ```bash
-uvicorn api.server:app --host 127.0.0.1 --port 8000
+uvicorn api.server:app --host 0.0.0.0 --port 8000
 ```
 
-Then open **http://localhost:8000** in a browser. You should see the Chats
-view load first, with Messages, Deleted, Stats, and Health in the nav rail.
+`--host 0.0.0.0` (rather than the default `127.0.0.1`) makes it reachable
+from other devices on your network too (e.g. testing from a phone) - drop
+it back to `127.0.0.1` if you only ever want this reachable from the
+machine it's running on.
 
-> **The Chats/Messages/Deleted/Stats/Backfill views will show errors right
-> now.** They call `/api/*` endpoints that require a bearer token
-> (`require_owner` - see this README's Notes section), and the frontend
-> (`web/js/`) has no login page or token storage yet - it never sends an
-> `Authorization` header at all. Until a frontend login flow exists, use
-> **http://localhost:8000/api/docs** instead: click "Authorize", paste the
-> `access_token` from `POST /auth/login` (see the Bootstrapping section in
-> step 4), and you can exercise every endpoint from there. `GET /api/health`
-> is the one view that will keep working in the browser UI itself, since it
-> stays unauthenticated.
+Then open **http://localhost:8000** in a browser - you'll land on the login
+page. Register (you'll need an invite token - see "Inviting other people"
+above) or log in with an account you already bootstrapped, and you should
+see the Chats view load, with Messages, Deleted, Stats, Backfill, and
+Health in the nav rail.
+
+> **A freshly-registered account will show "hasn't been set up yet" on
+> most tabs, and that's expected**, not a bug: those views need
+> `archive_db_ref` set (see "Pointing an account at an archive database"
+> above) before there's anything to show. Backfill and Telethon specifically
+> only ever work for the one account that controls this instance's live
+> userbot (see this README's Notes section on `require_instance_owner`) -
+> every other account will see "This account does not control this
+> instance's Telegram connection" there, which is expected too, not an
+> error to fix.
+>
+> For exercising raw endpoints directly (without the web UI), **http://localhost:8000/api/docs**
+> still works - click "Authorize" and paste the `access_token` from
+> `POST /auth/login`.
 
 A few things worth knowing:
 
@@ -406,22 +488,22 @@ A few things worth checking on periodically once this is deployed and running lo
 - **Media messages** (photos, stickers, voice notes) are silently skipped in
   Phase 1. The log will show a `DEBUG` line for each skipped message if you
   set `LOG_LEVEL=DEBUG` in `.env`.
-- **The archive/archiver endpoints require the account named by `OWNER_USER_ID`.**
-  `/api/chats`, `/api/messages`, `/api/deleted`, `/api/stats`, `/api/telethon/*`,
-  and `/api/backfill/*` all reject anyone except that one account - not "any
-  logged-in user," and deliberately not "any admin" either: admin status
-  governs account management only, never archive access (see
-  `api/dependencies.py`'s `require_owner()`). `POST /auth/register`, `/login`,
-  `/refresh`, `/logout`, and `GET /auth/me` stay open to anyone with an
-  invite, since those are what let an account prove who it is in the first
-  place. `GET /api/health` also stays open - it's a liveness probe with no
-  archive data in it. You still need `OWNER_USER_ID` set correctly in `.env`
-  (see `.env.example`) - if it's wrong or unset, the app refuses to start
-  rather than risk silently granting archive access to the wrong account.
-  Admin endpoints (invite creation) and frontend login/register pages are
-  not built yet, so today an invite has to be inserted into the control DB
-  by hand (or via `scripts/manage_admin.py` for the account itself, not
-  invites).
+- **Archive access is per-account, not instance-wide.** `/api/chats`,
+  `/api/messages`, `/api/deleted`, `/api/stats`, and `/api/health` each
+  resolve the calling account's own `archive_db_ref` (see
+  `api/dependencies.py`'s `get_archive_connection()`) - there's no single
+  "the" archive anymore, and no `OWNER_USER_ID` setting (removed; if you
+  still have it in an old `.env`, it's ignored). `/api/telethon/*` and
+  `/api/backfill/*` are different: exactly one account controls this
+  running instance's one live userbot (`require_instance_owner()`), because
+  that part of the architecture is still single-instance - see "Linking a
+  Telegram account" above for the plan there. `POST /auth/register`,
+  `/login`, `/refresh`, `/logout`, and `GET /auth/me` stay open to anyone
+  with an invite, since those are what let an account prove who it is in
+  the first place. Admin status (`is_admin`) governs account management
+  only (currently just: creating other admins and invites via
+  `scripts/manage_admin.py` - see "Inviting other people" above), never
+  archive or Telegram access.
 - **Local development needs Postgres running.** Unlike SQLite, there's no
   "just open the file" - the Postgres container (or however you're running
   Postgres) needs to be up any time you want to connect to the database,
