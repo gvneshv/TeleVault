@@ -508,6 +508,75 @@ def set_archive_db_ref(conn: Connection, user_id: int, archive_db_ref: str) -> b
 
 
 # ---------------------------------------------------------------------------
+# telegram credentials / session (self-service, via api/routes/telegram.py)
+# ---------------------------------------------------------------------------
+
+def set_telegram_credentials(conn: Connection, user_id: int, encrypted_api_id: str, encrypted_api_hash: str) -> bool:
+    """
+    Store a user's own Telegram app credentials (api_id/api_hash from my.telegram.org), already Fernet-encrypted by the caller
+    (see utils/crypto.py's encrypt_secret() - this function never touches plaintext, it only persists whatever ciphertext it's handed).
+    Returns False if no such user exists, True on success.
+
+    Also clears telegram_session_string back to NULL:
+    a previously-linked session was authenticated under the OLD api_id/api_hash pair (or is being re-entered for another reason),
+    and Telegram sessions aren't guaranteed portable across a credentials change -
+    safer to require the send-code/confirm handshake to run again than to keep trusting a session that might silently misbehave.
+    Does NOT touch archive_db_ref - resubmitting credentials shouldn't undo which archive this account is already pointed at.
+
+    Self-service, unlike set_archive_db_ref() above:
+    called with the caller's OWN user_id from api/routes/telegram.py (Depends(get_current_user), not require_instance_owner) -
+    every account can set its own Telegram credentials, this isn't an admin-only or instance-owner-only action.
+    """
+    try:
+        result = conn.execute(
+            sql_text(
+                """
+                UPDATE users
+                SET telegram_api_id = :api_id, telegram_api_hash = :api_hash, telegram_session_string = NULL
+                WHERE id = :user_id
+                """
+            ),
+            {"user_id": user_id, "api_id": encrypted_api_id, "api_hash": encrypted_api_hash},
+        )
+        if result.rowcount == 0:
+            conn.rollback()
+            return False
+        _insert_audit_log(conn, event_type="telegram_credentials_set", user_id=user_id, actor_id=user_id)
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def set_telegram_session(conn: Connection, user_id: int, encrypted_session_string: str) -> bool:
+    """
+    Store a user's Telegram session string once the send-code/confirm handshake succeeds - already
+    Fernet-encrypted by the caller, same reasoning as set_telegram_credentials() above. Returns False
+    if no such user exists, True on success.
+
+    Deliberately touches ONLY telegram_session_string - never api_id/api_hash (those were already
+    written by set_telegram_credentials() earlier in the same flow) and never archive_db_ref
+    (provisioning the actual archive database is a separate, not-yet-built step - see
+    api/routes/telegram.py's module docstring).
+    """
+    try:
+        result = conn.execute(
+            sql_text("UPDATE users SET telegram_session_string = :session_string WHERE id = :user_id"),
+            {"user_id": user_id, "session_string": encrypted_session_string},
+        )
+        if result.rowcount == 0:
+            conn.rollback()
+            return False
+        _insert_audit_log(conn, event_type="telegram_linked", user_id=user_id, actor_id=user_id)
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
