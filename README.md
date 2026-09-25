@@ -204,24 +204,38 @@ no settings-page UI for this yet):
    (not the code again) to finish.
 
 Afterward, this account has an encrypted Telegram session saved, but still
-no archive database to write to - that's still a separate, manual step
-(see below) until automatic provisioning exists.
+no archive database to write to - that's the next, separate step below.
 
 ### Pointing an account at an archive database
 
 Whether or not it's linked Telegram yet, an account needs `archive_db_ref`
 set before it can use `/api/chats`, `/messages`, `/deleted`, or `/stats`
-(they 409 with "hasn't been set up yet" otherwise). Create and migrate a
-database for it the same way you did for `DATABASE_URL` in step 4 above,
-then point the account at it:
+(they 409 with "hasn't been set up yet" otherwise). The normal way to get
+one now is automatic - a single self-service call, requiring the Postgres
+role behind `DATABASE_URL` to have `CREATEDB` (most local/dev setups already
+do; a deliberately least-privileged production role likely won't, on
+purpose - see below for what happens then):
+
+```bash
+curl -X POST http://localhost:8000/api/archive/provision \
+  -H "Authorization: Bearer <access_token>"
+```
+
+This creates a real Postgres database (named `televault_archive_<user_id>`),
+runs the exact same migrations `alembic upgrade head` would, and records it
+as `archive_db_ref` - all in one call. Refuses (409) if the account already
+has one.
+
+If the `CREATEDB` privilege isn't there, this comes back 503 with reason
+`provisioning_permission_denied` instead of silently failing - either grant
+it (`ALTER ROLE <role> CREATEDB;`, on whatever role `DATABASE_URL` connects
+as) and retry, or fall back to the fully manual path that predates this
+endpoint: create and migrate a database yourself the same way you did for
+`DATABASE_URL` in step 4 above, then:
 
 ```bash
 python scripts/manage_admin.py set-archive --username youruser --db-name youruser_archive
 ```
-
-This is a manual stand-in for real provisioning (automatically creating and
-migrating a database as part of linking Telegram), which doesn't exist yet -
-see that script's own module docstring.
 
 ### Migrating an existing SQLite archive
 
