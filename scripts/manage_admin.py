@@ -136,7 +136,8 @@ def cmd_create(username: str) -> None:
 
         print(f"Created admin user '{username}' (id={user_id}).")
         print("This account has no Telegram credentials linked yet - complete that via the normal")
-        print("POST /telegram/link/send-code + /telegram/link/confirm + POST /telegram/credentials flow after logging in.")
+        print("POST /telegram/credentials + /telegram/link/send-code + /telegram/link/confirm flow after logging in,")
+        print("then POST /archive/provision to create and migrate this account's own archive database.")
     finally:
         conn.close()
 

@@ -1,3 +1,4 @@
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -32,7 +33,16 @@ target_metadata = metadata
 # (including the Telegram credentials config.py requires at import time)
 # even though they have nothing to do with Telegram - an accepted coupling, not an oversight;
 # see this migration's commit notes for why.
-config.set_main_option("sqlalchemy.url", settings.database_url)
+#
+# TELEVAULT_ALEMBIC_URL_OVERRIDE: the one exception, checked FIRST.
+# Set (and cleared) only by db/provisioning.py, for the one case where a migration needs to target a database that isn't settings.database_url -
+# a brand-new per-user archive being created and migrated from inside the already-running API process, which has no other way to hand env.py a different target
+# (env.py runs as Alembic's own entry point, invoked fresh via alembic.command.upgrade() - it can't just receive a Python argument the way a normal function call would).
+# Not meant to be set by a human; running `alembic upgrade head` from a shell should never have this set, so it falls through to settings.database_url exactly as before.
+config.set_main_option(
+    "sqlalchemy.url",
+    os.environ.get("TELEVAULT_ALEMBIC_URL_OVERRIDE") or settings.database_url,
+)
 
 
 def run_migrations_offline() -> None:

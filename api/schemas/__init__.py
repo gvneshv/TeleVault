@@ -19,6 +19,7 @@ from .telegram import (
     TelegramConfirmIn,
     TelegramConfirmOut,
 )
+from .archive import ArchiveProvisionOut
 
 __all__ = [
     # chat
@@ -49,4 +50,6 @@ __all__ = [
     "TelegramSendCodeOut",
     "TelegramConfirmIn",
     "TelegramConfirmOut",
+    # archive
+    "ArchiveProvisionOut",
 ]

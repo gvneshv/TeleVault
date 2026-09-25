@@ -17,11 +17,10 @@ The three-step shape:
     3. POST /telegram/link/confirm  - the code Telegram sent (and, only if the account has 2FA enabled, a second call with the account's password instead).
        On success, the resulting Telethon session string is encrypted and saved - the account is now linked.
 
-What this deliberately does NOT do yet (see project roadmap - these are separate, later steps):
-    - Does not provision an archive database.
-      archive_db_ref still has to be set by an admin via scripts/manage_admin.py's set-archive subcommand afterward, same manual step as today.
-      Linking Telegram and having somewhere to store the archived messages are separable concerns,
-      and automating the latter (CREATE DATABASE + running alembic programmatically, safely, exactly once) is real, separate work this endpoint isn't trying to also solve.
+What this deliberately does NOT do (see project roadmap for what's separate, later work):
+    - Does not provision an archive database itself - that's POST /archive/provision (api/routes/archive.py, db/provisioning.py), a deliberately separate call:
+      linking Telegram and having somewhere to store the archived messages are separable concerns, and the frontend calling one right after the other is a UI choice,
+      not something enforced at this layer.
     - Does not start a live userbot process for the newly-linked account.
       main.py is still the one physical process for the one instance owner;
       per-user worker processes (one per linked account) are the follow-up architecture work this flow is a prerequisite for, not something it does itself.

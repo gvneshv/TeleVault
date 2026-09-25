@@ -480,16 +480,17 @@ def set_archive_db_ref(conn: Connection, user_id: int, archive_db_ref: str) -> b
     Set a user's archive_db_ref directly.
     Returns False if no such user exists, True on success.
 
-    Only ever called from scripts/manage_admin.py's `set-archive` subcommand - a manual stand-in for real provisioning,
-    which doesn't exist yet (see that script's module docstring and api/dependencies.py's get_archive_connection()).
-    This function only RECORDS the reference;
+    Called from scripts/manage_admin.py's `set-archive` subcommand
+    (the manual path - still useful as a fallback when automatic provisioning can't run, e.g. db/provisioning.py's ArchiveProvisioningError)
+    and from api/routes/archive.py's POST /archive/provision (the automatic path, once db/provisioning.py has actually created and migrated the database).
+    Either way, this function only RECORDS the reference;
     it does not create, verify, or migrate the database that reference names -
     the caller is responsible for making sure `archive_db_ref` actually names a real,
-    already-migrated Postgres database on the same server as control_database_url before pointing a user at it,
+    already-migrated Postgres database on the same server as database_url before pointing a user at it,
     since get_archive_connection() will happily try to connect to whatever is written here.
 
     Deliberately touches ONLY archive_db_ref - never password_hash, never is_admin, never the telegram_* credential columns,
-    for the same reason promote_user_to_admin() above stays narrow: one script subcommand should do exactly the one thing its name says.
+    for the same reason promote_user_to_admin() above stays narrow: one function should do exactly the one thing its name says.
     """
     try:
         result = conn.execute(

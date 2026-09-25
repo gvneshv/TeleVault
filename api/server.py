@@ -29,7 +29,7 @@ import db
 from api.dependencies import require_instance_owner
 from config import settings
 
-from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram
+from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, archive
 
 logger = logging.getLogger(__name__)
 
@@ -99,14 +99,13 @@ app = FastAPI(
 # since controlling this one running process's one live userbot is inherently single-owner regardless of how many control_db accounts exist -
 # see that dependency's docstring for why it's deliberately a different question from get_archive_connection's, even though they resolve the same today.
 #
-# telegram:
+# telegram / archive:
 # each route depends on api.dependencies.get_current_user directly (like chats/messages/deleted/stats do via get_archive_connection),
-# NOT require_instance_owner - linking Telegram is a per-account self-service action every user does for themselves,
+# NOT require_instance_owner - linking Telegram and provisioning your own archive are both per-account self-service actions every user does for themselves,
 # not the single-instance-owner action backfill/telethon are.
-# See api/routes/telegram.py's own module docstring.
+# See those routers' own module docstrings.
 #
-# auth stays open:
-# it's what issues the tokens everything else then checks.
+# auth stays open: it's what issues the tokens everything else then checks.
 # health requires a token (get_current_user) but is registered without a router-level dependency,
 # same reasoning as chats/messages/deleted/stats above: it resolves the CALLING user's own archive per request,
 # not a single instance-wide one - see health.py's own module docstring for why it moved off the open/no-token model it started with.
@@ -119,6 +118,7 @@ app.include_router(messages.router,  prefix="/api")
 app.include_router(deleted.router,   prefix="/api")
 app.include_router(stats.router,     prefix="/api")
 app.include_router(telegram.router,  prefix="/api")
+app.include_router(archive.router,   prefix="/api")
 app.include_router(backfill.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
 app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
 
