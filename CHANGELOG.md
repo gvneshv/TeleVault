@@ -47,17 +47,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   memory and attaches `Authorization: Bearer <token>` to every request, silently refreshing via
   the httpOnly refresh-token cookie first if none is held yet, and redirecting to `/login.html`
   only if that refresh itself fails
-- Settings page (`web/js/views/settings.js`) - self-service UI driving the existing Telegram-linking
-  flow (`POST /telegram/credentials` -> `/telegram/link/send-code` -> `/telegram/link/confirm`,
-  including the 2FA password fork) and archive provisioning (`POST /archive/provision`), gated on
-  the new `GET /telegram/status` endpoint below so a returning, already-linked account opens
-  straight to its actual state instead of restarting the wizard from scratch
+- Telegram/archive setup page (`web/telegram-setup.html`, `web/js/views/telegram-setup.js`) -
+  standalone page (same pattern as `login.html`/`register.html`, not an in-SPA tab) driving the
+  existing Telegram-linking flow (`POST /telegram/credentials` -> `/telegram/link/send-code` ->
+  `/telegram/link/confirm`, including the 2FA password fork) and archive provisioning
+  (`POST /archive/provision`), gated on the new `GET /telegram/status` endpoint below so a
+  returning, already-linked account opens straight to its actual state instead of restarting the
+  wizard from scratch. Shows a completion banner with a "Continue to Chats" link once both are done
+  - `POST /auth/register` now redirects here instead of `/index.html` (`web/js/views/register.js`),
+    since a brand-new account can't do anything useful until this is done. A CLI-created account
+    (`manage_admin.py create`/`promote`) is unaffected - it never goes through `/auth/register` -
+    and reaches the same page later via the Settings link below if it needs to
+- Settings tab (`web/js/views/settings.js`) - kept deliberately lean: today it's a single card
+  linking to the setup page above. This tab is where future account-settings features (change
+  password, etc.) will land one at a time, without ever having to hold the Telegram wizard's state
+  machine alongside them
 - `GET /telegram/status` (`api/routes/telegram.py`) - read-only `{has_credentials, has_session}`
-  summary backing the above, added specifically so a UI could ask "how far did this account get?"
-  without exposing the encrypted values themselves (see `TelegramStatusOut`'s own docstring)
+  summary backing the setup page above, added specifically so a UI could ask "how far did this
+  account get?" without exposing the encrypted values themselves (see `TelegramStatusOut`'s own
+  docstring)
 - Wired the 11 Telegram-flow and 2 archive-provisioning error `reason` codes into
   `web/js/lib/errors.js` / `i18n/{en,uk}.js` - previously deferred until there was a UI to show
-  them on; the Settings page above is that UI
+  them on; the setup page above is that UI
 
 ### Planned - Phase 3 (Advanced Features)
 

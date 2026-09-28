@@ -47,7 +47,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         usernameInput.value,
         passwordInput.value,
       );
-      window.location.href = "/index.html";
+      // A brand-new account can't do anything useful yet (no Telegram linked, no archive database) -
+      // send it to the dedicated setup page instead of the normally-empty Chats tab.
+      // login.js's redirect stays /index.html: a returning user is presumably already set up, and if they're not, Settings links to telegram-setup.html from there too.
+      window.location.href = "/telegram-setup.html";
       return; // navigating away - no need to restore the button below
     } catch (err) {
       errorEl.textContent = err.message || t("register.error");

@@ -57,16 +57,18 @@ input:focus-visible {
 
 /* ---------------------------------------------------------------------
    Auth gate — driven by [data-auth] on <html> (see web/js/lib/auth.js's module docstring for the full state meanings).
-   index.html and the two standalone auth pages use the SAME "checking" state to hide their (different) content behind .auth-loading until the initial session check resolves,
-   but diverge after that:
-     - index.html: "in" reveals .app-shell; "out" never happens in practice
-       (a failed check redirects the whole page to /login.html instead - there's no form to fall back to showing here).
+   index.html/telegram-setup.html and the two standalone auth pages use the SAME "checking" state to hide their
+   (different) content behind .auth-loading until the initial session check resolves, but diverge after that:
+     - index.html, telegram-setup.html: "in" reveals .app-shell / .setup-page respectively;
+       "out" never happens in practice (a failed check redirects the whole page to /login.html instead - there's no form to fall back to showing here).
      - login.html/register.html: "out" reveals .auth-page (there's no session, so show the form);
        "in" never happens in practice (login.js/register.js redirect away immediately instead).
    ------------------------------------------------------------------- */
 
 :root[data-auth="checking"] .app-shell,
-:root[data-auth="out"] .app-shell {
+:root[data-auth="out"] .app-shell,
+:root[data-auth="checking"] .setup-page,
+:root[data-auth="out"] .setup-page {
   display: none;
 }
 
@@ -1144,11 +1146,70 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
+   Setup page (telegram-setup.html) - a standalone page, same auth-gate pattern as index.html (see the Auth gate block above), not a tab inside the SPA shell.
+   Reuses .auth-page__controls as-is for the theme/lang toggles (that class was never actually login/register-specific either)
+   and .auth-card__wordmark / .auth-card__subtitle for the header, rather than duplicating them.
+   ------------------------------------------------------------------- */
+
+.setup-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 16px 40px;
+  gap: 20px;
+  background: var(--color-bg);
+  transition: var(--transition-theme);
+}
+
+.setup-page__header {
+  text-align: center;
+  max-width: 420px;
+  margin-bottom: 4px;
+}
+
+.setup-cta {
+  max-width: 420px;
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  background: var(--color-patina-bg);
+  border: 1px solid var(--color-patina);
+  text-align: center;
+}
+
+.setup-cta p {
+  margin: 0 0 12px;
+  color: var(--color-ink);
+  font-size: 13.5px;
+}
+
+/* Same shape as .modal__btn--primary,
+   patina-toned to match the "healthy/done" meaning .patina-badge already carries elsewhere in this app, rather than the focus/action blue. */
+.modal__btn--success {
+  background: var(--color-patina);
+  border-color: var(--color-patina);
+  color: #fff;
+  font-size: 14px;
+  padding: 10px 20px;
+}
+
+.setup-page__skip {
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
+
+/* ---------------------------------------------------------------------
    Settings view
 
    Forms reuse .modal__field / .modal__field input / .modal__btn / .modal__btn--primary as-is (see the Backfill modal above) -
    those rules were never actually scoped to living inside .modal-overlay, and duplicating them here just to rename them would be pure churn.
    .patina-badge (the same "healthy/active" pill archiver-toggle uses) marks the two success states (linked, archive ready).
+
+   .settings-card and friends are shared by two different pages now:
+   the lean in-SPA Settings tab (web/js/views/settings.js) and the standalone telegram-setup.html (web/js/views/telegram-setup.js) -
+   kept as one generic "card" vocabulary rather than forked into two near-identical class sets for each.
    ------------------------------------------------------------------- */
 
 .settings-card {
@@ -1426,11 +1487,16 @@ input:focus-visible {
   margin-top: 16px;
 }
 
+/* display/text-decoration matter now that this class is also used on <a> tags (Settings' link-out card, telegram-setup.html's completion CTA) -
+   harmless on an actual <button>, which is already block-ish by default either way. */
 .modal__btn {
+  display: inline-block;
   padding: 8px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg-panel);
+  color: var(--color-ink);
+  text-decoration: none;
 }
 
 .modal__btn--primary {

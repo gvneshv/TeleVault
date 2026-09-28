@@ -197,49 +197,65 @@ export const en = {
   "register.loginPrompt": "Already have an account?",
   "register.loginLink": "Sign in",
 
-  // Settings additions
-  "settings.telegramTitle": "Connect your Telegram account",
-  "settings.telegramStatusChecking": "Checking your Telegram link status…",
-  "settings.telegramIntro":
+  // Settings tab (web/js/views/settings.js) - lean by design, just links out to the dedicated Telegram/archive setup page below.
+  // See that page's own keys (tgSetup.*) for everything else - this used to all live under settings.*,
+  // moved out once Settings became its own page-with-a-link rather than the thing housing the wizard directly (see CHANGELOG for the reasoning).
+  "settings.telegramCardTitle": "Telegram connection & archive",
+  "settings.telegramCardBody":
+    "Manage the Telegram account TeleVault archives, and the database it's stored in.",
+  "settings.telegramCardLink": "Open Telegram setup",
+
+  // telegram-setup.html - the dedicated first-run page a new registration is sent to, also reachable any time from Settings above
+  // (e.g. to relink a different account, or if an admin created the account by hand via manage_admin.py and it was never linked in the first place).
+  "tgSetup.pageTitle": "Set up Telegram",
+  "tgSetup.pageSubtitle":
+    "Two quick steps: link the Telegram account to archive, then create the database it's stored in.",
+  "tgSetup.telegramTitle": "Connect your Telegram account",
+  "tgSetup.telegramStatusChecking": "Checking your Telegram link status…",
+  "tgSetup.telegramIntro":
     "TeleVault archives messages using your own Telegram API credentials, not a shared app — this keeps your account's rate limits and access entirely separate from everyone else's.",
-  "settings.apiIdLabel": "API ID",
-  "settings.apiHashLabel": "API hash",
-  "settings.credentialsHelp":
+  "tgSetup.apiIdLabel": "API ID",
+  "tgSetup.apiHashLabel": "API hash",
+  "tgSetup.credentialsHelp":
     "From my.telegram.org — sign in there and create an app if you haven't already. Stored encrypted; never shown again after saving.",
-  "settings.credentialsSubmit": "Save & continue",
-  "settings.savingCredentials": "Saving…",
-  "settings.phoneLabel": "Phone number",
-  "settings.phonePlaceholder": "+15551234567",
-  "settings.phoneHelp":
+  "tgSetup.credentialsSubmit": "Save & continue",
+  "tgSetup.savingCredentials": "Saving…",
+  "tgSetup.phoneLabel": "Phone number",
+  "tgSetup.phonePlaceholder": "+15551234567",
+  "tgSetup.phoneHelp":
     "Including country code. Not stored anywhere — used only to request this one-time verification code.",
-  "settings.sendCodeSubmit": "Send code",
-  "settings.sendingCode": "Sending…",
-  "settings.useDifferentCredentials": "Use different credentials",
-  "settings.codeLabel": "Verification code",
-  "settings.codeHelp": "Telegram sent a code to {phone}.",
-  "settings.codeSubmit": "Verify",
-  "settings.verifying": "Verifying…",
-  "settings.passwordLabel": "Telegram password (2FA)",
-  "settings.passwordHelp":
+  "tgSetup.sendCodeSubmit": "Send code",
+  "tgSetup.sendingCode": "Sending…",
+  "tgSetup.useDifferentCredentials": "Use different credentials",
+  "tgSetup.codeLabel": "Verification code",
+  "tgSetup.codeHelp": "Telegram sent a code to {phone}.",
+  "tgSetup.codeSubmit": "Verify",
+  "tgSetup.verifying": "Verifying…",
+  "tgSetup.passwordLabel": "Telegram password (2FA)",
+  "tgSetup.passwordHelp":
     "This account has two-factor authentication enabled — enter your Telegram password to finish linking.",
-  "settings.passwordSubmit": "Finish linking",
-  "settings.startOver": "Start over",
-  "settings.linkedBadge": "Linked",
-  "settings.linkedBody":
+  "tgSetup.passwordSubmit": "Finish linking",
+  "tgSetup.startOver": "Start over",
+  "tgSetup.linkedBadge": "Linked",
+  "tgSetup.linkedBody":
     "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one.",
-  "settings.relinkButton": "Relink a different account",
-  "settings.archiveTitle": "Archive database",
-  "settings.archiveIntro":
+  "tgSetup.relinkButton": "Relink a different account",
+  "tgSetup.archiveTitle": "Archive database",
+  "tgSetup.archiveIntro":
     "Each account gets its own database to store archived messages, separate from every other account on this instance.",
-  "settings.archiveStatusChecking": "Checking archive status…",
-  "settings.archiveStatusReady":
+  "tgSetup.archiveStatusChecking": "Checking archive status…",
+  "tgSetup.archiveStatusReady":
     "Archive database ready — {count} messages stored.",
-  "settings.archiveStatusMissing": "No archive database yet.",
-  "settings.archiveStatusUnavailable":
+  "tgSetup.archiveStatusMissing": "No archive database yet.",
+  "tgSetup.archiveStatusUnavailable":
     "An archive is on record but couldn't be reached just now. Try again shortly, or contact your administrator.",
-  "settings.provisionButton": "Create archive database",
-  "settings.provisioning": "Creating…",
-  "settings.refreshStatus": "Refresh",
+  "tgSetup.provisionButton": "Create archive database",
+  "tgSetup.provisioning": "Creating…",
+  "tgSetup.refreshStatus": "Refresh",
+  "tgSetup.allSetBody":
+    "Telegram is linked and your archive database is ready. You can head to your chats now.",
+  "tgSetup.continueToChats": "Continue to Chats",
+  "tgSetup.skipForNow": "Skip for now — go to Chats",
 
   "error.invalidApiCredentials":
     "That api_id/api_hash pair isn't valid. Double-check the values from my.telegram.org.",

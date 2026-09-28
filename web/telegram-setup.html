@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" data-auth="checking">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeleVault — Set up Telegram</title>
+  <meta name="theme-color" content="#14181d" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+
+  <!-- Theme applies before first paint to avoid a flash of the wrong theme - same reasoning as index.html. -->
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <!--
+    data-auth on <html> starts as "checking" (set above) so only .auth-loading shows below;
+    once the first apiFetch()-triggered refresh (see lib/auth.js) resolves inside telegram-setup.js,
+    it either flips to "in" (showing .setup-page) or redirects the whole page to /login.html -
+    same gate as index.html, see base.css's Auth gate block for the shared rules.
+  -->
+  <div class="auth-loading" aria-hidden="true"></div>
+
+  <div class="setup-page">
+    <div class="auth-page__controls">
+      <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+      <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="uk">UK</option>
+      </select>
+    </div>
+
+    <div class="setup-page__header">
+      <div class="auth-card__wordmark" data-i18n="app.wordmark">TeleVault</div>
+      <p class="auth-card__subtitle" data-i18n="tgSetup.pageSubtitle">
+        Two quick steps: link the Telegram account to archive, then create the database it's stored in.
+      </p>
+    </div>
+
+    <!-- Populated by js/views/telegram-setup.js — the Connect Telegram and Archive database cards, plus a completion banner once both are actually done. -->
+    <div id="telegram-setup-root"></div>
+
+    <p class="setup-page__skip">
+      <a href="/index.html" data-i18n="tgSetup.skipForNow">Skip for now — go to Chats</a>
+    </p>
+  </div>
+
+  <script type="module" src="/js/views/telegram-setup.js"></script>
+</body>
+</html>

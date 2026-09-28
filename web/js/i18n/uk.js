@@ -193,49 +193,62 @@ export const uk = {
   "register.loginPrompt": "Вже маєте акаунт?",
   "register.loginLink": "Увійти",
 
-  // Settings additions
-  "settings.telegramTitle": "Підключіть свій акаунт Telegram",
-  "settings.telegramStatusChecking": "Перевірка стану підключення Telegram…",
-  "settings.telegramIntro":
+  // Settings tab (web/js/views/settings.js) - lean by design, just links out to the dedicated Telegram/archive setup page below.
+  "settings.telegramCardTitle": "Підключення Telegram і архів",
+  "settings.telegramCardBody":
+    "Керуйте акаунтом Telegram, який архівує TeleVault, і базою даних, де він зберігається.",
+  "settings.telegramCardLink": "Відкрити налаштування Telegram",
+
+  // telegram-setup.html - виділена сторінка першого запуску
+  "tgSetup.pageTitle": "Налаштування Telegram",
+  "tgSetup.pageSubtitle":
+    "Два кроки: підключіть акаунт Telegram для архівування, потім створіть базу даних для зберігання.",
+  "tgSetup.telegramTitle": "Підключіть свій акаунт Telegram",
+  "tgSetup.telegramStatusChecking": "Перевірка стану підключення Telegram…",
+  "tgSetup.telegramIntro":
     "TeleVault архівує повідомлення, використовуючи ваші власні API-дані Telegram, а не спільний застосунок — це повністю відокремлює ліміти та доступ вашого акаунта від інших.",
-  "settings.apiIdLabel": "API ID",
-  "settings.apiHashLabel": "API hash",
-  "settings.credentialsHelp":
+  "tgSetup.apiIdLabel": "API ID",
+  "tgSetup.apiHashLabel": "API hash",
+  "tgSetup.credentialsHelp":
     "З my.telegram.org — увійдіть там і створіть застосунок, якщо ще не зробили цього. Зберігається зашифровано; більше не показується після збереження.",
-  "settings.credentialsSubmit": "Зберегти й продовжити",
-  "settings.savingCredentials": "Збереження…",
-  "settings.phoneLabel": "Номер телефону",
-  "settings.phonePlaceholder": "+15551234567",
-  "settings.phoneHelp":
+  "tgSetup.credentialsSubmit": "Зберегти й продовжити",
+  "tgSetup.savingCredentials": "Збереження…",
+  "tgSetup.phoneLabel": "Номер телефону",
+  "tgSetup.phonePlaceholder": "+15551234567",
+  "tgSetup.phoneHelp":
     "Разом з кодом країни. Ніде не зберігається — використовується лише для запиту цього одноразового коду підтвердження.",
-  "settings.sendCodeSubmit": "Надіслати код",
-  "settings.sendingCode": "Надсилання…",
-  "settings.useDifferentCredentials": "Використати інші дані",
-  "settings.codeLabel": "Код підтвердження",
-  "settings.codeHelp": "Telegram надіслав код на {phone}.",
-  "settings.codeSubmit": "Підтвердити",
-  "settings.verifying": "Перевірка…",
-  "settings.passwordLabel": "Пароль Telegram (2FA)",
-  "settings.passwordHelp":
+  "tgSetup.sendCodeSubmit": "Надіслати код",
+  "tgSetup.sendingCode": "Надсилання…",
+  "tgSetup.useDifferentCredentials": "Використати інші дані",
+  "tgSetup.codeLabel": "Код підтвердження",
+  "tgSetup.codeHelp": "Telegram надіслав код на {phone}.",
+  "tgSetup.codeSubmit": "Підтвердити",
+  "tgSetup.verifying": "Перевірка…",
+  "tgSetup.passwordLabel": "Пароль Telegram (2FA)",
+  "tgSetup.passwordHelp":
     "Цей акаунт має увімкнену двофакторну автентифікацію — введіть пароль Telegram, щоб завершити підключення.",
-  "settings.passwordSubmit": "Завершити підключення",
-  "settings.startOver": "Почати спочатку",
-  "settings.linkedBadge": "Підключено",
-  "settings.linkedBody":
+  "tgSetup.passwordSubmit": "Завершити підключення",
+  "tgSetup.startOver": "Почати спочатку",
+  "tgSetup.linkedBadge": "Підключено",
+  "tgSetup.linkedBody":
     "Ваш акаунт Telegram підключено для цієї сесії. Повторне підключення замінить збережену сесію на нову.",
-  "settings.relinkButton": "Підключити інший акаунт",
-  "settings.archiveTitle": "База даних архіву",
-  "settings.archiveIntro":
+  "tgSetup.relinkButton": "Підключити інший акаунт",
+  "tgSetup.archiveTitle": "База даних архіву",
+  "tgSetup.archiveIntro":
     "Кожен акаунт отримує власну базу даних для зберігання архівованих повідомлень, окрему від усіх інших акаунтів цього застосунку.",
-  "settings.archiveStatusChecking": "Перевірка стану архіву…",
-  "settings.archiveStatusReady":
+  "tgSetup.archiveStatusChecking": "Перевірка стану архіву…",
+  "tgSetup.archiveStatusReady":
     "Архів готовий — збережено повідомлень: {count}.",
-  "settings.archiveStatusMissing": "Базу даних архіву ще не створено.",
-  "settings.archiveStatusUnavailable":
+  "tgSetup.archiveStatusMissing": "Базу даних архіву ще не створено.",
+  "tgSetup.archiveStatusUnavailable":
     "Архів зареєстровано, але зараз недоступний. Спробуйте пізніше або зверніться до адміністратора.",
-  "settings.provisionButton": "Створити базу даних архіву",
-  "settings.provisioning": "Створення…",
-  "settings.refreshStatus": "Оновити",
+  "tgSetup.provisionButton": "Створити базу даних архіву",
+  "tgSetup.provisioning": "Створення…",
+  "tgSetup.refreshStatus": "Оновити",
+  "tgSetup.allSetBody":
+    "Telegram підключено, і ваша база даних архіву готова. Тепер можете перейти до чатів.",
+  "tgSetup.continueToChats": "Перейти до чатів",
+  "tgSetup.skipForNow": "Пропустити — перейти до чатів",
 
   "error.invalidApiCredentials":
     "Пара api_id/api_hash недійсна. Перевірте значення на my.telegram.org.",
