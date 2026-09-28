@@ -50,6 +50,20 @@ function renderHealthReport(data) {
     </li>
   `;
 
+  // An account with no archive_db_ref at all hasn't FAILED a database check - there is simply nothing to check yet.
+  // This row used to render an ✗ for it unconditionally, which read as "your database is broken" directly above a message saying it just isn't set up yet.
+  // Same neutral "·" treatment the session row above uses for "not applicable".
+  // "unavailable" (a ref exists but couldn't be reached) IS a genuine failure and keeps the ✗.
+  const dbRow =
+    data.archive_status === "unattached"
+      ? `
+    <li class="health-check health-check--info">
+      <span class="health-check__mark" aria-hidden="true">·</span>
+      <span>${t("health.dbNotSetUp")}</span>
+    </li>
+  `
+      : checkRow(t("health.dbReadable"), data.db_readable);
+
   // archive_status distinguishes WHY the database check didn't pass (unattached vs. genuinely unavailable)
   // instead of collapsing both into one flat "not readable" line - see HealthOut's own docstring.
   // "ok" is the only case with an actual message count to show.
@@ -65,7 +79,7 @@ function renderHealthReport(data) {
       <span class="info-badge">${statusLabel}</span>
     </div>
     <ul class="health-check-list">
-      ${checkRow(t("health.dbReadable"), data.db_readable)}
+      ${dbRow}
       ${sessionRow}
     </ul>
     ${archiveMessage}

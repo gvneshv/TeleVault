@@ -78,6 +78,7 @@ export const en = {
   "health.statusOk": "OK",
   "health.statusDegraded": "Degraded",
   "health.dbReadable": "Database readable",
+  "health.dbNotSetUp": "Archive database not set up yet",
   "health.sessionExists": "Telegram session found",
   "health.sessionNotApplicable":
     "Only the account that set up this instance's Telegram connection has a session.",

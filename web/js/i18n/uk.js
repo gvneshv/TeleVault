@@ -74,6 +74,7 @@ export const uk = {
   "health.statusOk": "Усе добре",
   "health.statusDegraded": "Є проблеми",
   "health.dbReadable": "База даних доступна",
+  "health.dbNotSetUp": "Базу даних архіву ще не налаштовано",
   "health.sessionExists": "Сесію Telegram знайдено",
   "health.sessionNotApplicable":
     "Сесію Telegram має лише той обліковий запис, який налаштував підключення для цього інстансу.",

@@ -70,6 +70,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `web/js/lib/errors.js` / `i18n/{en,uk}.js` - previously deferred until there was a UI to show
   them on; the setup page above is that UI
 
+### Fixed
+
+- Health tab (`web/js/views/health.js`) showed a "✗ Database readable" for an account whose
+  archive simply isn't set up yet (`archive_status: "unattached"`), directly above a message saying
+  exactly that. That state now gets a neutral "·" row ("Archive database not set up yet"), the same
+  treatment the session row already used for "not applicable". `unavailable` (a ref exists but
+  couldn't be reached) is a genuine failure and keeps the ✗
+
 ### Planned - Phase 3 (Advanced Features)
 
 - Admin API endpoints (invite creation, listing/locking users) for the auth backend above -
