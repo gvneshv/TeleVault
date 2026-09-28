@@ -74,7 +74,7 @@ function parseUtc(value) {
 }
 
 function formatDuration(seconds) {
-  if (!seconds || seconds < 0) return "—";
+  if (!seconds || seconds < 0) return "-";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -90,7 +90,7 @@ function formatDuration(seconds) {
 // the output length varies (e.g. a single-digit hour vs a double-digit one), which is what made history rows look inconsistently sized.
 // Pinning both the locale and 2-digit widths for every field fixes both at once.
 function formatDateTime(date) {
-  if (!date) return "—";
+  if (!date) return "-";
   return date.toLocaleString(getCurrentLang(), {
     day: "2-digit",
     month: "2-digit",
@@ -167,7 +167,7 @@ function renderProgress(status) {
 
   return `
     <div class="backfill-progress">
-      <div class="backfill-progress__chat">${stateLabel}${status.current_chat ? ` — ${escapeHtml(status.current_chat)}` : ""}</div>
+      <div class="backfill-progress__chat">${stateLabel}${status.current_chat ? ` - ${escapeHtml(status.current_chat)}` : ""}</div>
       <div class="progress-bar"><div class="progress-bar__fill" style="width: ${chatsPercent}%"></div></div>
       <div class="backfill-progress__meta">
         <span>${status.chats_done ?? 0}/${status.chats_total ?? "?"} ${t("backfill.chats")} · ${chatsPercent}%</span>
@@ -197,7 +197,7 @@ function renderHistory(data) {
       <td>${run.chats_done ?? 0}</td>
       <td>${run.messages_stored ?? 0}</td>
       <td>${run.messages_skipped ?? 0}</td>
-      <td>${run.finished_at ? formatDuration((parseUtc(run.finished_at) - parseUtc(run.started_at)) / 1000) : "—"}</td>
+      <td>${run.finished_at ? formatDuration((parseUtc(run.finished_at) - parseUtc(run.started_at)) / 1000) : "-"}</td>
     </tr>
   `,
     )

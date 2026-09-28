@@ -54,6 +54,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`POST /archive/provision`), gated on the new `GET /telegram/status` endpoint below so a
   returning, already-linked account opens straight to its actual state instead of restarting the
   wizard from scratch. Shows a completion banner with a "Continue to Chats" link once both are done
+  - The credentials step opens with a numbered walkthrough for getting an API ID/hash from
+    my.telegram.org (links open in a new tab; Telegram's own labels such as "API development tools"
+    are kept in English in every language, since that's what the person has to match on its page)
+  - The archive card offers "Create archive database" only when the API reports `unattached`. Not
+    for `unavailable` (a reference already exists, so `POST /archive/provision` would always 409)
+    and not when the status couldn't be fetched at all. Its buttons sit in one row with any error
+    shown beneath them, so an error no longer rearranges or crowds the buttons
   - `POST /auth/register` now redirects here instead of `/index.html` (`web/js/views/register.js`),
     since a brand-new account can't do anything useful until this is done. A CLI-created account
     (`manage_admin.py create`/`promote`) is unaffected - it never goes through `/auth/register` -
@@ -72,7 +79,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Health tab (`web/js/views/health.js`) showed a "✗ Database readable" for an account whose
+- Health tab (`web/js/views/health.js`) showed a red "✗ Database readable" for an account whose
   archive simply isn't set up yet (`archive_status: "unattached"`), directly above a message saying
   exactly that. That state now gets a neutral "·" row ("Archive database not set up yet"), the same
   treatment the session row already used for "not applicable". `unavailable` (a ref exists but

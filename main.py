@@ -96,7 +96,7 @@ def register_handlers(client: TelegramClient, self_id: int) -> None:
 
     self_id (the archiving account's own Telegram user ID) is passed to on_delete specifically:
     it's needed to recognize Saved Messages (the one chat where chat_id == your own user ID)
-    for deletion-actor inference — only the account owner has access to their own Saved Messages, so any deletion there is deterministically 'self', not a guess.
+    for deletion-actor inference - only the account owner has access to their own Saved Messages, so any deletion there is deterministically 'self', not a guess.
     See db/queries.py's flag_deleted() for where this is actually used.
     """
     on_message.register(client)

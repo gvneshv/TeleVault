@@ -1,5 +1,5 @@
 """
-GET /api/health — liveness check for the API server and the caller's own archive.
+GET /api/health - liveness check for the API server and the caller's own archive.
 
 Used by:
     - The web UI to show a status indicator (per-account, like /chats, /messages, /deleted, /stats)
@@ -18,7 +18,7 @@ What this checks vs. what it doesn't:
       is readable and returns rows
     ✓ Whether THIS caller is the one account with a Telegram session at all (see is_instance_owner and session_exists' own notes below -
       there is exactly one physical Telethon session today, belonging to one account, not "the instance" in the abstract)
-    ✗ Whether the userbot is currently connected to Telegram (that requires IPC — a Phase 3 addition, see CHANGELOG)
+    ✗ Whether the userbot is currently connected to Telegram (that requires IPC - a Phase 3 addition, see CHANGELOG)
 """
 
 from pathlib import Path

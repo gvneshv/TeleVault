@@ -1,8 +1,8 @@
 """
 Global message endpoints:
 
-    GET /api/messages           — global message feed with filters
-    GET /api/messages/{id}      — single message with edit history + deletion
+    GET /api/messages           - global message feed with filters
+    GET /api/messages/{id}      - single message with edit history + deletion
 """
 
 from sqlalchemy.engine import Connection
@@ -54,7 +54,7 @@ def list_messages(
     Each row embeds sender and chat info inline so the frontend doesn't need additional requests per row.
 
     Tip: combine `q` with `chat_id` or `sender_id` to narrow searches.
-    Date bounds accept any ISO 8601 string — full datetime or date-only ('2025-01-15') both work since SQLite compares them lexicographically.
+    Date bounds accept any ISO 8601 string - full datetime or date-only ('2025-01-15') both work since SQLite compares them lexicographically.
     """
     result = get_messages(
         db,

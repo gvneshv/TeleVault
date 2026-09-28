@@ -3,7 +3,7 @@
  *
  * Layout concept: nav rail + content pane, the same shape as a mail or archive client.
  * Chosen because it's the natural fit for a tool with a handful of persistent sections (Chats / Messages / Deleted / Stats / Health) and
- * a single focused content view — not a default reached for out of habit.
+ * a single focused content view - not a default reached for out of habit.
  */
 
 * {
@@ -46,7 +46,7 @@ button {
   cursor: pointer;
 }
 
-/* Visible keyboard focus everywhere — never suppressed. */
+/* Visible keyboard focus everywhere - never suppressed. */
 a:focus-visible,
 button:focus-visible,
 select:focus-visible,
@@ -56,7 +56,7 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
-   Auth gate — driven by [data-auth] on <html> (see web/js/lib/auth.js's module docstring for the full state meanings).
+   Auth gate - driven by [data-auth] on <html> (see web/js/lib/auth.js's module docstring for the full state meanings).
    index.html/telegram-setup.html and the two standalone auth pages use the SAME "checking" state to hide their
    (different) content behind .auth-loading until the initial session check resolves, but diverge after that:
      - index.html, telegram-setup.html: "in" reveals .app-shell / .setup-page respectively;
@@ -88,7 +88,7 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
-   Auth pages (login.html, register.html) — the centered-card layout shared by both standalone auth pages.
+   Auth pages (login.html, register.html) - the centered-card layout shared by both standalone auth pages.
    ------------------------------------------------------------------- */
 
 .auth-page {
@@ -366,7 +366,7 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
-   Signature element — the wax-seal badge.
+   Signature element - the wax-seal badge.
    The one deliberately expressive touch in an otherwise quiet UI.
    Reserved exclusively for marking deleted/preserved messages.
    ------------------------------------------------------------------- */
@@ -466,7 +466,7 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-/* Generic neutral pill — chat-type labels (Chats, Messages) and deletion actor-inference labels (Deleted).
+/* Generic neutral pill - chat-type labels (Chats, Messages) and deletion actor-inference labels (Deleted).
    Was chat-type-badge; renamed once a second, unrelated use needed the same neutral style. */
 .info-badge {
   flex-shrink: 0;
@@ -515,7 +515,7 @@ input:focus-visible {
 
 /* The seal-badge's signature tilt (see variables.css) works well as an isolated accent,
    but here several badges of varying width (count text differs per chat) stack in a column.
-   A fixed rotation angle shifts wider badges higher than narrower ones — see chat above with dev tools open — which reads as misalignment rather than character.
+   A fixed rotation angle shifts wider badges higher than narrower ones - see chat above with dev tools open - which reads as misalignment rather than character.
    Disabled in this context only;
    the tilt stays everywhere else it's used in isolation. */
 .chat-row__stats .seal-badge {
@@ -523,7 +523,7 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
-   Pagination — shared across every paginated view (Chats, Messages, ...).
+   Pagination - shared across every paginated view (Chats, Messages, ...).
    Was chat-pagination*;
    renamed once a second view needed it verbatim.
    ------------------------------------------------------------------- */
@@ -577,7 +577,7 @@ input:focus-visible {
   margin: 0;
 }
 
-/* Rows stack more loosely on narrow viewports — stats move under the name instead of competing for horizontal space next to a long chat name. */
+/* Rows stack more loosely on narrow viewports - stats move under the name instead of competing for horizontal space next to a long chat name. */
 @media (max-width: 640px) {
   .chat-row {
     flex-wrap: wrap;
@@ -938,7 +938,7 @@ input:focus-visible {
   font-style: italic;
 }
 
-/* Search-term highlight — see TeleVaultDom.highlightMatches() in js/lib/dom.js, shared by Messages and Deleted.
+/* Search-term highlight - see TeleVaultDom.highlightMatches() in js/lib/dom.js, shared by Messages and Deleted.
    Scoped to message text only;
    color is left inherited (works in both themes against --color-highlight-bg without a paired ink token). */
 .message-row__text mark {
@@ -954,7 +954,7 @@ input:focus-visible {
    for shared layout; the following extends it with deletion-specific bits.
    ------------------------------------------------------------------- */
 
-/* Quieter nod to the seal meaning than a repeated badge — see deleted.js header comment for why the badge itself isn't repeated per row here. */
+/* Quieter nod to the seal meaning than a repeated badge - see deleted.js header comment for why the badge itself isn't repeated per row here. */
 .deleted-row__timestamp {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -1270,13 +1270,47 @@ input:focus-visible {
   gap: 8px;
 }
 
+/* Button row for a card's actions.
+   Always a single flex row regardless of what's around it, so the buttons keep the same arrangement whether or not an error message is showing -
+   previously the buttons were bare inline elements with the error <p> sitting BETWEEN them,
+   so an error made the second button drop onto its own line and shifted everything around. */
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The error renders AFTER the actions row (not before it)
+   so it appears beneath the buttons with breathing room instead of pushing them down or sitting flush against them. */
+.settings-actions + .settings-error {
+  margin: 14px 0 0;
+}
+
 .settings-refresh-btn {
-  margin-top: 12px;
   padding: 6px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg-raised);
   font-size: 12.5px;
+}
+
+/* Numbered how-to list (e.g. getting the Telegram API ID/hash) - same muted type as .settings-help.
+   Links inside open in a new tab (target=_blank is set in the markup) and match .auth-card__switch a. */
+.settings-guide {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+}
+
+.settings-guide li {
+  margin-bottom: 6px;
+}
+
+.settings-guide a {
+  color: var(--color-focus);
 }
 
 /* ---------------------------------------------------------------------
@@ -1487,8 +1521,9 @@ input:focus-visible {
   margin-top: 16px;
 }
 
-/* display/text-decoration matter now that this class is also used on <a> tags (Settings' link-out card, telegram-setup.html's completion CTA) -
-   harmless on an actual <button>, which is already block-ish by default either way. */
+/* display/text-decoration matter now that this class is also used on <a> tags
+   (Settings' link-out card, telegram-setup.html's completion CTA) - harmless on
+   an actual <button>, which is already block-ish by default either way. */
 .modal__btn {
   display: inline-block;
   padding: 8px 16px;

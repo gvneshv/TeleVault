@@ -36,7 +36,7 @@ def get_chat_type(chat: object) -> str:
     if isinstance(chat, types.Channel):
         return "supergroup" if chat.megagroup else "channel"
     
-    logger.warning(f"Unknown chat entity type: {type(chat).__name__!r} — defaulting to 'group'.")
+    logger.warning(f"Unknown chat entity type: {type(chat).__name__!r} - defaulting to 'group'.")
 
     return "group"
 
@@ -78,7 +78,7 @@ def format_call_text(action: MessageActionPhoneCall) -> str:
     """
     Produce a human-readable archive label for a phone/video call service message, used as the stored `text` value in the messages table.
 
-    Telegram does not deliver calls as regular messages — they arrive as MessageService events whose `action` field is MessageActionPhoneCall.
+    Telegram does not deliver calls as regular messages - they arrive as MessageService events whose `action` field is MessageActionPhoneCall.
     TeleVault stores them as ordinary message rows with a synthetic text label so they appear naturally in the archive and can be flagged as deleted like any other message.
 
     Label format examples:

@@ -2,7 +2,7 @@
  * Shared pagination component.
  *
  * Every paginated view (Chats, Messages, Deleted) needs the same prev/next + "page X of Y" control wired to the same PaginatedResponse shape the API always returns.
- * Pulled out here after the second view needed it verbatim — a single bug fix or style change now applies everywhere instead of needing to be repeated per view.
+ * Pulled out here after the second view needed it verbatim - a single bug fix or style change now applies everywhere instead of needing to be repeated per view.
  *
  * First/Last buttons and a direct page-number input only render once there are enough pages that prev/next alone becomes tedious
  * - below that threshold they're just visual clutter for a control nobody needs.
@@ -14,7 +14,7 @@ const JUMP_THRESHOLD = 10;
 
 /**
  * Build the HTML for a pagination control.
- * Returns an empty string when there's only one page — nothing to paginate, nothing to show.
+ * Returns an empty string when there's only one page - nothing to paginate, nothing to show.
  *
  * @param {number} page - current page (1-based)
  * @param {number} pages - total page count

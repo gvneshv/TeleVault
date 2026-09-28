@@ -4,7 +4,7 @@ FastAPI application factory and lifespan manager for the TeleVault API.
 Process topology reminder:
     The userbot (main.py) and this API server are two separate processes sharing one PostgreSQL database.
     The userbot writes; this server only reads.
-    Never open a write connection here — use db.get_readonly_connection() from api/dependencies.py exclusively.
+    Never open a write connection here - use db.get_readonly_connection() from api/dependencies.py exclusively.
     Exception:
     the CONTROL database (accounts/invites/refresh tokens/audit log, api/routes/auth.py) - this server is that database's only writer, by design.
     See control_db/connection.py's module docstring for the full reasoning; the rule above is about the ARCHIVE database specifically.
@@ -76,7 +76,7 @@ app = FastAPI(
     ),
     version="2.0.0",
     # Disable the default /docs and /redoc in production by setting these to None.
-    # Leave them enabled for now — useful during development.
+    # Leave them enabled for now - useful during development.
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
@@ -85,7 +85,7 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
-# API routes — all prefixed with /api to allow Nginx to proxy them cleanly
+# API routes - all prefixed with /api to allow Nginx to proxy them cleanly
 #
 # chats/messages/deleted/stats:
 # each ROUTE (not the router as a whole) depends on # api.dependencies.get_archive_connection instead of get_db -
@@ -124,7 +124,7 @@ app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(requir
 
 
 # ---------------------------------------------------------------------------
-# Static files — web UI
+# Static files - web UI
 # ---------------------------------------------------------------------------
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -136,7 +136,7 @@ if _WEB_DIR.exists():
 else:
     import logging
     logging.getLogger(__name__).warning(
-        "web/ directory not found at %s — static UI will not be served. "
+        "web/ directory not found at %s - static UI will not be served. "
         "This is expected before the frontend is built.",
         _WEB_DIR,
     )

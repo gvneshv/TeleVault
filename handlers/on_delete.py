@@ -17,7 +17,7 @@ Consequences and how we handle them:
     which may match the same tg_message_id in multiple chats (rare but possible). Logged.
 
 self_id (passed in via register()) is the archiving account's own Telegram user ID,
-forwarded to flag_deleted() for Saved Messages detection — see db/queries.py's flag_deleted() docstring for why that's the one private chat where the deletion actor can be known for certain.
+forwarded to flag_deleted() for Saved Messages detection - see db/queries.py's flag_deleted() docstring for why that's the one private chat where the deletion actor can be known for certain.
 
 Threading note (Postgres migration):
     Every flag_deleted()/DB call below is a blocking network round-trip to Postgres.

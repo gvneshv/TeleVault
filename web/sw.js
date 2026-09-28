@@ -2,7 +2,7 @@
  * Minimal service worker: caches the static app shell only.
  *
  * Deliberately does NOT cache /api/* responses.
- * This is a personal archive of private message data — serving stale or cached API responses
+ * This is a personal archive of private message data - serving stale or cached API responses
  * (especially across the deleted-messages and search endpoints) would be actively misleading, not just stale.
  * Only the shell (HTML/CSS/JS) is cached, so the app *loads* offline;
  * it still needs a live connection to the API to show real data.
@@ -71,7 +71,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Never intercept API calls — always go to the network.
+  // Never intercept API calls - always go to the network.
   if (url.pathname.startsWith("/api/")) {
     return;
   }

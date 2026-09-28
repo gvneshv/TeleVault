@@ -82,7 +82,7 @@
       <section class="app-view" data-view="chats">
         <h1 data-i18n="nav.chats">Chats</h1>
         <div id="chats-filter-bar" class="messages-filter-bar"></div>
-        <!-- Populated by js/views/chats.js — loading/error/empty/list states all render here. -->
+        <!-- Populated by js/views/chats.js - loading/error/empty/list states all render here. -->
         <div id="chats-root"></div>
       </section>
 
@@ -127,7 +127,7 @@
 
   <!--
     Everything except theme.js is now a single ES module entry point.
-    app.js imports every view/lib/i18n module it needs (see its own header comment) — the browser resolves the whole dependency graph from this one tag,
+    app.js imports every view/lib/i18n module it needs (see its own header comment) - the browser resolves the whole dependency graph from this one tag,
     so listing each file here individually is no longer needed.
 
     theme.js stays a separate, classic (non-module) script, deliberately:
@@ -140,7 +140,7 @@
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("/sw.js").catch(() => {
-          // Registration failure shouldn't block the app — TeleVault works fine without offline support, it just loses it.
+          // Registration failure shouldn't block the app - TeleVault works fine without offline support, it just loses it.
         });
       });
     }

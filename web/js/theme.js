@@ -6,7 +6,7 @@
  *   2. OS-level preference (prefers-color-scheme).
  *   3. "light" as the final fallback.
  *
- * This module is intentionally framework-free and has no dependencies — it runs before anything else so the correct theme applies on first paint
+ * This module is intentionally framework-free and has no dependencies - it runs before anything else so the correct theme applies on first paint
  * (avoids a flash of the wrong theme).
  */
 

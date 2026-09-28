@@ -24,7 +24,7 @@ class SenderOut(BaseModel):
     When present it takes precedence over first_name/last_name in the UI.
     The field is included now so the API contract is stable before the feature is built - the backend simply returns None until then.
 
-    `resolved_name` is a computed field (see @computed_field below) — it IS included in the serialized JSON response, unlike a plain @property,
+    `resolved_name` is a computed field (see @computed_field below) - it IS included in the serialized JSON response, unlike a plain @property,
     which Pydantic never serializes.
     Previously this logic only existed as a Python-side convenience with no API presence,
     so consumers (the web UI's messages.js and deleted.js) each duplicated the same priority chain in JavaScript.
@@ -75,8 +75,8 @@ class EditOut(BaseModel):
 # Inference values for who deleted a message.
 # Implemented for two cases where it's a structural fact rather than a guess (see db/queries.py's flag_deleted()):
 #   - 'channel_admin': broadcast channels restrict deletion to admins
-#   - 'self': Saved Messages (chat_id == the archiving account's own Telegram user ID) — only the account owner has access to it at all
-# Deliberately NOT implemented for ordinary private/group/supergroup chats — Telegram allows any party to delete a message for everyone with no time
+#   - 'self': Saved Messages (chat_id == the archiving account's own Telegram user ID) - only the account owner has access to it at all
+# Deliberately NOT implemented for ordinary private/group/supergroup chats - Telegram allows any party to delete a message for everyone with no time
 # limit and no record of who did it, so a sender_id/timing guess there would be closer to a coin flip than a signal.
 # Those always get 'unknown', which is also the column's own DEFAULT.
 DeletionActorInference = Literal["channel_admin", "self", "unknown"]
@@ -88,13 +88,13 @@ class DeletionOut(BaseModel):
 
     `deleted_by_inference` is:
       - 'channel_admin' for messages from a broadcast channel (only admins can delete channel posts)
-      - 'self' for messages from Saved Messages (only the account owner has access to it — no ambiguity, unlike an ordinary private chat)
+      - 'self' for messages from Saved Messages (only the account owner has access to it - no ambiguity, unlike an ordinary private chat)
       - 'unknown' for every other chat type, where TeleVault deliberately does not attempt a guess
-    This is not a partial implementation waiting to be finished for the 'unknown' cases — it's the intended final state;
+    This is not a partial implementation waiting to be finished for the 'unknown' cases - it's the intended final state;
     a private/group guess was considered and rejected as unreliable.
 
     `inference_confidence` gives a short, fixed, human-readable note explaining the 'channel_admin'/'self' inference's basis,
-    in English only — useful for anyone consuming the API directly (e.g. via /api/docs).
+    in English only - useful for anyone consuming the API directly (e.g. via /api/docs).
     The web UI does NOT display this field: it renders its own translated (EN/UK) note derived from deleted_by_inference instead,
     since this fixed string can't respond to the UI's language setting.
     Always null for 'unknown' rows, since there's nothing to explain about not guessing.
@@ -106,7 +106,7 @@ class DeletionOut(BaseModel):
     deleted_by_inference: DeletionActorInference = "unknown"
     inference_confidence: str | None = Field(
         None,
-        description="Fixed English explanatory note, for direct API consumers. The web UI renders its own translated note instead — see this class's docstring. Null for 'unknown' rows."
+        description="Fixed English explanatory note, for direct API consumers. The web UI renders its own translated note instead - see this class's docstring. Null for 'unknown' rows."
     )
 
     model_config = {"from_attributes": True}

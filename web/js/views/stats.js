@@ -6,9 +6,9 @@
  *   - A per-chat breakdown table, click-sortable by any column (defaults to message_count descending, matching the API's own default order)
  *
  * Percentages (deleted/edited as a % of total messages) are computed here,
- * not returned by the API — StatsOut's own docstring says this is deliberate, to avoid float precision noise in the API response.
+ * not returned by the API - StatsOut's own docstring says this is deliberate, to avoid float precision noise in the API response.
  *
- * No filters, no pagination — this is a single-fetch dashboard, not a list view.
+ * No filters, no pagination - this is a single-fetch dashboard, not a list view.
  * Lazy-initialized by app.js on first tab open, same pattern as the other non-landing views.
  */
 
@@ -41,7 +41,7 @@ function formatPercent(part, total) {
 
 /** @param {string | null} iso @returns {string} */
 function formatStatsDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleDateString(locale, { dateStyle: "medium" });
@@ -203,7 +203,7 @@ function wireSortableHeaders(root, data) {
 }
 
 /**
- * Render the view's current state from already-fetched data — used both after loading and after a language change
+ * Render the view's current state from already-fetched data - used both after loading and after a language change
  * (no re-fetch needed for a language switch; the underlying stats haven't changed).
  *
  * @param {HTMLElement} root

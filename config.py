@@ -1,7 +1,7 @@
 """
 Loads all runtime configuration from environment variables (via a .env file).
  
-The settings are exposed as a single frozen dataclass instance — `settings` — imported directly wherever needed:
+The settings are exposed as a single frozen dataclass instance - `settings` - imported directly wherever needed:
  
     from config import settings
     print(settings.db_path)
@@ -82,7 +82,7 @@ class Settings:
     phone: str
 
     # Name for the Telethon session file (stored as <name>.session).
-    # Changing this forces a fresh login — keep it stable.
+    # Changing this forces a fresh login - keep it stable.
     session_name: str
 
     # --- Storage (SQLite - active storage layer for now) ---

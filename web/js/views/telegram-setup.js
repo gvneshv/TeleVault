@@ -59,10 +59,13 @@ const setupState = {
   telegramError: null,
   telegramBusy: false,
 
-  // Last GET /api/health body, or null before the first fetch resolves.
+  // Last GET /api/health body, or null before the first fetch resolves (or if it failed).
   archiveStatus: null,
   archiveError: null,
+  // archiveBusy = "re-fetching status"; archiveProvisioning = "POST /archive/provision in flight".
+  // Kept separate: they used to share one flag, so a plain Refresh flipped the Create button's label to "Creating…" even though nothing was being created.
   archiveBusy: false,
+  archiveProvisioning: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -74,9 +77,42 @@ function renderTelegramError() {
   return `<p class="settings-error" role="alert">${escapeHtml(setupState.telegramError)}</p>`;
 }
 
+const MY_TELEGRAM_URL = "https://my.telegram.org";
+const MY_TELEGRAM_APPS_URL = "https://my.telegram.org/apps";
+
+/**
+ * An external link that opens in a NEW tab, so the person doesn't lose this page (and the half-filled wizard on it) while they go get their credentials.
+ * rel="noopener noreferrer" is not optional with target="_blank": without it the opened page gets a handle back to this window via window.opener.
+ * Link text is never user-supplied, so it's interpolated into the string as-is (no escapeHtml needed).
+ */
+function externalLink(href, text) {
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+}
+
+/**
+ * The "how do I even get an API ID/hash" walkthrough shown above the credentials form.
+ * The link labels ("my.telegram.org", "API development tools") are fixed English on purpose: they name things on Telegram's own page,
+ * which the person has to match against what they see there.
+ */
+function renderCredentialsGuide() {
+  const siteLink = externalLink(MY_TELEGRAM_URL, "my.telegram.org");
+  const appsLink = externalLink(MY_TELEGRAM_APPS_URL, "API development tools");
+  const steps = [
+    t("tgSetup.guideStep1").replace("{siteLink}", siteLink),
+    t("tgSetup.guideStep2").replace("{appsLink}", appsLink),
+    t("tgSetup.guideStep3"),
+    t("tgSetup.guideStep4"),
+    t("tgSetup.guideStep5"),
+  ];
+  return `
+    <p class="settings-help">${t("tgSetup.guideIntro")}</p>
+    <ol class="settings-guide">${steps.map((step) => `<li>${step}</li>`).join("")}</ol>
+  `;
+}
+
 function renderCredentialsStep() {
   return `
-    <p class="settings-help">${t("tgSetup.credentialsHelp")}</p>
+    ${renderCredentialsGuide()}
     <form id="settings-credentials-form">
       <label class="settings-field">
         <span>${t("tgSetup.apiIdLabel")}</span>
@@ -86,6 +122,7 @@ function renderCredentialsStep() {
         <span>${t("tgSetup.apiHashLabel")}</span>
         <input id="settings-api-hash" name="api_hash" type="password" autocomplete="off" required />
       </label>
+      <p class="settings-help">${t("tgSetup.credentialsStoredNote")}</p>
       ${renderTelegramError()}
       <button type="submit" class="modal__btn modal__btn--primary" ${setupState.telegramBusy ? "disabled" : ""}>
         ${setupState.telegramBusy ? t("tgSetup.savingCredentials") : t("tgSetup.credentialsSubmit")}
@@ -337,25 +374,36 @@ async function loadTelegramStatus(root) {
 
 function renderArchiveCard() {
   const status = setupState.archiveStatus;
+  // "ok" | "unattached" | "unavailable", or undefined if we don't have a status at all
+  // (still loading, or the health fetch itself failed - the error below says which).
+  const state = status?.archive_status;
+  const working = setupState.archiveBusy || setupState.archiveProvisioning;
 
-  let body;
+  let body = "";
   if (setupState.archiveBusy && !status) {
     body = `<p class="settings-help">${t("tgSetup.archiveStatusChecking")}</p>`;
-  } else if (status?.archive_status === "ok") {
+  } else if (state === "ok") {
     body = `<p><span class="patina-badge">${t("tgSetup.archiveStatusReady").replace("{count}", String(status.db_message_count ?? 0))}</span></p>`;
-  } else {
-    const missingLabel =
-      status?.archive_status === "unavailable"
-        ? t("tgSetup.archiveStatusUnavailable")
-        : t("tgSetup.archiveStatusMissing");
-    body = `
-      <p class="settings-help">${missingLabel}</p>
-      <button type="button" id="settings-provision-btn" class="modal__btn modal__btn--primary" ${setupState.archiveBusy ? "disabled" : ""}>
-        ${setupState.archiveBusy ? t("tgSetup.provisioning") : t("tgSetup.provisionButton")}
-      </button>
-    `;
+  } else if (state === "unattached") {
+    body = `<p class="settings-help">${t("tgSetup.archiveStatusMissing")}</p>`;
+  } else if (state === "unavailable") {
+    body = `<p class="settings-help">${t("tgSetup.archiveStatusUnavailable")}</p>`;
   }
+  // (no else: with no status at all we deliberately show nothing but Refresh - see canProvision below)
 
+  // Create is offered ONLY when the API has positively said there is no archive yet ("unattached").
+  // Not for "unavailable": that means a reference already exists (it just can't be reached right now),
+  // and POST /archive/provision refuses any account that already has one (409), so offering the button there just walks the person into a guaranteed error.
+  // Not when the status is unknown either - we shouldn't offer to create something we haven't confirmed is missing.
+  const canProvision = state === "unattached";
+
+  const provisionButton = canProvision
+    ? `<button type="button" id="settings-provision-btn" class="modal__btn modal__btn--primary" ${working ? "disabled" : ""}>
+        ${setupState.archiveProvisioning ? t("tgSetup.provisioning") : t("tgSetup.provisionButton")}
+      </button>`
+    : "";
+
+  // Error goes AFTER the button row (see .settings-actions in base.css) so it never rearranges or pushes the buttons - it just appears beneath them.
   const errorHtml = setupState.archiveError
     ? `<p class="settings-error" role="alert">${escapeHtml(setupState.archiveError)}</p>`
     : "";
@@ -365,8 +413,11 @@ function renderArchiveCard() {
       <h2>${t("tgSetup.archiveTitle")}</h2>
       <p class="settings-help">${t("tgSetup.archiveIntro")}</p>
       ${body}
+      <div class="settings-actions">
+        ${provisionButton}
+        <button type="button" id="settings-refresh-archive" class="settings-refresh-btn" ${working ? "disabled" : ""}>${t("tgSetup.refreshStatus")}</button>
+      </div>
       ${errorHtml}
-      <button type="button" id="settings-refresh-archive" class="settings-refresh-btn">${t("tgSetup.refreshStatus")}</button>
     </section>
   `;
 }
@@ -405,7 +456,7 @@ function attachArchiveHandlers(root) {
   document
     .getElementById("settings-provision-btn")
     ?.addEventListener("click", async () => {
-      setupState.archiveBusy = true;
+      setupState.archiveProvisioning = true;
       setupState.archiveError = null;
       renderRoot(root);
 
@@ -426,6 +477,7 @@ function attachArchiveHandlers(root) {
         provisionFailed = true;
         setupState.archiveError = t("common.error");
       }
+      setupState.archiveProvisioning = false;
       await loadArchiveStatus(root, { preserveError: provisionFailed });
     });
 }

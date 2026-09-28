@@ -56,14 +56,14 @@ def _shape_message_row(row: dict[str, Any], has_chat_columns: bool) -> dict[str,
     BUG THIS FIXES: without this step, a flat row (e.g. with a top-level "sender_id" and "chat_name" key, as produced by dict(zip(cols, row)))
     has no key literally named "chat" or "sender" at all.
     FastAPI/Pydantic validates the dict against MessageOut, finds neither key,
-    and silently falls back to each field's declared default of None — for every row, always, regardless of the SQL join actually having the data.
-    This was invisible in testing because Optional[None] doesn't raise a validation error; it just quietly renders as "—" in the frontend.
+    and silently falls back to each field's declared default of None - for every row, always, regardless of the SQL join actually having the data.
+    This was invisible in testing because Optional[None] doesn't raise a validation error; it just quietly renders as "-" in the frontend.
     Confirmed via testing that this affected 100% of rows in the Messages and Deleted views, not an occasional edge case.
 
     Args:
         row              : flat dict with message columns, sender_* columns, and chat_name/chat_type if has_chat_columns.
         has_chat_columns : whether this row's SELECT joined the chats table.
-                           False for get_chat_messages() (chat is intentionally omitted there — see its docstring), True for get_messages() and get_message_detail().
+                           False for get_chat_messages() (chat is intentionally omitted there - see its docstring), True for get_messages() and get_message_detail().
     """
     sender = None
     if row["sender_id"] is not None:
@@ -72,7 +72,7 @@ def _shape_message_row(row: dict[str, Any], has_chat_columns: bool) -> dict[str,
             "username": row["sender_username"],
             "first_name": row["sender_first_name"],
             "last_name": row["sender_last_name"],
-            # Not stored yet — Phase 3 feature, see SenderOut's docstring.
+            # Not stored yet - Phase 3 feature, see SenderOut's docstring.
             "display_name": None,
         }
 
@@ -108,7 +108,7 @@ def _paginate(
     Wraps the caller's query in a COUNT subquery to get the total without a second round-trip, then fetches the page.
 
     Args:
-        query    : SQL without LIMIT/OFFSET — must be a SELECT.
+        query    : SQL without LIMIT/OFFSET - must be a SELECT.
         params   : Named parameters matching the query's :placeholders.
         conn     : Open read-only connection.
         page     : 1-based page number.
@@ -237,7 +237,7 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
 def _base_message_select() -> str:
     """
     Core SELECT joining messages -> senders.
-    Used by both get_messages() and get_chat_messages() to keep column lists consistent — changing the projection in one place changes both.
+    Used by both get_messages() and get_chat_messages() to keep column lists consistent - changing the projection in one place changes both.
 
     Note: chat columns are NOT joined here;
     get_messages() adds them, while get_chat_messages() omits them (they're redundant per-chat).
@@ -453,7 +453,7 @@ def get_message_detail(
     """
     # Base message row.
     # Previously used _base_message_select() (sender-only, no chats join)
-    # — added the chats join explicitly here since this endpoint's response (MessageDetail) includes a chat field same as MessageOut,
+    # - added the chats join explicitly here since this endpoint's response (MessageDetail) includes a chat field same as MessageOut,
     # and there was no documented reason to omit it the way get_chat_messages() intentionally does.
     select = """
         SELECT
@@ -489,7 +489,7 @@ def get_message_detail(
 
     result = _shape_message_row(dict(row), has_chat_columns=True)
 
-    # Edit history — oldest first so the UI can render a timeline
+    # Edit history - oldest first so the UI can render a timeline
     edits_cursor = conn.execute(
         sql_text("""
             SELECT id, old_text, new_text, edited_at

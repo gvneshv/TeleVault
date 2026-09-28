@@ -2,7 +2,7 @@
  * English (en) translation strings.
  *
  * Keys are namespaced by area (nav.*, health.*, common.*) so this stays organized as views are added in later steps.
- * Add new keys here AND in uk.js together — TeleVaultI18n's t() falls back to the key itself if a translation is missing,
+ * Add new keys here AND in uk.js together - TeleVaultI18n's t() falls back to the key itself if a translation is missing,
  * so a mismatch won't crash the UI, but it will silently show English/raw keys in the Ukrainian UI.
  * Keep both files in sync as a habit, not just when convenient.
  */
@@ -55,11 +55,11 @@ export const en = {
   "deleted.noRecord": "No deletion record found.",
   "deleted.actor.channel_admin": "Deleted by a channel admin",
   "deleted.actor.self": "Deleted by you",
-  "deleted.actor.unknown": "Deleted by — unknown",
+  "deleted.actor.unknown": "Deleted by - unknown",
   "deleted.confidence.channel_admin":
-    "Only a channel admin can delete a channel post — regular subscribers cannot delete posts.",
+    "Only a channel admin can delete a channel post - regular subscribers cannot delete posts.",
   "deleted.confidence.self":
-    "Saved Messages is only accessible to you — no one else can see it, let alone delete from it.",
+    "Saved Messages is only accessible to you - no one else can see it, let alone delete from it.",
 
   "stats.totalMessages": "Total messages",
   "stats.totalDeleted": "Deleted",
@@ -97,28 +97,28 @@ export const en = {
 
   "backfill.aboutTitle": "About backfill",
   "backfill.aboutIntro":
-    "The live archiver only records messages sent while it's running. Backfill fills in the gap: it walks each chat's existing history on Telegram and archives everything TeleVault hasn't seen yet — useful right after your first setup, or for any chat TeleVault only recently joined.",
+    "The live archiver only records messages sent while it's running. Backfill fills in the gap: it walks each chat's existing history on Telegram and archives everything TeleVault hasn't seen yet - useful right after your first setup, or for any chat TeleVault only recently joined.",
   "backfill.disclaimerSession":
-    "Backfill needs its own Telegram connection. The live archiver (main.py) must be stopped first — Telegram only allows one active session at a time.",
+    "Backfill needs its own Telegram connection. The live archiver (main.py) must be stopped first - Telegram only allows one active session at a time.",
   "backfill.disclaimerDeleted":
-    "Messages already deleted before a chat was first archived can never be recovered — Telegram's history API only returns what currently exists.",
+    "Messages already deleted before a chat was first archived can never be recovered - Telegram's history API only returns what currently exists.",
   "backfill.disclaimerEdits":
     "Backfilled messages are stored as their current text only. Earlier edited versions from before archiving started cannot be recovered.",
   "backfill.disclaimerApprox":
-    "Progress and time remaining are estimates based on Telegram's message counts — treat them as a rough guide, not an exact figure.",
+    "Progress and time remaining are estimates based on Telegram's message counts - treat them as a rough guide, not an exact figure.",
   "backfill.disclaimerBackground":
     "Once started, backfill keeps running on the server even if you close this tab or browser.",
   "backfill.checkingConnection": "Checking live connection…",
   "backfill.connectionOn": "Live archiver is currently connected",
   "backfill.connectionOff": "Live archiver is not connected",
-  "backfill.blockedNote": "— backfill is unavailable while it’s running.",
+  "backfill.blockedNote": "- backfill is unavailable while it’s running.",
   "backfill.startButton": "Start backfill",
   "backfill.confirmTitle": "Start a backfill?",
   "backfill.confirmBody":
     "This will archive historical messages for the selected chat(s). It can take a long time for large histories.",
   "backfill.warningConnectionOn":
     "The live archiver looks like it's still connected. Stop it before starting a backfill.",
-  "backfill.chatLabel": "Chat (optional — leave empty for all chats)",
+  "backfill.chatLabel": "Chat (optional - leave empty for all chats)",
   "backfill.chatPlaceholder": "@username or numeric ID",
   "backfill.limitLabel": "Message limit per chat (optional)",
   "backfill.limitPlaceholder": "e.g. 500",
@@ -157,9 +157,9 @@ export const en = {
   "error.alreadyRunning": "It's already running.",
   "error.notRunning": "It isn't running right now.",
   "error.archiverConnected":
-    "The live archiver is currently connected. Stop it first — a backfill and the live archiver can't use the same Telegram session at the same time.",
+    "The live archiver is currently connected. Stop it first - a backfill and the live archiver can't use the same Telegram session at the same time.",
   "error.backfillRunning":
-    "A backfill is currently running. Stop it first — it and the live archiver can't use the same Telegram session at the same time.",
+    "A backfill is currently running. Stop it first - it and the live archiver can't use the same Telegram session at the same time.",
   "error.archiveUnattached":
     "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
   "error.archiveUnavailable":
@@ -214,17 +214,31 @@ export const en = {
   "tgSetup.telegramTitle": "Connect your Telegram account",
   "tgSetup.telegramStatusChecking": "Checking your Telegram link status…",
   "tgSetup.telegramIntro":
-    "TeleVault archives messages using your own Telegram API credentials, not a shared app — this keeps your account's rate limits and access entirely separate from everyone else's.",
+    "TeleVault archives messages using your own Telegram API credentials, not a shared app - this keeps your account's rate limits and access entirely separate from everyone else's.",
   "tgSetup.apiIdLabel": "API ID",
   "tgSetup.apiHashLabel": "API hash",
-  "tgSetup.credentialsHelp":
-    "From my.telegram.org — sign in there and create an app if you haven't already. Stored encrypted; never shown again after saving.",
+  "tgSetup.guideIntro":
+    "You'll need an API ID and an API hash from Telegram itself. It only takes a couple of minutes:",
+  // {siteLink} / {appsLink} are replaced in telegram-setup.js with real links that open in a new tab (same manual .replace() pattern as {phone} / {count} elsewhere).
+  // Telegram's own page labels ("API development tools", "App title", "Short name", "Save changes") are deliberately left in English in every language -
+  // they're what the user has to match on the page they're looking at.
+  "tgSetup.guideStep1":
+    "Open {siteLink} and log in with your Telegram phone number. Telegram will send you a confirmation code to enter there.",
+  "tgSetup.guideStep2":
+    "Once you're in, choose {appsLink}. Ignore the other options (log out, delete account).",
+  "tgSetup.guideStep3":
+    'Fill in "App title" and "Short name" - anything works, they\'re just labels for you. Leave the other fields as they are.',
+  "tgSetup.guideStep4": 'Click "Save changes".',
+  "tgSetup.guideStep5":
+    "Copy the api_id and api_hash shown on that page into the fields below.",
+  "tgSetup.credentialsStoredNote":
+    "Stored encrypted; never shown again after saving.",
   "tgSetup.credentialsSubmit": "Save & continue",
   "tgSetup.savingCredentials": "Saving…",
   "tgSetup.phoneLabel": "Phone number",
   "tgSetup.phonePlaceholder": "+15551234567",
   "tgSetup.phoneHelp":
-    "Including country code. Not stored anywhere — used only to request this one-time verification code.",
+    "Including country code. Not stored anywhere - used only to request this one-time verification code.",
   "tgSetup.sendCodeSubmit": "Send code",
   "tgSetup.sendingCode": "Sending…",
   "tgSetup.useDifferentCredentials": "Use different credentials",
@@ -234,7 +248,7 @@ export const en = {
   "tgSetup.verifying": "Verifying…",
   "tgSetup.passwordLabel": "Telegram password (2FA)",
   "tgSetup.passwordHelp":
-    "This account has two-factor authentication enabled — enter your Telegram password to finish linking.",
+    "This account has two-factor authentication enabled - enter your Telegram password to finish linking.",
   "tgSetup.passwordSubmit": "Finish linking",
   "tgSetup.startOver": "Start over",
   "tgSetup.linkedBadge": "Linked",
@@ -246,7 +260,7 @@ export const en = {
     "Each account gets its own database to store archived messages, separate from every other account on this instance.",
   "tgSetup.archiveStatusChecking": "Checking archive status…",
   "tgSetup.archiveStatusReady":
-    "Archive database ready — {count} messages stored.",
+    "Archive database ready - {count} messages stored.",
   "tgSetup.archiveStatusMissing": "No archive database yet.",
   "tgSetup.archiveStatusUnavailable":
     "An archive is on record but couldn't be reached just now. Try again shortly, or contact your administrator.",
@@ -256,7 +270,7 @@ export const en = {
   "tgSetup.allSetBody":
     "Telegram is linked and your archive database is ready. You can head to your chats now.",
   "tgSetup.continueToChats": "Continue to Chats",
-  "tgSetup.skipForNow": "Skip for now — go to Chats",
+  "tgSetup.skipForNow": "Skip for now - go to Chats",
 
   "error.invalidApiCredentials":
     "That api_id/api_hash pair isn't valid. Double-check the values from my.telegram.org.",

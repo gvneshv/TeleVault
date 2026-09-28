@@ -6,13 +6,13 @@
  *
  * Imports js/lib/dom.js (escapeHtml) and js/lib/pagination.js (render/attach) as ES modules.
  *
- * Scope, deliberately: list + pagination only. Clicking a row does nothing yet — there's no single-chat or filtered-messages view to send it to.
+ * Scope, deliberately: list + pagination only. Clicking a row does nothing yet - there's no single-chat or filtered-messages view to send it to.
  * Each row still carries `data-chat-id` so that wiring is a one-line addition once a per-chat view exists, instead of a re-render change here.
  *
  * State is kept minimal and re-fetched fresh on every page change;
  * nothing is cached client-side beyond the last page (see lastData below, kept only for language-switch re-rendering).
  * This is a personal single-user archive, not a high-traffic API,
- * so the extra request per page turn is not a real cost — and it keeps this file free of cache-invalidation logic it doesn't need yet.
+ * so the extra request per page turn is not a real cost - and it keeps this file free of cache-invalidation logic it doesn't need yet.
  */
 
 import { t, getCurrentLang } from "../i18n.js";
@@ -38,13 +38,13 @@ const chatsViewState = {
 
 /**
  * Format an ISO 8601 datetime string using the current UI language's locale.
- * Returns an em dash for null/undefined — some chats have no messages yet.
+ * Returns an em dash for null/undefined - some chats have no messages yet.
  *
  * @param {string | null} iso
  * @returns {string}
  */
 function formatChatTimestamp(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleString(locale, {
@@ -52,7 +52,7 @@ function formatChatTimestamp(iso) {
       timeStyle: "short",
     });
   } catch {
-    // Malformed date from the API shouldn't crash the row — fall back to the raw string.
+    // Malformed date from the API shouldn't crash the row - fall back to the raw string.
     return iso;
   }
 }
@@ -193,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (root) loadChats(root);
 });
 
-// Re-render the already-fetched page in the new language — no re-fetch needed, since only the labels change, not the underlying chat data.
+// Re-render the already-fetched page in the new language - no re-fetch needed, since only the labels change, not the underlying chat data.
 document.addEventListener("televault:langchange", () => {
   const root = document.getElementById("chats-root");
   const filterBarRoot = document.getElementById("chats-filter-bar");

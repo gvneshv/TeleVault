@@ -495,7 +495,7 @@ def _get_chat_type(conn: Connection, chat_id: int) -> str | None:
     """
     Look up a chat's stored type ('private', 'group', 'supergroup', 'channel').
 
-    Internal helper for flag_deleted()'s channel-admin inference below — not exported for API use
+    Internal helper for flag_deleted()'s channel-admin inference below - not exported for API use
     (db/read_queries.py has its own get_chat() for that, with a different return shape).
     Returns None if the chat isn't in the DB yet, which shouldn't normally happen for a chat_id that already has a message in it, but isn't assumed.
     """
@@ -527,17 +527,17 @@ def flag_deleted(
 
       - Broadcast channels: only admins can delete channel posts, so any deletion there is 'channel_admin'.
       - Saved Messages (chat_id == self_id, the archiving account's own Telegram user ID):
-        only the account owner has access to their own Saved Messages — no one else can even see it, let alone delete from it — so any deletion there is 'self'.
+        only the account owner has access to their own Saved Messages - no one else can even see it, let alone delete from it - so any deletion there is 'self'.
 
     Deliberately NOT attempted for ordinary private chats, groups, or supergroups:
     Telegram allows any party to delete a message for everyone with no time limit and no record of who did it,
     so a sender_id-based guess there would be closer to a coin flip than a signal.
     See api/schemas/message.py's DeletionOut docstring for the full reasoning.
 
-    self_id is optional (defaults to None) so existing callers/tests that don't have it handy still work — Saved Messages just won't be detected without it,
+    self_id is optional (defaults to None) so existing callers/tests that don't have it handy still work - Saved Messages just won't be detected without it,
     falling back to 'unknown' same as any other private chat.
 
-    Note the distinction from "did this deletion event carry a chat_id" — Telegram's updateDeleteChannelMessages fires for supergroups too,
+    Note the distinction from "did this deletion event carry a chat_id" - Telegram's updateDeleteChannelMessages fires for supergroups too,
     not just channels (see handlers/on_delete.py's docstring), and supergroups behave like ordinary groups for deletion permissions.
     So chat_type is checked explicitly here rather than inferred from which code path called this function.
 
@@ -632,7 +632,7 @@ def record_edit(
     # If the text is identical, there's nothing useful to record.
     if old_text == new_text:
         logger.debug(
-            f"Edit event for message {tg_message_id} in chat {chat_id} — "
+            f"Edit event for message {tg_message_id} in chat {chat_id} - "
             f"text unchanged (likely link preview or markup update). Skipping."
         )
         return True

@@ -1,5 +1,5 @@
 """
-GET /api/deleted — paginated list of all deleted messages across all chats.
+GET /api/deleted - paginated list of all deleted messages across all chats.
 
 This is intentionally a thin wrapper around GET /api/messages with only_deleted=True.
 It exists as its own endpoint because:

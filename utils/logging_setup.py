@@ -34,10 +34,10 @@ def setup_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
     Call this once, early in main(), before any other module logs anything.
  
     Args:
-        log_level: Any standard level name — 'DEBUG', 'INFO', 'WARNING', etc.
+        log_level: Any standard level name - 'DEBUG', 'INFO', 'WARNING', etc.
                    Case-insensitive. Defaults to 'INFO'.
         log_file:  Path to the log file. Rotation is applied automatically.
-                   Pass None (or omit) to skip file logging entirely — useful during local development when console is enough.
+                   Pass None (or omit) to skip file logging entirely - useful during local development when console is enough.
     """
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
 
@@ -45,12 +45,12 @@ def setup_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
 
     handlers: list[logging.Handler] = []
 
-    # Console handler — always on
+    # Console handler - always on
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(fomatter)
     handlers.append(console)
 
-    # File handler — only when a path is provided
+    # File handler - only when a path is provided
     if log_file:
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.handlers.RotatingFileHandler(
@@ -68,10 +68,10 @@ def setup_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
         handlers=handlers
     )
 
-    # Telethon is fairly verbose at DEBUG — keep it at WARNING unless you're actively debugging the Telegram connection itself.
+    # Telethon is fairly verbose at DEBUG - keep it at WARNING unless you're actively debugging the Telegram connection itself.
     logging.getLogger("telethon").setLevel(logging.WARNING)
 
     logging.getLogger(__name__).info(
-        f"Logging initialised — level={log_level.upper()}"
+        f"Logging initialised - level={log_level.upper()}"
         + (f", file={log_file}" if log_file else "")
     )

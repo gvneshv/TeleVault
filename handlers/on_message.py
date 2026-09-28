@@ -1,15 +1,15 @@
 """
-Handles Telethon's NewMessage event — fired for every message that arriveson the account, both incoming and outgoing (including Saved Messages).
+Handles Telethon's NewMessage event - fired for every message that arriveson the account, both incoming and outgoing (including Saved Messages).
 
 Flow per event:
-  1. Resolve the text to store — either the message body or a synthesized call label for MessageActionPhoneCall service messages.
+  1. Resolve the text to store - either the message body or a synthesized call label for MessageActionPhoneCall service messages.
   2. Skip if there is nothing worth archiving (media-only, stickers, etc.).
   3. Extract the chat entity and upsert it into `chats`.
   4. Extract the sender entity (if any) and upsert it into `senders`.
   5. Insert the message into `messages`.
 
 We call `await event.get_chat()` and `await event.get_sender()` rather than reading `event.chat` / `event.sender` directly.
-The direct attributes are only populated when Telegram includes the full entity in the update packet, which isn't guaranteed — the async getters always fetch from cache or the server.
+The direct attributes are only populated when Telegram includes the full entity in the update packet, which isn't guaranteed - the async getters always fetch from cache or the server.
 
 Threading note (Postgres migration):
     Steps 3-5 above (chat/sender upserts, message insert) are plain, blocking calls - each one a real network round-trip to Postgres.
@@ -71,7 +71,7 @@ def _persist_message(
     only their already-resolved field values are handed off to this worker-thread function.
     """
     with db.get_connection() as conn:
-        # Upsert chat and sender before the message insert — both are FKs.
+        # Upsert chat and sender before the message insert - both are FKs.
         db.queries.upsert_chat(
             conn,
             chat_id=chat_id,
@@ -112,7 +112,7 @@ def register(client) -> None:
         Regular text messages are stored as-is.
         Call service messages (MessageActionPhoneCall) are stored with a synthesized label such as "[Missed call]" or "[Voice call · 2 min 17 sec]" so they appear meaningfully in the archive and can be flagged as deleted like any other row.
 
-        All other service messages and media-only messages (stickers, photos, etc.) are skipped — out of scope for Phase 1.
+        All other service messages and media-only messages (stickers, photos, etc.) are skipped - out of scope for Phase 1.
         """
         message = event.message
 
@@ -175,7 +175,7 @@ def register(client) -> None:
             )
             return
 
-        # Skip anything we have no text for — media, stickers, unsupported service messages, etc.
+        # Skip anything we have no text for - media, stickers, unsupported service messages, etc.
         # Call labels produced above are truthy, so they pass this guard correctly.
         if not text:
             logger.debug(
@@ -222,7 +222,7 @@ def register(client) -> None:
                 event.chat_id,
             )
         except Exception:
-            # Log and swallow — a single failed insert should never crash the listener.
+            # Log and swallow - a single failed insert should never crash the listener.
             # The message will simply be absent from the archive.
             logger.exception(
                 "Failed to archive message %s in chat %s.",

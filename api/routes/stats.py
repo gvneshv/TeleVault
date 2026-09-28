@@ -1,5 +1,5 @@
 """
-GET /api/stats — global archive statistics for the dashboard view.
+GET /api/stats - global archive statistics for the dashboard view.
 """
 
 from sqlalchemy.engine import Connection
@@ -26,6 +26,6 @@ def archive_stats(db: Connection = Depends(get_archive_connection)) -> StatsOut:
     - `archiving_since`: datetime of the earliest archived message
     - `per_chat`: per-chat breakdown sorted by message volume descending
 
-    Percentages (e.g. "X% of messages were deleted") are intentionally omitted from the response — the frontend computes them from the raw counts to avoid float precision noise in the API.
+    Percentages (e.g. "X% of messages were deleted") are intentionally omitted from the response - the frontend computes them from the raw counts to avoid float precision noise in the API.
     """
     return get_stats(db)

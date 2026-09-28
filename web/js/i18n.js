@@ -1,7 +1,7 @@
 /**
  * Minimal i18n helper.
  *
- * Translation tables are imported directly from js/i18n/en.js and js/i18n/uk.js (ES modules) — see the TRANSLATIONS table below.
+ * Translation tables are imported directly from js/i18n/en.js and js/i18n/uk.js (ES modules) - see the TRANSLATIONS table below.
  * No bundler, no fetch: this keeps the app usable offline (relevant once the service worker caches it) and avoids a flash of untranslated content
  * while a JSON file loads.
  *
@@ -33,7 +33,7 @@ function getCurrentLang() {
 
 /**
  * Translate a key using the current language, falling back to English, then to the raw key itself if no table has it.
- * A missing key is a content gap, not a crash — the raw key is visible enough to catch in review without breaking the page for the user.
+ * A missing key is a content gap, not a crash - the raw key is visible enough to catch in review without breaking the page for the user.
  *
  * @param {string} key
  * @returns {string}
@@ -61,7 +61,7 @@ function applyTranslations() {
  *
  * Why the event: applyTranslations() only reaches elements marked with data-i18n in the static HTML.
  * Views that build their own markup from fetched data (e.g. the Chats list rendering "{count} deleted" per row) aren't touched by it
- * — those views listen for this event and re-render their already-fetched data in the new language, without a network re-fetch.
+ * - those views listen for this event and re-render their already-fetched data in the new language, without a network re-fetch.
  */
 function setLang(lang) {
   if (!SUPPORTED_LANGS.includes(lang)) return;

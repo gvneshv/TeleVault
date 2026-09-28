@@ -3,18 +3,18 @@
  *
  * Fetches GET /api/messages (paginated, newest first) and renders each row:
  * sender, chat + type badge, message text, send timestamp, and an "edited" badge when applicable.
- * Deleted messages never appear here — the API's only_deleted=False is hardcoded on the backend for this endpoint;
+ * Deleted messages never appear here - the API's only_deleted=False is hardcoded on the backend for this endpoint;
  * they live in the separate Deleted tab by design (see api/routes/deleted.py).
  *
  * Filters supported now: free-text search (q) and an "edited only" toggle.
  * Matches from `q` are highlighted inline within message text via TeleVaultDom.highlightMatches() (js/lib/dom.js),
- * using the --color-highlight-bg token (see variables.css) — separate from the seal/patina tokens, which stay reserved for deleted/edited semantics.
- * chat_id/sender_id/date_from/date_to are in the API already but have no UI here yet — there's no per-chat or per-sender entry point to populate them from.
+ * using the --color-highlight-bg token (see variables.css) - separate from the seal/patina tokens, which stay reserved for deleted/edited semantics.
+ * chat_id/sender_id/date_from/date_to are in the API already but have no UI here yet - there's no per-chat or per-sender entry point to populate them from.
  * Wiring chat_id is a small addition once chat rows become clickable (see the `data-chat-id` note in chats.js).
  *
  * Imports js/lib/dom.js and js/lib/pagination.js as ES modules.
  * Does not self-initialize on DOMContentLoaded like chats.js does,
- * since this isn't the landing view — app.js's showView() calls initMessagesView() the first time the Messages tab is opened.
+ * since this isn't the landing view - app.js's showView() calls initMessagesView() the first time the Messages tab is opened.
  */
 
 import { t, getCurrentLang } from "../i18n.js";
@@ -31,7 +31,7 @@ import {
 const MESSAGES_PER_PAGE = 50;
 // Previously prefixed (MESSAGES_SEARCH_DEBOUNCE_MS) to dodge a real SyntaxError:
 // without ES modules, every <script>-loaded file shared one global lexical scope, so this and deleted.js's identical constant name broke the whole page at parse time.
-// Reverted to a plain name now that this file is a proper ES module with its own scope — the collision class is structurally impossible now,
+// Reverted to a plain name now that this file is a proper ES module with its own scope - the collision class is structurally impossible now,
 // not just avoided by naming discipline.
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -45,7 +45,7 @@ const messagesViewState = {
   // Empty array means "All chats" - no chat_ids param is sent in that case.
   chatIds: [],
   lastData: null,
-  // True once initMessagesView() has run — guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
+  // True once initMessagesView() has run - guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
   initialized: false,
 };
 
@@ -62,7 +62,7 @@ let messagesChatFilter = null;
  * @returns {string}
  */
 function formatMessageTimestamp(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
     return new Date(iso).toLocaleString(locale, {
@@ -85,7 +85,7 @@ function renderMessageRow(msg) {
     : "";
   const chatName = msg.chat
     ? escapeHtml(msg.chat.name ?? String(msg.chat.chat_id))
-    : "—";
+    : "-";
 
   const editedBadge = msg.is_edited
     ? `<span class="patina-badge">${t("messages.editedLabel")}</span>`
@@ -98,7 +98,7 @@ function renderMessageRow(msg) {
   return `
     <li class="message-row" data-chat-id="${msg.chat?.chat_id ?? ""}">
       <div class="message-row__meta">
-        <span class="message-row__sender">${escapeHtml(msg.sender?.resolved_name ?? "—")}</span>
+        <span class="message-row__sender">${escapeHtml(msg.sender?.resolved_name ?? "-")}</span>
         <span class="message-row__chat">
           ${chatName}
           ${chatTypeLabel ? `<span class="info-badge">${chatTypeLabel}</span>` : ""}
@@ -112,7 +112,7 @@ function renderMessageRow(msg) {
 }
 
 /**
- * Render the view's current state (rows + pagination) from already-fetched data, without a network re-fetch — used both after loading and after a language change.
+ * Render the view's current state (rows + pagination) from already-fetched data, without a network re-fetch - used both after loading and after a language change.
  *
  * @param {HTMLElement} root
  * @param {object} data - a PaginatedResponse<MessageOut> from the API.
@@ -261,7 +261,7 @@ function initMessagesView() {
 
 export { initMessagesView };
 
-// Re-render the already-fetched page in the new language — no re-fetch needed for the list,
+// Re-render the already-fetched page in the new language - no re-fetch needed for the list,
 // but the filter bar's static labels (placeholder, checkbox text) need rebuilding since they aren't data-i18n elements either.
 document.addEventListener("televault:langchange", () => {
   if (!messagesViewState.initialized) return;

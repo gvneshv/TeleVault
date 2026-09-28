@@ -1,7 +1,7 @@
 {
   "name": "TeleVault",
   "short_name": "TeleVault",
-  "description": "Personal Telegram message archive — preserves deleted messages.",
+  "description": "Personal Telegram message archive - preserves deleted messages.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#14181d",

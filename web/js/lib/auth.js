@@ -30,7 +30,7 @@
  * there's no login form embedded in index.html to fall back to.
  *
  * data-auth on <html> ("checking" | "in" | "out") is what base.css uses to show/hide .auth-loading vs .app-shell on index.html,
- * and — with the opposite mapping — .auth-loading vs .auth-page on login.html/register.html:
+ * and - with the opposite mapping - .auth-loading vs .auth-page on login.html/register.html:
  * those two pages start at "checking" (hiding the form) and flip to "out" once hasActiveSession() resolves false (see login.js/register.js),
  * revealing the form only after confirming there's nothing to redirect for.
  * They never reach "in" themselves - hasActiveSession() resolving true means an immediate window.location redirect away from the page instead.

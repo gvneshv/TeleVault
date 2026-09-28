@@ -5,9 +5,9 @@
  * and shows the API's own liveness report:
  * whether the caller's archive is attached and readable, whether a Telethon session exists, and the current archived message count.
  * See api/routes/health.py for exactly what each check does and doesn't cover
- * (notably: it does NOT confirm the userbot is currently connected to Telegram — that needs IPC, a Phase 3 addition per that file's own docstring).
+ * (notably: it does NOT confirm the userbot is currently connected to Telegram - that needs IPC, a Phase 3 addition per that file's own docstring).
  *
- * No polling — this is a manually-refreshed diagnostic view, not a live dashboard.
+ * No polling - this is a manually-refreshed diagnostic view, not a live dashboard.
  * Deliberately simple: one fetch, one refresh button.
  * Adding auto-refresh is a small change later if it turns out to be wanted, not something to build speculatively now.
  *
@@ -97,8 +97,8 @@ async function loadHealth(root) {
     // potentially-nonexistent archive (see api/routes/health.py's module docstring):
     // there's no database to check without first knowing which caller is asking.
     const res = await apiFetch("/api/health");
-    // Not using res.ok for the normal case — health.py always returns 200, even when status is "degraded"
-    // (that's the point: the body carries the real state, not the HTTP status — see its docstring).
+    // Not using res.ok for the normal case - health.py always returns 200, even when status is "degraded"
+    // (that's the point: the body carries the real state, not the HTTP status - see its docstring).
     // A non-200 here means something is more seriously wrong, e.g. an expired session that apiFetch couldn't silently refresh
     // (rare on this view - see apiFetch's own docstring for when it redirects instead of returning here).
     if (!res.ok) {
@@ -130,7 +130,7 @@ function initHealthView() {
 export { initHealthView };
 
 // Re-render on language change.
-// Re-fetches (rather than caching like the other views) since this is a live diagnostic — the whole point of a health check is that it reflects the current moment,
+// Re-fetches (rather than caching like the other views) since this is a live diagnostic - the whole point of a health check is that it reflects the current moment,
 // not the last time the tab happened to be opened.
 document.addEventListener("televault:langchange", () => {
   if (!healthViewState.initialized) return;

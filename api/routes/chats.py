@@ -1,10 +1,10 @@
 """
 Chat-related endpoints:
 
-    GET /api/chats                      — paginated list of all known chats
-    GET /api/chats/options              — every chat's {chat_id, name}, unpaginated (for filter dropdowns)
-    GET /api/chats/{chat_id}            — single chat with aggregate counts
-    GET /api/chats/{chat_id}/messages   — paginated messages within one chat
+    GET /api/chats                      - paginated list of all known chats
+    GET /api/chats/options              - every chat's {chat_id, name}, unpaginated (for filter dropdowns)
+    GET /api/chats/{chat_id}            - single chat with aggregate counts
+    GET /api/chats/{chat_id}/messages   - paginated messages within one chat
 """
 
 from sqlalchemy.engine import Connection
@@ -120,7 +120,7 @@ def list_chat_messages(
     """
     Return messages within a single chat, newest first by default.
 
-    The `chat` field is omitted from each MessageOut row here — it would be redundant since all messages belong to the same chat_id.
+    The `chat` field is omitted from each MessageOut row here - it would be redundant since all messages belong to the same chat_id.
 
     Supports text search and date range filtering via query parameters.
     """
