@@ -15,6 +15,7 @@ export const en = {
   "nav.deleted": "Deleted",
   "nav.stats": "Stats",
   "nav.health": "Health",
+  "nav.settings": "Settings",
 
   "common.comingSoon": "This view isn't built yet.",
   "common.loading": "Loading…",
@@ -195,4 +196,69 @@ export const en = {
   "register.passwordMismatch": "Passwords don't match.",
   "register.loginPrompt": "Already have an account?",
   "register.loginLink": "Sign in",
+
+  // Settings additions
+  "settings.telegramTitle": "Connect your Telegram account",
+  "settings.telegramStatusChecking": "Checking your Telegram link status…",
+  "settings.telegramIntro":
+    "TeleVault archives messages using your own Telegram API credentials, not a shared app — this keeps your account's rate limits and access entirely separate from everyone else's.",
+  "settings.apiIdLabel": "API ID",
+  "settings.apiHashLabel": "API hash",
+  "settings.credentialsHelp":
+    "From my.telegram.org — sign in there and create an app if you haven't already. Stored encrypted; never shown again after saving.",
+  "settings.credentialsSubmit": "Save & continue",
+  "settings.savingCredentials": "Saving…",
+  "settings.phoneLabel": "Phone number",
+  "settings.phonePlaceholder": "+15551234567",
+  "settings.phoneHelp":
+    "Including country code. Not stored anywhere — used only to request this one-time verification code.",
+  "settings.sendCodeSubmit": "Send code",
+  "settings.sendingCode": "Sending…",
+  "settings.useDifferentCredentials": "Use different credentials",
+  "settings.codeLabel": "Verification code",
+  "settings.codeHelp": "Telegram sent a code to {phone}.",
+  "settings.codeSubmit": "Verify",
+  "settings.verifying": "Verifying…",
+  "settings.passwordLabel": "Telegram password (2FA)",
+  "settings.passwordHelp":
+    "This account has two-factor authentication enabled — enter your Telegram password to finish linking.",
+  "settings.passwordSubmit": "Finish linking",
+  "settings.startOver": "Start over",
+  "settings.linkedBadge": "Linked",
+  "settings.linkedBody":
+    "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one.",
+  "settings.relinkButton": "Relink a different account",
+  "settings.archiveTitle": "Archive database",
+  "settings.archiveIntro":
+    "Each account gets its own database to store archived messages, separate from every other account on this instance.",
+  "settings.archiveStatusChecking": "Checking archive status…",
+  "settings.archiveStatusReady":
+    "Archive database ready — {count} messages stored.",
+  "settings.archiveStatusMissing": "No archive database yet.",
+  "settings.archiveStatusUnavailable":
+    "An archive is on record but couldn't be reached just now. Try again shortly, or contact your administrator.",
+  "settings.provisionButton": "Create archive database",
+  "settings.provisioning": "Creating…",
+  "settings.refreshStatus": "Refresh",
+
+  "error.invalidApiCredentials":
+    "That api_id/api_hash pair isn't valid. Double-check the values from my.telegram.org.",
+  "error.telegramCredentialsMissing":
+    "Save your Telegram API credentials first.",
+  "error.telegramInvalidPhone": "That phone number isn't valid.",
+  "error.telegramFloodWait":
+    "Telegram is asking us to slow down. Wait a few minutes before trying again.",
+  "error.telegramNoPendingLink":
+    "That verification attempt expired. Sending a new code.",
+  "error.telegramTooManyAttempts": "Too many attempts. Sending a new code.",
+  "error.telegramPasswordRequired":
+    "This account needs its Telegram password to finish linking.",
+  "error.telegramCodeRequired": "The verification code is required.",
+  "error.telegramInvalidPassword": "That password wasn't correct.",
+  "error.telegramInvalidCode": "That code wasn't correct.",
+  "error.telegramCodeExpired": "That code expired. Sending a new one.",
+  "error.archiveAlreadyProvisioned":
+    "This account already has an archive database.",
+  "error.provisioningPermissionDenied":
+    "The database role TeleVault connects as doesn't have permission to create databases. Contact your administrator.",
 };

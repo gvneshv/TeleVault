@@ -1,12 +1,16 @@
 """
 Self-service Telegram linking:
-POST /telegram/credentials, POST /telegram/link/send-code, POST /telegram/link/confirm.
+GET /telegram/status, POST /telegram/credentials, POST /telegram/link/send-code, POST /telegram/link/confirm.
 
 This is the flow that was missing for every account except the one bootstrapped by hand into settings.api_id/api_hash/session_name (see main.py) -
 every OTHER user gets their own api_id/api_hash (from my.telegram.org) and their own Telegram session, stored encrypted on their own `users` row
 (telegram_api_id, telegram_api_hash, telegram_session_string - see utils/crypto.py's module docstring for why those three columns specifically are encrypted).
 Gated by Depends(get_current_user) only, NOT require_instance_owner:
 every account links its OWN Telegram, this isn't an instance-owner-only action the way /telethon/* and /backfill/* are.
+
+GET /telegram/status - read-only, answers "how far has this account gotten?" (has_credentials, has_session) without exposing the encrypted values themselves.
+    Added so a UI can open directly to the right step instead of always starting an already-linked account back at square one -
+    see TelegramStatusOut's own docstring (api/schemas/telegram.py).
 
 The three-step shape:
     1. POST /telegram/credentials   - api_id + api_hash, encrypted and saved.
@@ -63,6 +67,7 @@ from api.schemas import (
     TelegramCredentialsOut,
     TelegramSendCodeIn,
     TelegramSendCodeOut,
+    TelegramStatusOut,
 )
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.security import DecodedAccessToken
@@ -119,6 +124,31 @@ def _reason(status_code: int, message: str, reason: str) -> HTTPException:
     """Same {"message", "reason"} shape as api/dependencies.py's HTTPExceptions -
     see web/js/lib/errors.js's describeError() for how the frontend turns `reason` into a translated string instead of showing `message` (always English) directly."""
     return HTTPException(status_code=status_code, detail={"message": message, "reason": reason})
+
+
+@router.get("/status", response_model=TelegramStatusOut, summary="Check how far this account has gotten through Telegram linking")
+def get_status(
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> TelegramStatusOut:
+    """
+    Read-only.
+    Reports whether credentials/a session are already saved, WITHOUT decrypting or returning them -
+    see TelegramStatusOut's own docstring for why this exists and what it deliberately doesn't expose.
+
+    A pending (not-yet-confirmed) send-code handshake doesn't show up here at all:
+    it's in-memory only (see this module's own docstring) and, more importantly, isn't a durable fact about the account the way a saved credential or session is -
+    it's either finished (has_session becomes True) or it expires and is as if it never happened, so there's nothing meaningful to report about it mid-flight.
+    """
+    user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
+    if user is None:
+        # Can't happen in practice (the access token that got us past get_current_user names a real row), but a missing user is "nothing saved yet" either way,
+        # not a 500 - same posture as every other read in this codebase that treats "row vanished" as an empty result, not a crash.
+        return TelegramStatusOut(has_credentials=False, has_session=False)
+    return TelegramStatusOut(
+        has_credentials=user["telegram_api_id"] is not None and user["telegram_api_hash"] is not None,
+        has_session=user["telegram_session_string"] is not None,
+    )
 
 
 @router.post("/credentials", response_model=TelegramCredentialsOut, summary="Save your Telegram app credentials")

@@ -11,6 +11,7 @@ export const uk = {
   "nav.deleted": "Видалені",
   "nav.stats": "Статистика",
   "nav.health": "Стан системи",
+  "nav.settings": "Налаштування",
 
   "common.comingSoon": "Цей розділ ще не готовий.",
   "common.loading": "Завантаження…",
@@ -191,4 +192,68 @@ export const uk = {
   "register.passwordMismatch": "Паролі не збігаються.",
   "register.loginPrompt": "Вже маєте акаунт?",
   "register.loginLink": "Увійти",
+
+  // Settings additions
+  "settings.telegramTitle": "Підключіть свій акаунт Telegram",
+  "settings.telegramStatusChecking": "Перевірка стану підключення Telegram…",
+  "settings.telegramIntro":
+    "TeleVault архівує повідомлення, використовуючи ваші власні API-дані Telegram, а не спільний застосунок — це повністю відокремлює ліміти та доступ вашого акаунта від інших.",
+  "settings.apiIdLabel": "API ID",
+  "settings.apiHashLabel": "API hash",
+  "settings.credentialsHelp":
+    "З my.telegram.org — увійдіть там і створіть застосунок, якщо ще не зробили цього. Зберігається зашифровано; більше не показується після збереження.",
+  "settings.credentialsSubmit": "Зберегти й продовжити",
+  "settings.savingCredentials": "Збереження…",
+  "settings.phoneLabel": "Номер телефону",
+  "settings.phonePlaceholder": "+15551234567",
+  "settings.phoneHelp":
+    "Разом з кодом країни. Ніде не зберігається — використовується лише для запиту цього одноразового коду підтвердження.",
+  "settings.sendCodeSubmit": "Надіслати код",
+  "settings.sendingCode": "Надсилання…",
+  "settings.useDifferentCredentials": "Використати інші дані",
+  "settings.codeLabel": "Код підтвердження",
+  "settings.codeHelp": "Telegram надіслав код на {phone}.",
+  "settings.codeSubmit": "Підтвердити",
+  "settings.verifying": "Перевірка…",
+  "settings.passwordLabel": "Пароль Telegram (2FA)",
+  "settings.passwordHelp":
+    "Цей акаунт має увімкнену двофакторну автентифікацію — введіть пароль Telegram, щоб завершити підключення.",
+  "settings.passwordSubmit": "Завершити підключення",
+  "settings.startOver": "Почати спочатку",
+  "settings.linkedBadge": "Підключено",
+  "settings.linkedBody":
+    "Ваш акаунт Telegram підключено для цієї сесії. Повторне підключення замінить збережену сесію на нову.",
+  "settings.relinkButton": "Підключити інший акаунт",
+  "settings.archiveTitle": "База даних архіву",
+  "settings.archiveIntro":
+    "Кожен акаунт отримує власну базу даних для зберігання архівованих повідомлень, окрему від усіх інших акаунтів цього застосунку.",
+  "settings.archiveStatusChecking": "Перевірка стану архіву…",
+  "settings.archiveStatusReady":
+    "Архів готовий — збережено повідомлень: {count}.",
+  "settings.archiveStatusMissing": "Базу даних архіву ще не створено.",
+  "settings.archiveStatusUnavailable":
+    "Архів зареєстровано, але зараз недоступний. Спробуйте пізніше або зверніться до адміністратора.",
+  "settings.provisionButton": "Створити базу даних архіву",
+  "settings.provisioning": "Створення…",
+  "settings.refreshStatus": "Оновити",
+
+  "error.invalidApiCredentials":
+    "Пара api_id/api_hash недійсна. Перевірте значення на my.telegram.org.",
+  "error.telegramCredentialsMissing":
+    "Спочатку збережіть свої API-дані Telegram.",
+  "error.telegramInvalidPhone": "Цей номер телефону недійсний.",
+  "error.telegramFloodWait":
+    "Telegram просить зачекати. Спробуйте ще раз за кілька хвилин.",
+  "error.telegramNoPendingLink":
+    "Термін дії цієї спроби підтвердження минув. Надсилаємо новий код.",
+  "error.telegramTooManyAttempts": "Забагато спроб. Надсилаємо новий код.",
+  "error.telegramPasswordRequired":
+    "Цьому акаунту потрібен пароль Telegram, щоб завершити підключення.",
+  "error.telegramCodeRequired": "Потрібен код підтвердження.",
+  "error.telegramInvalidPassword": "Пароль неправильний.",
+  "error.telegramInvalidCode": "Код неправильний.",
+  "error.telegramCodeExpired": "Термін дії коду минув. Надсилаємо новий.",
+  "error.archiveAlreadyProvisioned": "У цього акаунта вже є база даних архіву.",
+  "error.provisioningPermissionDenied":
+    "Роль бази даних, під якою підключається TeleVault, не має прав на створення баз даних. Зверніться до адміністратора.",
 };

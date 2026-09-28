@@ -18,6 +18,7 @@ from .telegram import (
     TelegramSendCodeOut,
     TelegramConfirmIn,
     TelegramConfirmOut,
+    TelegramStatusOut,
 )
 from .archive import ArchiveProvisionOut
 
@@ -50,6 +51,7 @@ __all__ = [
     "TelegramSendCodeOut",
     "TelegramConfirmIn",
     "TelegramConfirmOut",
+    "TelegramStatusOut",
     # archive
     "ArchiveProvisionOut",
 ]

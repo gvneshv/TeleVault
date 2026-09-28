@@ -74,3 +74,20 @@ class TelegramConfirmOut(BaseModel):
 
     linked: bool
     needs_password: bool = False
+
+
+class TelegramStatusOut(BaseModel):
+    """
+    Returned by GET /telegram/status.
+
+    Read-only summary of how far an account has gotten through the linking flow,
+    WITHOUT exposing the encrypted values themselves
+    (contrast with UserOut in api/schemas/auth.py, which excludes the telegram_* columns entirely on the same "don't hand out more than the caller needs" logic -
+    this endpoint exists specifically so a caller CAN ask "has this been done already?" without that meaning "and also send me the credentials/session").
+
+    Added so the Settings page can open directly to the right step of the wizard instead of always starting a returning,
+    already-linked user back at "enter your API credentials" - see web/js/views/settings.js's module docstring for the UX gap this closes.
+    """
+
+    has_credentials: bool
+    has_session: bool

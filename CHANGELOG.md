@@ -38,16 +38,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `/health` remain open, since they're what let an account prove who it is in the first
   place. `OWNER_USER_ID` has no default; the app refuses to start without it set correctly
   (see `.env.example`)
-  - **Known gap this introduces:** the existing frontend (`web/js/`) has no login page or token
-    storage yet, so its Chats/Messages/Deleted/Stats/Backfill views will now show errors - they
-    never attach the `Authorization` header `require_owner` needs. Use `/api/docs`'s "Authorize"
-    button in the meantime (see README step 8)
+  - **Known gap this introduced, now closed (see login/register UI entry below):** the frontend
+    initially had no login page or token storage, so Chats/Messages/Deleted/Stats/Backfill would
+    have shown errors - `apiFetch()` (`web/js/lib/auth.js`) never attached the `Authorization`
+    header `require_owner` needs
+- Login/register UI (`web/login.html`, `web/register.html`, `web/js/views/{login,register}.js`) -
+  closes the gap noted above: `web/js/lib/auth.js`'s `apiFetch()` now holds the access token in
+  memory and attaches `Authorization: Bearer <token>` to every request, silently refreshing via
+  the httpOnly refresh-token cookie first if none is held yet, and redirecting to `/login.html`
+  only if that refresh itself fails
+- Settings page (`web/js/views/settings.js`) - self-service UI driving the existing Telegram-linking
+  flow (`POST /telegram/credentials` -> `/telegram/link/send-code` -> `/telegram/link/confirm`,
+  including the 2FA password fork) and archive provisioning (`POST /archive/provision`), gated on
+  the new `GET /telegram/status` endpoint below so a returning, already-linked account opens
+  straight to its actual state instead of restarting the wizard from scratch
+- `GET /telegram/status` (`api/routes/telegram.py`) - read-only `{has_credentials, has_session}`
+  summary backing the above, added specifically so a UI could ask "how far did this account get?"
+  without exposing the encrypted values themselves (see `TelegramStatusOut`'s own docstring)
+- Wired the 11 Telegram-flow and 2 archive-provisioning error `reason` codes into
+  `web/js/lib/errors.js` / `i18n/{en,uk}.js` - previously deferred until there was a UI to show
+  them on; the Settings page above is that UI
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Admin endpoints (invite creation, listing/locking users) and frontend login/register pages for
-  the auth backend added above - the endpoints exist, but there's currently no way to create an
-  invite except by hand against the database, and no UI to use any of this yet
+- Admin API endpoints (invite creation, listing/locking users) for the auth backend above -
+  `api/routes/auth.py` still explicitly documents these as out of scope; invite creation is
+  CLI-only today (`scripts/manage_admin.py create-invite`). Frontend login/register pages, listed
+  here previously, shipped above and are no longer part of this item
 - Ingestion-time chat filter: allowlist/blocklist to control which chats
   get *archived* in the first place - distinct from the display-time chat
   filter (which chats a view *shows* from what's already archived) shipped
