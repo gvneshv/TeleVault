@@ -19,6 +19,24 @@ const ERROR_REASON_KEYS = {
   not_instance_owner: "error.notInstanceOwner",
   db_unavailable: "error.dbUnavailable",
   control_db_unavailable: "error.dbUnavailable",
+
+  // Telegram linking flow (api/routes/telegram.py) -
+  // previously left unwired deliberately (see that file's CHANGELOG entry) until the Settings view gave these reasons somewhere to actually be shown.
+  invalid_api_credentials: "error.invalidApiCredentials",
+  telegram_credentials_missing: "error.telegramCredentialsMissing",
+  telegram_invalid_phone: "error.telegramInvalidPhone",
+  telegram_flood_wait: "error.telegramFloodWait",
+  telegram_no_pending_link: "error.telegramNoPendingLink",
+  telegram_too_many_attempts: "error.telegramTooManyAttempts",
+  telegram_password_required: "error.telegramPasswordRequired",
+  telegram_code_required: "error.telegramCodeRequired",
+  telegram_invalid_password: "error.telegramInvalidPassword",
+  telegram_invalid_code: "error.telegramInvalidCode",
+  telegram_code_expired: "error.telegramCodeExpired",
+
+  // Archive provisioning (api/routes/archive.py, db/provisioning.py)
+  archive_already_provisioned: "error.archiveAlreadyProvisioned",
+  provisioning_permission_denied: "error.provisioningPermissionDenied",
 };
 
 /** @param {unknown} detail - the parsed response body's `detail` field. */
