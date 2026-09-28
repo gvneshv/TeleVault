@@ -1144,6 +1144,81 @@ input:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
+   Settings view
+
+   Forms reuse .modal__field / .modal__field input / .modal__btn / .modal__btn--primary as-is (see the Backfill modal above) -
+   those rules were never actually scoped to living inside .modal-overlay, and duplicating them here just to rename them would be pure churn.
+   .patina-badge (the same "healthy/active" pill archiver-toggle uses) marks the two success states (linked, archive ready).
+   ------------------------------------------------------------------- */
+
+.settings-card {
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  margin-bottom: 20px;
+  max-width: 420px;
+}
+
+.settings-card h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.settings-help {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.settings-field {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
+
+.settings-field input {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+}
+
+/* Same treatment as .auth-card__error (login/register forms) - the actual established convention for inline form errors in this app,
+   despite variables.css's --color-seal comment claiming it's reserved for deleted-message badges;
+   .modal__warning and .auth-card__error already use it this way, so this follows real precedent, not new one. */
+.settings-error {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
+  font-size: 12.5px;
+}
+
+.settings-card form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.settings-refresh-btn {
+  margin-top: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------------
    Responsive: collapse nav rail to a top bar under ~640px
    ------------------------------------------------------------------- */
 

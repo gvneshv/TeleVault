@@ -55,6 +55,9 @@
         <li><button class="app-nav__link" data-view="backfill">
           <span data-i18n="nav.backfill">Backfill</span>
         </button></li>
+        <li><button class="app-nav__link" data-view="settings">
+          <span data-i18n="nav.settings">Settings</span>
+        </button></li>
       </ul>
 
       <div class="app-nav__spacer"></div>
@@ -112,6 +115,12 @@
       <section class="app-view" data-view="backfill" hidden>
         <h1 data-i18n="nav.backfill">Backfill</h1>
         <div id="backfill-root"></div>
+      </section>
+
+      <section class="app-view" data-view="settings" hidden>
+        <h1 data-i18n="nav.settings">Settings</h1>
+        <!-- Populated by js/views/settings.js -->
+        <div id="settings-root"></div>
       </section>
     </main>
   </div>

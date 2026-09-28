@@ -9,7 +9,7 @@
  * It imports every view module, which is what actually causes their code to run at all — an unimported ES module's top-level code
  * (e.g. chats.js's own DOMContentLoaded listener) never executes, unlike a classic <script> tag which always runs once loaded.
  * chats.js is imported for that side effect only (it self-initializes as the landing view);
- * the other four export an init() called lazily below, the first time their tab is opened.
+ * the other five export an init() called lazily below, the first time their tab is opened.
  *
  * No client-side router or URL hash handling yet.
  * Adding one is a reasonable future step once there are per-item views (e.g. a single chat or message) that benefit from being linkable/bookmarkable
@@ -23,6 +23,7 @@ import { initDeletedView } from "./views/deleted.js";
 import { initStatsView } from "./views/stats.js";
 import { initHealthView } from "./views/health.js";
 import { initBackfillView } from "./views/backfill.js";
+import { initSettingsView } from "./views/settings.js";
 import { logout } from "./lib/auth.js";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -48,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (viewName === "stats") initStatsView();
     if (viewName === "health") initHealthView();
     if (viewName === "backfill") initBackfillView();
+    if (viewName === "settings") initSettingsView();
   }
 
   links.forEach((link) => {
