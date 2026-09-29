@@ -68,6 +68,7 @@ from api.schemas import (
     TelegramSendCodeIn,
     TelegramSendCodeOut,
     TelegramStatusOut,
+    TelegramUnlinkOut,
 )
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.security import DecodedAccessToken
@@ -280,3 +281,30 @@ async def confirm(
     control_db.queries.set_telegram_session(control_conn, current["user_id"], encrypt_secret(session_string))
     await _discard_pending_link(current["user_id"])
     return TelegramConfirmOut(linked=True)
+
+
+@router.delete("/session", response_model=TelegramUnlinkOut, summary="Unlink your Telegram account")
+async def unlink(
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> TelegramUnlinkOut:
+    """
+    Disconnect this account's Telegram session,
+    keeping its saved api_id/api_hash so relinking can start straight from the phone step instead of asking for credentials again -
+    see clear_telegram_session()'s own docstring (control_db/queries.py) for why credentials and session are cleared separately
+    rather than together the way set_telegram_credentials() clears the session as a side effect of a NEW credentials pair.
+
+    Does NOT touch archive_db_ref or delete anything already archived - unlinking Telegram and losing your archived history are unrelated actions,
+    and this endpoint is deliberately scoped to only the former.
+
+    Discards any in-progress send-code/confirm handshake first: if a relink attempt happened to be mid-flight
+    (unusual - the linked step isn't normally reachable while one is pending - but not impossible if a second tab/device kicked one off),
+    it would otherwise sit orphaned in memory until PENDING_LINK_TTL_SECONDS.
+
+    Idempotent - returns the same 200 whether or not a session actually existed to clear (see clear_telegram_session()'s own docstring).
+    The only failure mode is the account itself no longer existing, which can't happen in practice
+    (get_current_user already named a real row) but is handled the same "not a crash" way get_status() above does, rather than assuming it can't happen.
+    """
+    await _discard_pending_link(current["user_id"])
+    control_db.queries.clear_telegram_session(control_conn, current["user_id"])
+    return TelegramUnlinkOut()

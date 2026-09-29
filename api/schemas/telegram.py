@@ -76,6 +76,12 @@ class TelegramConfirmOut(BaseModel):
     needs_password: bool = False
 
 
+class TelegramUnlinkOut(BaseModel):
+    """Returned by DELETE /telegram/session on success."""
+
+    unlinked: bool = True
+
+
 class TelegramStatusOut(BaseModel):
     """
     Returned by GET /telegram/status.

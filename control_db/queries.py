@@ -550,6 +550,39 @@ def set_telegram_credentials(conn: Connection, user_id: int, encrypted_api_id: s
         raise
 
 
+def clear_telegram_session(conn: Connection, user_id: int) -> bool:
+    """
+    Unlink Telegram: clear telegram_session_string back to NULL.
+    Returns False if no such user exists, True on success.
+
+    Deliberately touches ONLY telegram_session_string - NOT telegram_api_id/telegram_api_hash,
+    unlike set_telegram_credentials() above (which clears the session as a SIDE EFFECT of a credentials change).
+    Here it's the other way around:
+    the person is deliberately disconnecting Telegram but has no reason to re-enter their api_id/api_hash to do it again afterwards - those came from my.telegram.org,
+    not from Telegram's own per-login session, and stay valid regardless of which Telegram account is or isn't currently linked through them.
+    Also does NOT touch archive_db_ref: unlinking Telegram is not deleting an account's archived history, and there is no reason the two should be coupled.
+
+    Self-service, same posture as set_telegram_credentials()/set_telegram_session() above - called with the caller's OWN user_id from api/routes/telegram.py
+    (Depends(get_current_user)), not an admin-only action.
+    Safe to call on an account with no session at all (rowcount still reflects the user row existing, not whether telegram_session_string actually changed) -
+    DELETE /telegram/session is idempotent by design, since "make sure Telegram is unlinked" shouldn't fail just because it already was.
+    """
+    try:
+        result = conn.execute(
+            sql_text("UPDATE users SET telegram_session_string = NULL WHERE id = :user_id"),
+            {"user_id": user_id},
+        )
+        if result.rowcount == 0:
+            conn.rollback()
+            return False
+        _insert_audit_log(conn, event_type="telegram_unlinked", user_id=user_id, actor_id=user_id)
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def set_telegram_session(conn: Connection, user_id: int, encrypted_session_string: str) -> bool:
     """
     Store a user's Telegram session string once the send-code/confirm handshake succeeds - already
