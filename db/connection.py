@@ -288,3 +288,31 @@ def close_tenant_engines() -> None:
         engine.dispose()
         logger.info("Tenant database engine for %r disposed.", db_name)
     _tenant_engines = {}
+
+
+def is_missing_database_error(exc: OperationalError) -> bool:
+    """
+    Distinguish "the named database was never actually created" from every other OperationalError get_tenant_readonly_connection() can raise
+    (Postgres restarted, network blip, wrong password, etc.).
+
+    Why this matters:
+    a control_db users.archive_db_ref can be written (by hand, e.g. scripts/manage_admin.py's set-archive, or a future admin UI)
+    without the database it names ever actually being created with `CREATE DATABASE` - see set_archive_db_ref()'s own docstring in control_db/queries.py,
+    which only records the reference and never verifies it.
+    That's a permanent misconfiguration an admin has to fix by hand (create the database, or correct the reference);
+    unlike a transient outage, retrying can NEVER make it succeed.
+    Callers (api/dependencies.py's get_archive_connection(), api/routes/health.py)
+    use this to stop telling someone to "try again shortly" when trying again cannot possibly work,
+    and tell them to contact an administrator immediately instead.
+
+    Checked via the underlying psycopg exception's SQLSTATE (3D000 = invalid_catalog_name, the code Postgres itself uses for "database does not exist")
+    rather than string-matching the rendered exception first - an SQLSTATE is a stable part of the Postgres wire protocol,
+    not message text that could change across a driver or server version.
+    Falls back to a substring match only if no SQLSTATE is available at all (e.g. an unusual/mocked DBAPI exception),
+    since some signal there is better than silently treating a missing database the same as an ordinary outage.
+    """
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None)
+    if sqlstate is not None:
+        return sqlstate == "3D000"
+    return "does not exist" in str(exc).lower()

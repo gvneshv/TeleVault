@@ -53,7 +53,7 @@ function renderHealthReport(data) {
   // An account with no archive_db_ref at all hasn't FAILED a database check - there is simply nothing to check yet.
   // This row used to render an ✗ for it unconditionally, which read as "your database is broken" directly above a message saying it just isn't set up yet.
   // Same neutral "·" treatment the session row above uses for "not applicable".
-  // "unavailable" (a ref exists but couldn't be reached) IS a genuine failure and keeps the ✗.
+  // "unavailable" and "misconfigured" ARE genuine failures and keep the ✗ - see HealthOut's own docstring for what tells them apart.
   const dbRow =
     data.archive_status === "unattached"
       ? `
@@ -64,15 +64,19 @@ function renderHealthReport(data) {
   `
       : checkRow(t("health.dbReadable"), data.db_readable);
 
-  // archive_status distinguishes WHY the database check didn't pass (unattached vs. genuinely unavailable)
-  // instead of collapsing both into one flat "not readable" line - see HealthOut's own docstring.
+  // archive_status distinguishes WHY the database check didn't pass (unattached vs. transiently unavailable vs. permanently misconfigured)
+  // instead of collapsing all three into one flat "not readable" line - see HealthOut's own docstring.
+  // "misconfigured" gets its own message rather than reusing "unavailable"'s "try again shortly" wording,
+  // since retrying can never fix a database that was never created - this is deliberately an "administrator, now" message, not a "retry" one.
   // "ok" is the only case with an actual message count to show.
   const archiveMessage =
     data.archive_status === "unattached"
       ? `<p class="health-archive-message">${t("health.unattached")}</p>`
       : data.archive_status === "unavailable"
         ? `<p class="health-archive-message">${t("health.unavailable")}</p>`
-        : `<p class="health-message-count">${t("health.messageCount")}: ${data.db_message_count}</p>`;
+        : data.archive_status === "misconfigured"
+          ? `<p class="health-archive-message health-archive-message--urgent">${t("health.misconfigured")}</p>`
+          : `<p class="health-message-count">${t("health.messageCount")}: ${data.db_message_count}</p>`;
 
   return `
     <div class="health-status">

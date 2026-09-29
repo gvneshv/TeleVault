@@ -45,8 +45,10 @@ class HealthOut(BaseModel):
         ...,
         description=(
             "'ok' (the relevant database was read successfully), 'unattached' (this account has no "
-            "archive_db_ref yet - logged-in callers only), or 'unavailable' (a database reference "
-            "exists but couldn't be reached right now)."
+            "archive_db_ref yet - logged-in callers only), 'unavailable' (a database reference exists "
+            "but couldn't be reached right now - transient, resolves on its own), or 'misconfigured' "
+            "(a database reference exists but names a database that was never actually created - "
+            "permanent, needs an administrator, will never resolve by retrying)."
         ),
     )
     db_readable: bool

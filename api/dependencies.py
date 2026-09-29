@@ -159,6 +159,10 @@ def get_archive_connection(
         The distinct status lets the frontend show "finish linking Telegram" rather than "access denied".
         HTTPException 503 if the archive database exists as a reference but isn't actually reachable right now
         (e.g. Postgres restarted, or - once real provisioning exists - mid-provisioning).
+        HTTPException 409 with reason "archive_misconfigured" if archive_db_ref names a database that was never actually created
+        (see db.is_missing_database_error()'s own docstring for how this is told apart from the 503 case above) -
+        a permanent admin-fix-it situation, not a "try again shortly" one,
+        so it gets its own reason code rather than collapsing into "archive_unavailable" and telling someone to retry something retrying can never fix.
 
     Both exceptions' `detail` is a {"message": <english>, "reason": <code>} dict, not a bare string - see web/js/lib/errors.js's describeError(),
     which maps `reason` to a translated string for the UI instead of showing `message` (English-only) directly.
@@ -180,6 +184,19 @@ def get_archive_connection(
     try:
         conn = cm.__enter__()
     except OperationalError as exc:
+        if db.is_missing_database_error(exc):
+            # archive_db_ref names a database that was never actually created (contrast the generic 503 below, a transient outage that WILL clear up on its own) -
+            # see db.is_missing_database_error()'s own docstring.
+            # This can only be fixed by an administrator (create the database, or correct the reference);
+            # it must never be told to the caller as "try again shortly", since retrying cannot possibly help.
+            logger.error("Archive %r (user_id=%s) does not exist - misconfigured archive_db_ref: %s", user["archive_db_ref"], current["user_id"], exc)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator.",
+                    "reason": "archive_misconfigured",
+                },
+            ) from exc
         logger.warning("Archive %r (user_id=%s) is unreachable: %s", user["archive_db_ref"], current["user_id"], exc)
         raise HTTPException(
             status_code=503,

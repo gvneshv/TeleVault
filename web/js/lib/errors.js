@@ -16,6 +16,7 @@ const ERROR_REASON_KEYS = {
   backfill_running: "error.backfillRunning",
   archive_unattached: "error.archiveUnattached",
   archive_unavailable: "error.archiveUnavailable",
+  archive_misconfigured: "error.archiveMisconfigured",
   not_instance_owner: "error.notInstanceOwner",
   db_unavailable: "error.dbUnavailable",
   control_db_unavailable: "error.dbUnavailable",

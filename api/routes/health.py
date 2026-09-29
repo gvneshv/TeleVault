@@ -46,9 +46,16 @@ def health_check(
     Return liveness status for the API and the caller's own archive database.
 
     `archive_status` is one of:
-        - "ok"          the caller's archive was reached and read successfully (db_message_count is accurate, including 0 - an attached-but-empty archive is NOT "unavailable")
-        - "unattached"  this account has no archive_db_ref yet - nothing to check
-        - "unavailable" an archive_db_ref exists but couldn't actually be reached right now
+        - "ok"            the caller's archive was reached and read successfully
+                          (db_message_count is accurate, including 0 - an attached-but-empty archive is NOT "unavailable")
+        - "unattached"    this account has no archive_db_ref yet - nothing to check
+        - "unavailable"   an archive_db_ref exists but couldn't actually be reached right now
+                          (a transient outage - Postgres restarted, a network blip - that will clear up on its own;
+                          "try again shortly" is genuinely correct advice here)
+        - "misconfigured" an archive_db_ref exists but names a database that was never actually created
+                          (see db.is_missing_database_error()'s own docstring for how this is told apart from "unavailable" above) -
+                          a permanent admin-fix-it situation that will NEVER resolve by retrying,
+                          so it gets its own status rather than being told apart from "unavailable" only in prose
 
     `is_instance_owner` / `session_exists`: there is exactly one physical Telethon .session file per running instance today
     (see require_instance_owner()'s docstring in api/dependencies.py) - it belongs to whichever ONE account's archive_db_ref matches this instance's own database_url,
@@ -76,8 +83,11 @@ def health_check(
             with db.get_tenant_readonly_connection(archive_ref) as tenant_conn:
                 message_count = db.get_message_count(tenant_conn)
             archive_status = "ok"
-        except OperationalError:
-            archive_status = "unavailable"
+        except OperationalError as exc:
+            if db.is_missing_database_error(exc):
+                archive_status = "misconfigured"
+            else:
+                archive_status = "unavailable"
 
     is_instance_owner = archive_ref is not None and archive_ref == db.get_primary_database_name()
     session_path = Path(settings.session_name).with_suffix(".session")
