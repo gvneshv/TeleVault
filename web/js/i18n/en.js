@@ -9,6 +9,7 @@
 
 export const en = {
   "app.wordmark": "TeleVault",
+  "app.adminBadge": "Admin",
 
   "nav.chats": "Chats",
   "nav.messages": "Messages",
@@ -87,6 +88,8 @@ export const en = {
     "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
   "health.unavailable":
     "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
+  "health.misconfigured":
+    "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator immediately.",
   "health.refresh": "Refresh",
 
   "theme.toggleLabel": "Toggle theme",
@@ -164,6 +167,8 @@ export const en = {
     "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
   "error.archiveUnavailable":
     "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
+  "error.archiveMisconfigured":
+    "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator immediately.",
   "error.notInstanceOwner":
     "This account does not control this instance's Telegram connection.",
   "error.dbUnavailable":
@@ -255,6 +260,10 @@ export const en = {
   "tgSetup.linkedBody":
     "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one.",
   "tgSetup.relinkButton": "Relink a different account",
+  "tgSetup.unlinkButton": "Unlink Telegram",
+  "tgSetup.unlinking": "Unlinking…",
+  "tgSetup.unlinkConfirm":
+    "Disconnect this Telegram account? Your archived messages are kept - you can relink anytime with the same API credentials.",
   "tgSetup.archiveTitle": "Archive database",
   "tgSetup.archiveIntro":
     "Each account gets its own database to store archived messages, separate from every other account on this instance.",
@@ -264,6 +273,8 @@ export const en = {
   "tgSetup.archiveStatusMissing": "No archive database yet.",
   "tgSetup.archiveStatusUnavailable":
     "An archive is on record but couldn't be reached just now. Try again shortly, or contact your administrator.",
+  "tgSetup.archiveStatusMisconfigured":
+    "An archive is on record but was never actually created. This cannot be fixed by retrying - contact your administrator immediately.",
   "tgSetup.provisionButton": "Create archive database",
   "tgSetup.provisioning": "Creating…",
   "tgSetup.refreshStatus": "Refresh",

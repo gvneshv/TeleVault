@@ -59,6 +59,31 @@ let refreshPromise = null;
 
 function setAuthState(state) {
   document.documentElement.setAttribute("data-auth", state);
+  // Lets app.js / telegram-setup.js
+  // (separate entry points, each with their own DOMContentLoaded flow - see this file's own module docstring on why there's no shared init)
+  // react to auth resolving without polling document.documentElement or duplicating the refresh-on-load dance themselves.
+  // Fired on every state, not just "in", so a listener can also react to "out" (e.g. hide something shown optimistically).
+  document.dispatchEvent(
+    new CustomEvent("televault:authchange", { detail: { state } }),
+  );
+}
+
+/**
+ * Decode the CURRENT accessToken's payload for its `is_admin` claim, without verifying the signature.
+ * This is a UI-only convenience (e.g. showing an "admin" badge next to the wordmark) - it must NEVER be treated as an access check.
+ * Every admin-only endpoint re-verifies is_admin server-side on every request (see utils/security.py's create_access_token()/decode_access_token());
+ * nothing here could substitute for that even if it were wrong, tampered with, or simply stale relative to a change another session just made.
+ * Returns false (not throws) for a missing/malformed token, since callers only ever want a yes/no for a badge.
+ */
+function isAdmin() {
+  if (!accessToken) return false;
+  try {
+    const payload = accessToken.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return Boolean(JSON.parse(json).is_admin);
+  } catch {
+    return false;
+  }
 }
 
 function redirectToLogin() {
@@ -211,4 +236,12 @@ async function apiFetch(input, init = {}) {
   return fetch(input, withAuth());
 }
 
-export { login, register, logout, hasActiveSession, apiFetch, setAuthState };
+export {
+  login,
+  register,
+  logout,
+  hasActiveSession,
+  apiFetch,
+  setAuthState,
+  isAdmin,
+};

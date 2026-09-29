@@ -34,7 +34,10 @@
 
   <div class="app-shell">
     <nav class="app-nav" aria-label="Main navigation">
-      <div class="app-nav__wordmark" data-i18n="app.wordmark">TeleVault</div>
+      <a href="/index.html" class="app-nav__wordmark-link">
+        <span class="app-nav__wordmark" data-i18n="app.wordmark">TeleVault</span>
+        <span id="admin-badge" class="info-badge" data-i18n="app.adminBadge" hidden>Admin</span>
+      </a>
 
       <ul class="app-nav__list">
         <li><button class="app-nav__link" data-view="chats" aria-current="page">

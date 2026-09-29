@@ -36,7 +36,7 @@
 
 import { t } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
-import { apiFetch } from "../lib/auth.js";
+import { apiFetch, isAdmin } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
 
 // Reasons from POST /telegram/link/confirm that mean "the handshake itself is dead" rather than "you typed the wrong thing" -
@@ -188,7 +188,13 @@ function renderLinkedStep() {
   return `
     <p><span class="patina-badge">${t("tgSetup.linkedBadge")}</span></p>
     <p class="settings-help">${t("tgSetup.linkedBody")}</p>
-    <button type="button" id="settings-relink" class="modal__btn">${t("tgSetup.relinkButton")}</button>
+    ${renderTelegramError()}
+    <div class="settings-actions">
+      <button type="button" id="settings-relink" class="modal__btn" ${setupState.telegramBusy ? "disabled" : ""}>${t("tgSetup.relinkButton")}</button>
+      <button type="button" id="settings-unlink" class="modal__btn modal__btn--danger" ${setupState.telegramBusy ? "disabled" : ""}>
+        ${setupState.telegramBusy ? t("tgSetup.unlinking") : t("tgSetup.unlinkButton")}
+      </button>
+    </div>
   `;
 }
 
@@ -340,6 +346,34 @@ function attachTelegramHandlers(root) {
   document.getElementById("settings-relink")?.addEventListener("click", () => {
     goToTelegramStep(root, "credentials");
   });
+
+  document
+    .getElementById("settings-unlink")
+    ?.addEventListener("click", async () => {
+      // window.confirm() - same pattern archiver-toggle.js already uses for its own irreversible-feeling action (stopping the archiver).
+      if (!window.confirm(t("tgSetup.unlinkConfirm"))) return;
+
+      setupState.telegramBusy = true;
+      setupState.telegramError = null;
+      renderRoot(root);
+      try {
+        // DELETE /telegram/session (unlike the four POST steps above) has no body, so it doesn't go through postTelegramStep().
+        const res = await apiFetch("/api/telegram/session", {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(describeError(data.detail));
+        }
+        // Credentials are kept (see clear_telegram_session()'s own docstring) - land on "phone" rather than
+        // "credentials", so relinking doesn't ask for the api_id/api_hash pair again for no reason.
+        goToTelegramStep(root, "phone");
+      } catch (err) {
+        setupState.telegramBusy = false;
+        setupState.telegramError = err.message || t("common.error");
+        renderRoot(root);
+      }
+    });
 }
 
 /**
@@ -374,7 +408,7 @@ async function loadTelegramStatus(root) {
 
 function renderArchiveCard() {
   const status = setupState.archiveStatus;
-  // "ok" | "unattached" | "unavailable", or undefined if we don't have a status at all
+  // "ok" | "unattached" | "unavailable" | "misconfigured", or undefined if we don't have a status at all
   // (still loading, or the health fetch itself failed - the error below says which).
   const state = status?.archive_status;
   const working = setupState.archiveBusy || setupState.archiveProvisioning;
@@ -388,6 +422,10 @@ function renderArchiveCard() {
     body = `<p class="settings-help">${t("tgSetup.archiveStatusMissing")}</p>`;
   } else if (state === "unavailable") {
     body = `<p class="settings-help">${t("tgSetup.archiveStatusUnavailable")}</p>`;
+  } else if (state === "misconfigured") {
+    // Permanent, admin-only-fixable state (see HealthOut's own docstring) - deliberately NOT the same "try again shortly" wording as "unavailable" above,
+    // and styled to stand out the same way, since retrying can never resolve this.
+    body = `<p class="settings-error" role="alert">${t("tgSetup.archiveStatusMisconfigured")}</p>`;
   }
   // (no else: with no status at all we deliberately show nothing but Refresh - see canProvision below)
 
@@ -524,4 +562,12 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("televault:langchange", () => {
   const root = document.getElementById("telegram-setup-root");
   if (root) renderRoot(root);
+});
+
+// "admin" badge next to this page's own wordmark - same reasoning and same UI-only caveat as app.js's copy of this (see lib/auth.js's isAdmin()).
+// This page has its own header (web/telegram-setup.html), not index.html's nav rail, so it needs its own listener rather than sharing app.js's
+// (a separate ES module entry point - see this file's own top-of-file docstring on why the setup page and the app shell don't share init code).
+document.addEventListener("televault:authchange", () => {
+  const adminBadge = document.getElementById("admin-badge");
+  if (adminBadge) adminBadge.hidden = !isAdmin();
 });

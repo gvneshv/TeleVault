@@ -219,12 +219,19 @@ input:focus-visible {
   transition: var(--transition-theme);
 }
 
+.app-nav__wordmark-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 20px;
+  text-decoration: none;
+}
+
 .app-nav__wordmark {
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  padding: 0 8px 20px;
   color: var(--color-ink);
 }
 
@@ -1131,6 +1138,17 @@ input:focus-visible {
   margin: 0 0 20px;
 }
 
+/* "misconfigured" (HealthOut.archive_status) is a permanent, admin-only-fixable state,
+    unlike the plain .health-archive-message text used for "unattached"/"unavailable" - it's styled like .auth-card__error (same --color-seal pairing)
+    so it reads as more urgent than "try again shortly" ever should. */
+.health-archive-message--urgent {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
+  font-weight: 600;
+}
+
 .health-refresh-btn {
   padding: 7px 16px;
   border-radius: var(--radius-sm);
@@ -1167,6 +1185,23 @@ input:focus-visible {
   text-align: center;
   max-width: 420px;
   margin-bottom: 4px;
+}
+
+.setup-page__wordmark-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  margin-bottom: 8px;
+}
+
+/* .auth-card__subtitle's own -8px top margin is tuned for login/register,
+   where it sits directly under a wordmark packed into the same small card and the tightness is intentional.
+   Reused here for the text/color styling, that same -8px instead pulled the subtitle up almost onto the wordmark's own line-height,
+   so the page's actual header (wordmark) read as glued to its intro paragraph rather than as a header.
+   Overriding margin-top only (not the whole shorthand) leaves the bottom spacing before #telegram-setup-root untouched. */
+.setup-page__header .auth-card__subtitle {
+  margin-top: 0;
 }
 
 .setup-cta {
@@ -1331,7 +1366,7 @@ input:focus-visible {
     padding: 10px 12px;
   }
 
-  .app-nav__wordmark {
+  .app-nav__wordmark-link {
     padding: 0 12px 0 0;
   }
 
@@ -1543,6 +1578,17 @@ input:focus-visible {
 .modal__btn--primary:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Same shape as .modal__btn--success (see setup-page's block above), seal-toned instead of patina-toned -
+   the "destructive/irreversible-ish action" pairing --color-seal already carries via .auth-card__error,
+   for the one outlined "Unlink Telegram" button (telegram-setup.js's linked step)
+   that needs to read as more consequential than a plain .modal__btn without actually being a solid,
+   attention-grabbing fill the way a destructive DELETE button often gets -
+   unlinking is confirmed via window.confirm() first and is reversible (relinking is one wizard pass away), so a quieter, outlined treatment fits better than red. */
+.modal__btn--danger {
+  border-color: var(--color-seal);
+  color: var(--color-seal);
 }
 
 .backfill-history-table {

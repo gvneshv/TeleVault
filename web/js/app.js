@@ -24,7 +24,7 @@ import { initStatsView } from "./views/stats.js";
 import { initHealthView } from "./views/health.js";
 import { initBackfillView } from "./views/backfill.js";
 import { initSettingsView } from "./views/settings.js";
-import { logout } from "./lib/auth.js";
+import { logout, isAdmin } from "./lib/auth.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const links = document.querySelectorAll(".app-nav__link[data-view]");
@@ -66,6 +66,18 @@ document.addEventListener("DOMContentLoaded", () => {
     logoutButton.addEventListener("click", async () => {
       logoutButton.disabled = true;
       await logout(); // clears the session and redirects to /login.html itself - see lib/auth.js
+    });
+  }
+
+  // "admin" badge next to the wordmark (see lib/auth.js's isAdmin() for why this is UI-only, never an access check).
+  // Driven by the "televault:authchange" event (also lib/auth.js) rather than checked once here,
+  // since accessToken isn't populated yet at DOMContentLoaded time - refresh-on-load resolves asynchronously
+  // (chats.js/archiver-toggle.js each kick it off independently;
+  // see this file's own module docstring on why there's no shared init).
+  const adminBadge = document.getElementById("admin-badge");
+  if (adminBadge) {
+    document.addEventListener("televault:authchange", () => {
+      adminBadge.hidden = !isAdmin();
     });
   }
 });

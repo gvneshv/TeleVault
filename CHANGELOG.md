@@ -76,6 +76,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Wired the 11 Telegram-flow and 2 archive-provisioning error `reason` codes into
   `web/js/lib/errors.js` / `i18n/{en,uk}.js` - previously deferred until there was a UI to show
   them on; the setup page above is that UI
+- **Unlink Telegram** - `DELETE /telegram/session` (`api/routes/telegram.py`,
+  `control_db.queries.clear_telegram_session`) clears only the saved session, deliberately keeping
+  `telegram_api_id`/`telegram_api_hash` and `archive_db_ref` untouched, so relinking skips the
+  credentials step and no archived history is affected. Idempotent - calling it with nothing to
+  unlink still succeeds. `web/js/views/telegram-setup.js`'s "Linked" step gained an "Unlink
+  Telegram" button (confirmed via `window.confirm()`, same pattern as the archiver Stop button) next
+  to the existing "Relink a different account" one
+- **Admin badge next to the "TeleVault" wordmark** - a small "Admin" pill (`#admin-badge`, reusing
+  the existing `.info-badge` style) on both `index.html`'s nav rail and `telegram-setup.html`'s
+  header, shown for accounts whose access token carries `is_admin: true` (decoded client-side purely
+  for this display - never a substitute for the server-side check every admin-only endpoint already
+  does). Both wordmarks are now also links back to `/index.html`
 
 ### Fixed
 
@@ -84,6 +96,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exactly that. That state now gets a neutral "·" row ("Archive database not set up yet"), the same
   treatment the session row already used for "not applicable". `unavailable` (a ref exists but
   couldn't be reached) is a genuine failure and keeps the ✗
+- **A misconfigured `archive_db_ref` (one that names a database that was never actually `CREATE
+  DATABASE`'d) was indistinguishable from an ordinary, transient "Postgres is briefly unreachable"
+  outage** - both surfaced as `archive_status: "unavailable"` and told the person to "try again
+  shortly", which can never work for the former. `db.is_missing_database_error()`
+  (`db/connection.py`) tells the two apart via the underlying Postgres SQLSTATE (`3D000`,
+  invalid_catalog_name); `GET /api/health`, `get_archive_connection()`
+  (`api/dependencies.py`), and the Health tab / setup page's archive card now surface a distinct
+  `"misconfigured"` status with "contact your administrator immediately" wording instead
+- `telegram-setup.html`'s header read as glued to its own intro paragraph - `.auth-card__subtitle`'s
+  `-8px` top margin (tuned for the compact login/register card it was designed for) pulled the
+  subtitle up almost onto the wordmark's own line-height. Scoped override
+  (`.setup-page__header .auth-card__subtitle`) removes just that negative margin on this page
 
 ### Planned - Phase 3 (Advanced Features)
 
