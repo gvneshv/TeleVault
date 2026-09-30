@@ -14,6 +14,7 @@ Why a dataclass rather than reading os.environ inline?
  
 Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE, FERNET_KEY, JWT_SECRET
 Optional (have defaults): DB_PATH, DATABASE_URL, CONTROL_DATABASE_URL, SESSION_NAME, LOG_LEVEL, LOG_FILE
+Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN (see Settings.bootstrap_admin_token below)
 """
 
 import os
@@ -126,6 +127,20 @@ class Settings:
     heartbeat_path: str
     backfill_status_path: str
 
+    # --- Bootstrap admin (control DB - single-admin model) ---
+    # Solves an otherwise-unavoidable chicken-and-egg problem: every account is created FROM an invite (control_db.schema.invites.created_by is NOT NULL),
+    # and only an admin can create an invite - so without something outside that loop,
+    # the very first account could never come into existence through the normal POST /auth/register flow at all
+    # (scripts/manage_admin.py's `create` subcommand is the existing outside-the-loop answer, run by hand on the server;
+    # this is a second one, reachable through the ordinary web UI instead of a shell).
+    # Optional and unset by default (None): whoever stands up a fresh instance picks their own phrase and puts it in .env;
+    # it works exactly once - see api/routes/auth.py's register() for how a matching invite_token is told apart from an ordinary invite
+    # and turned into the one-and-only admin account (control_db.schema.ix_users_single_admin enforces there's never a second one) -
+    # and does nothing at all once an admin already exists, regardless of whether the .env value is still set.
+    # None (not empty-string) when unset, so register() can skip the comparison entirely for an instance that never configured one,
+    # rather than a blank .env value ever accidentally matching an empty invite_token some other caller sent.
+    bootstrap_admin_token: str | None
+
 
 def _load() -> Settings:
     """
@@ -143,6 +158,9 @@ def _load() -> Settings:
     log_file_raw = _optional("LOG_FILE", "")
     log_file = log_file_raw if log_file_raw else None
 
+    bootstrap_admin_token_raw = _optional("TELEVAULT_BOOTSTRAP_ADMIN_TOKEN", "")
+    bootstrap_admin_token = bootstrap_admin_token_raw if bootstrap_admin_token_raw else None
+
     return Settings(
         api_id=                 api_id,
         api_hash=               _require("TG_API_HASH"),
@@ -157,6 +175,7 @@ def _load() -> Settings:
         log_file=               log_file,
         heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),
         backfill_status_path=   _optional("BACKFILL_STATUS_PATH", "data/backfill_status.json"),
+        bootstrap_admin_token=  bootstrap_admin_token,
     )
 
 

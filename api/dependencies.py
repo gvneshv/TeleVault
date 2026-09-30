@@ -212,6 +212,31 @@ def get_archive_connection(
         cm.__exit__(None, None, None)
 
 
+def require_admin(current: DecodedAccessToken = Depends(get_current_user)) -> DecodedAccessToken:
+    """
+    Gate for api/routes/admin.py: the one admin account only
+    (single-admin model - see control_db.schema.ix_users_single_admin and control_db.queries.admin_exists() for the enforcement side of that).
+
+    Reads is_admin straight off the ALREADY-DECODED access token (get_current_user(), no DB round trip) rather than looking the user up fresh here -
+    same "an access token's whole purpose is to authorize a request without a per-request DB round trip" reasoning get_current_user()'s own docstring gives,
+    and the same up-to-15-minutes-stale tradeoff it already documents:
+    an admin locked or deleted by a THEORETICAL second admin (impossible today - see above) would keep passing this check until their access token naturally expires,
+    exactly as every other claim on this token already does.
+    Every route behind this dependency also calls control_db.queries functions that re-check the target row for themselves
+    (e.g. delete_user_completely() looking the user up fresh),
+    so nothing downstream trusts this token claim alone for anything destructive beyond "may this caller reach this endpoint at all".
+
+    Raises HTTPException 403 - deliberately the same status a non-admin gets from require_instance_owner()'s "not_instance_owner" case,
+    for the same reason: this is an ordinary, permanent fact about most accounts, not a transient error to recover from.
+    """
+    if not current["is_admin"]:
+        raise HTTPException(
+            status_code=403,
+            detail={"message": "This action requires admin privileges.", "reason": "not_admin"},
+        )
+    return current
+
+
 def require_instance_owner(
     current: DecodedAccessToken = Depends(get_current_user),
     control_conn: Connection = Depends(get_control_db),

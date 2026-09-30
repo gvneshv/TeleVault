@@ -82,6 +82,14 @@ users = Table(
     Column("telegram_api_hash", Text),
     Column("telegram_session_string", Text),
     Column("archive_db_ref", Text),
+    # Single-admin model (Decisions Log):
+    # TeleVault has exactly ONE admin account, full stop - there is no promotion path any more
+    # (control_db.queries used to have promote_user_to_admin(); removed - see scripts/manage_admin.py's own module docstring for the reasoning).
+    # A partial unique index on a column that's only ever `true` for matching rows means Postgres itself refuses a second one,
+    # the same way `users.username`'s own unique constraint refuses a second identical username -
+    # this is enforced at the database level rather than only in application code,
+    # so it holds even against a future bug or a direct SQL script that forgets to check first.
+    Index("ix_users_single_admin", "is_admin", unique=True, postgresql_where=text("is_admin = true")),
 )
 
 
@@ -100,7 +108,10 @@ invites = Table(
     Column("created_by", BigInteger, ForeignKey("users.id"), nullable=False),
     Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
     Column("used_at", TIMESTAMP(timezone=True)),
-    Column("used_by", BigInteger, ForeignKey("users.id")),
+    # ondelete="SET NULL": see control_db.queries.delete_user_completely()'s own docstring -
+    # a deleted user's invite row is kept (it still documents who created it and when it was used) but stops pointing at a users.id that no longer exists,
+    # rather than being deleted itself or blocking the deletion with a dangling foreign key.
+    Column("used_by", BigInteger, ForeignKey("users.id", ondelete="SET NULL")),
 )
 
 
@@ -117,7 +128,11 @@ refresh_tokens = Table(
     "refresh_tokens",
     metadata,
     Column("id", BigInteger, Identity(), primary_key=True),
-    Column("user_id", BigInteger, ForeignKey("users.id"), nullable=False),
+    # ondelete="CASCADE": a refresh token is purely a session artifact of its owning account -
+    # once that account is gone (control_db.queries.delete_user_completely()),
+    # there is nothing left for it to authorize and no reason to keep it around, unlike invites/auth_audit_log below
+    # (which are kept, with their user reference nulled out, for their own historical value independent of whether the account still exists).
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     Column("jti", Text, nullable=False, unique=True),
     Column("issued_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
     Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
@@ -149,9 +164,14 @@ auth_audit_log = Table(
     "auth_audit_log",
     metadata,
     Column("id", BigInteger, Identity(), primary_key=True),
-    Column("user_id", BigInteger, ForeignKey("users.id")),
+    # ondelete="SET NULL" on both user_id and actor_id:
+    # a security/audit trail is exactly the kind of record that should survive the account it's about being deleted (control_db.queries.delete_user_completely()) -
+    # "this account logged in at 3am, then was deleted" is a forensically useful row to keep, not something deletion should be able to erase.
+    # Nulling the reference (rather than deleting the row, or blocking deletion on it) is what lets users.id genuinely stop existing -
+    # and the username become reusable - without losing that history.
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="SET NULL")),
     Column("event_type", Text, nullable=False),
-    Column("actor_id", BigInteger, ForeignKey("users.id")),
+    Column("actor_id", BigInteger, ForeignKey("users.id", ondelete="SET NULL")),
     Column("ip_address", Text),
     Column("user_agent", Text),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),

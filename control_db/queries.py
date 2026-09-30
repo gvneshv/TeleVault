@@ -16,10 +16,11 @@ What this module deliberately does NOT do:
     Those stay in utils/security.py and utils/crypto.py;
     this module only ever sees already-hashed or already-encrypted values.
     Keeps "how do we prove a password is right" and "how do we store a row" as two separate concerns.
-  - No admin/invite-creation HTTP endpoints yet (out of scope - see project brief) - create_invite() below exists,
-    but its only caller is scripts/manage_admin.py, not a route.
-    An HTTP endpoint calling it later still needs its own is_admin check first;
-    this module doesn't enforce that itself (see this docstring's second point above).
+  - No is_admin enforcement of its own, anywhere in this module -
+    every write function here trusts its caller exactly as much as create_invite() always has (see that function's own docstring).
+    api/routes/admin.py is what actually restricts these to admins only (via api/dependencies.py's require_admin),
+    same as scripts/manage_admin.py restricts itself to whoever already has shell access to run it - this module is the one place both of those callers meet,
+    not the place that decides who's allowed to call it.
 """
 
 import logging
@@ -55,6 +56,21 @@ def get_user_by_id(conn: Connection, user_id: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def list_users(conn: Connection) -> list[dict[str, Any]]:
+    """
+    Every user, oldest first (so the sole admin - always user #1, see create_admin_user()/the bootstrap-token path in api/routes/auth.py's register() -
+    reliably sorts to the top of an admin-panel listing without the caller needing to know that in advance or sort by is_admin itself).
+
+    Used only by GET /admin/users (api/routes/admin.py, require_admin-gated) - there's no equivalent CLI listing command in scripts/manage_admin.py;
+    that script expects the operator to already know who they mean.
+    Returns every column INCLUDING password_hash and the telegram_* credential columns - unlike get_user_by_id()'s other callers,
+    which mostly feed a route's own response model that filters columns itself, so filtering here would just be redone at the route layer anyway.
+    The route layer (not this function) is responsible for never putting password_hash or a live Telegram credential into an HTTP response.
+    """
+    rows = conn.execute(sql_text("SELECT * FROM users ORDER BY created_at ASC")).mappings().all()
+    return [dict(row) for row in rows]
+
+
 # ---------------------------------------------------------------------------
 # invites - reads
 # ---------------------------------------------------------------------------
@@ -78,6 +94,35 @@ def get_valid_invite_by_token(conn: Connection, token: str) -> dict[str, Any] | 
         {"token": token},
     ).mappings().first()
     return dict(row) if row else None
+
+
+def list_invites(conn: Connection) -> list[dict[str, Any]]:
+    """
+    Every invite ever created, newest first, with the redeeming user's CURRENT username joined in
+    (not `token` itself - see api/schemas/admin.py's AdminInviteListItemOut for why a past token can never be re-displayed).
+
+    LEFT JOIN (not JOIN):
+    used_by is nullable in two independent, unrelated ways - an invite that was never redeemed at all (used_by IS NULL from the start),
+    and one whose redeemer has since been deleted (control_db.queries.delete_user_completely() nulls it via the ON DELETE SET NULL FK -
+    see control_db/schema.py's own column comment).
+    Both render as used_by_username=None to the caller;
+    telling them apart (if ever needed) is what used_at IS NULL vs IS NOT NULL already distinguishes.
+    created_by is deliberately NOT joined/returned here - every invite has exactly one creator (the sole admin, see control_db.schema.ix_users_single_admin),
+    so surfacing it would only ever repeat the same name back for every row.
+
+    Used only by GET /admin/invites (api/routes/admin.py, require_admin-gated).
+    """
+    rows = conn.execute(
+        sql_text(
+            """
+            SELECT invites.id, invites.expires_at, invites.used_at, users.username AS used_by_username
+            FROM invites
+            LEFT JOIN users ON users.id = invites.used_by
+            ORDER BY invites.id DESC
+            """
+        )
+    ).mappings().all()
+    return [dict(row) for row in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -416,18 +461,43 @@ def revoke_all_refresh_tokens_and_log(
 
 
 # ---------------------------------------------------------------------------
-# admin bootstrap (scripts/manage_admin.py - no HTTP request/actor involved)
+# admin bootstrap (no HTTP request/actor involved, OR the one-time bootstrap-token registration in api/routes/auth.py's register() -
+# see admin_exists() below for what stops either path from ever creating a second admin)
 # ---------------------------------------------------------------------------
 
-def create_admin_user(conn: Connection, username: str, password_hash: str) -> int:
+def admin_exists(conn: Connection) -> bool:
+    """
+    Whether TeleVault's one admin account already exists.
+
+    TeleVault has exactly one admin, full stop
+    (Decisions Log - the promotion path that used to let a second account become an admin, promote_user_to_admin(), was removed;
+    see scripts/manage_admin.py's own module docstring).
+    control_db.schema.ix_users_single_admin is the actual enforcement
+    (a partial unique index - Postgres itself refuses a second is_admin=true row even if every application-level check below somehow got skipped);
+    this function is the cheap, non-throwing way for a caller to check BEFORE attempting a write that would otherwise fail with an IntegrityError -
+    used by create_admin_user() below and by the bootstrap-token branch of register() to give a clear, specific error instead of a raw database exception.
+    """
+    return conn.execute(sql_text("SELECT 1 FROM users WHERE is_admin = true LIMIT 1")).first() is not None
+
+
+def create_admin_user(conn: Connection, username: str, password_hash: str, event_type: str = "admin_created_via_script") -> int:
     """
     Insert a brand-new user with is_admin=True, bypassing the invite flow entirely.
 
-    Only ever called from scripts/manage_admin.py, run directly on the server by whoever has Postgres access - never reachable over HTTP.
-    See that script's module docstring for why this bypass has to exist (the invite flow's own FK constraint means it cannot create user #1).
+    Two callers, both outside the normal invite loop for the same underlying reason
+    (see scripts/manage_admin.py's module docstring for the fuller "why does this bypass have to exist at all" reasoning):
+      - scripts/manage_admin.py's `create` subcommand, run directly on the server by whoever has Postgres access - never reachable over HTTP.
+        Default event_type ("admin_created_via_script") covers this caller.
+      - api/routes/auth.py's register(), when the submitted invite_token matches settings.bootstrap_admin_token AND no admin exists yet (see admin_exists() above) -
+        reachable over HTTP, but only ever succeeds ONCE per instance for that same reason.
+        Passes event_type="admin_created_via_bootstrap_token" so auth_audit_log can tell the two paths apart later.
+    Neither caller checks admin_exists() FOR you - both check it themselves first (see their own call sites) and this function does not re-check it,
+    so control_db.schema.ix_users_single_admin is the only thing standing between a caller that forgets to check and an IntegrityError;
+    that's intentional defense in depth, not a gap to close here,
+    since a query-layer function silently swallowing "an admin already exists" would hide exactly the bug a caller needs to see.
 
-    actor_id is left NULL in the resulting audit row on purpose: there is no authenticated actor for a script run at the shell,
-    so recording one would fabricate an accountability trail that doesn't reflect what actually happened
+    actor_id is left NULL in the resulting audit row on purpose: neither caller has an authenticated OTHER party to attribute this to - a script run at the shell,
+    or the brand-new account acting on its own behalf - so recording one would fabricate an accountability trail that doesn't reflect what actually happened
     (see auth_audit_log's own docstring for why user_id and actor_id are allowed to differ / be absent).
     """
     try:
@@ -441,7 +511,7 @@ def create_admin_user(conn: Connection, username: str, password_hash: str) -> in
             ),
             {"username": username, "password_hash": password_hash},
         ).scalar_one()
-        _insert_audit_log(conn, event_type="admin_created_via_script", user_id=new_user_id)
+        _insert_audit_log(conn, event_type=event_type, user_id=new_user_id)
         conn.commit()
         return new_user_id
     except Exception:
@@ -449,27 +519,136 @@ def create_admin_user(conn: Connection, username: str, password_hash: str) -> in
         raise
 
 
-def promote_user_to_admin(conn: Connection, user_id: int) -> bool:
+def lock_user(conn: Connection, user_id: int, actor_id: int) -> bool:
     """
-    Flip is_admin to True for an existing user.
-    Returns False if no such user exists (caller decides how to report that), True on success.
+    Set is_locked=True and immediately revoke every one of this user's outstanding refresh tokens
+    (reusing revoke_all_refresh_tokens_and_log() above with the SAME revoked_reason/event_type api/routes/auth.py's own refresh() already uses for a locked account hitting /auth/refresh on its own - one vocabulary for "this account's sessions were killed because it's locked",
+    regardless of whether locking or a blocked refresh attempt triggered it).
+    Returns False if no such user exists (caller decides how to report that), True on success - including when the account was already locked,
+    since re-locking an already-locked account isn't an error, just a no-op on is_locked itself
+    (the refresh-token revocation still runs, harmlessly, against whatever's left un-revoked).
 
-    Deliberately touches ONLY is_admin - never password_hash, never the telegram_* credential columns, never archive_db_ref.
-    Promoting someone to admin must never require or allow touching their password or their linked Telegram credentials;
-    those are the person's own, set by their own login/link flow, and a script run by someone else has no business reading or altering them.
-    See scripts/manage_admin.py's module docstring for the fuller reasoning.
+    Reversible ONLY by an admin calling unlock_user() below - there is deliberately no automatic expiry here,
+    unlike the separate, self-clearing login-failure throttle in api/routes/auth.py's login()
+    (see that function's own module-level comment on why the two are unrelated safeguards, not two versions of one thing).
+
+    Deliberately does NOT touch password_hash, the telegram_* credential columns,
+    or archive_db_ref - locking an account suspends its ability to authenticate, nothing else;
+    the account's data is untouched and available again the moment an admin unlocks it.
+    """
+    result = conn.execute(
+        sql_text("SELECT 1 FROM users WHERE id = :user_id"),
+        {"user_id": user_id},
+    ).first()
+    if result is None:
+        return False
+    try:
+        conn.execute(
+            sql_text("UPDATE users SET is_locked = true WHERE id = :user_id"),
+            {"user_id": user_id},
+        )
+        _insert_audit_log(conn, event_type="account_locked_by_admin", user_id=user_id, actor_id=actor_id)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    # A separate call/transaction (not folded into the block above) since revoke_all_refresh_tokens_and_log() commits its own transaction -
+    # see that function's own docstring;
+    # nothing here needs the two atomic with each other;
+    # a lock that "succeeded" but left one stale refresh token alive for a few extra moments is not a meaningfully different outcome
+    # than one where both happened in lockstep.
+    revoke_all_refresh_tokens_and_log(conn, user_id, "account_locked", "refresh_blocked_locked", ip_address=None, user_agent=None)
+    return True
+
+
+def unlock_user(conn: Connection, user_id: int, actor_id: int) -> bool:
+    """
+    Set is_locked=False. 
+    Returns False if no such user exists, True on success (including a no-op unlock of an already-unlocked account, same "not an error" reasoning as lock_user() above).
+
+    Does NOT re-issue or restore any of the refresh tokens lock_user() revoked - unlocking lets the account log in again from scratch (POST /auth/login),
+    it does not resurrect whatever browser sessions were active at lock time;
+    those are gone for good, same as after an ordinary password-change-driven revocation elsewhere in this module.
     """
     try:
         result = conn.execute(
-            sql_text("UPDATE users SET is_admin = true WHERE id = :user_id"),
+            sql_text("UPDATE users SET is_locked = false WHERE id = :user_id"),
             {"user_id": user_id},
         )
         if result.rowcount == 0:
             conn.rollback()
             return False
-        _insert_audit_log(conn, event_type="admin_promoted_via_script", user_id=user_id)
+        _insert_audit_log(conn, event_type="account_unlocked_by_admin", user_id=user_id, actor_id=actor_id)
         conn.commit()
         return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def delete_user_completely(conn: Connection, user_id: int, actor_id: int) -> str | None:
+    """
+    Irreversibly and completely remove a user:
+    the users row itself, every refresh token, and every invite this user redeemed to register
+    (its used_by pointer is nulled instead by the FK - see control_db/schema.py's own column comment -
+    but the invite row survives for the admin's own invite-history bookkeeping).
+    Everything that would block reusing the same username afterward is gone;
+    nothing that merely REFERENCES the account (audit-log rows - see auth_audit_log's own column comments) survives with that reference still attached,
+    but the rows themselves are deliberately kept as a security/forensic trail independent of whether the account still exists.
+
+    Called from TWO places, both requiring their own confirmation UX already, one step removed from this function
+    (this function itself asks nothing and confirms nothing, matching every other write in this module - see this file's own module docstring):
+      - DELETE /admin/users/{id} (api/routes/admin.py, require_admin-gated) - an admin deleting ANY non-admin user's account, actor_id = the admin's own id.
+      - The planned self-service "delete my account" endpoint (not yet built) - actor_id = user_id itself,
+        i.e. a user is always recorded as their own actor when deleting themselves, the same way clear_telegram_session() above does for an unlink.
+    Also reachable for the admin account itself, but ONLY from scripts/manage_admin.py's delete-admin subcommand - deliberately never wired to any HTTP endpoint
+    (see that script's own module docstring for why: an admin must never be able to delete themselves, or another admin, through the UI or API -
+    this function doesn't special-case is_admin at all, the restriction lives entirely in which callers are allowed to reach it).
+
+    Returns the deleted user's archive_db_ref (or None if they never had one)
+    so the caller can DROP that database afterward via db.deprovisioning.drop_archive_database() - deliberately NOT done here:
+    dropping a Postgres database can't run inside a transaction block at all
+    (same constraint db/provisioning.py's own _create_database_if_missing() documents for CREATE DATABASE),
+    so it can never be part of the same atomic unit as the control_db deletes below, and this function has no reason to depend on the db package at all otherwise.
+
+    Raises ValueError (not caught here - the route/script layer decides how to report it) if this user created any invites
+    (invites.created_by = user_id) - only ever possible for the admin account, since ordinary users never create invites;
+    this is the one case where a hard failure is correct rather than silently cascading,
+    since those invite rows would otherwise be left with a created_by pointing at nothing
+    (created_by has no ON DELETE behavior - unlike used_by above - specifically so this can't happen silently).
+    The caller (today, only scripts/manage_admin.py's delete-admin subcommand) is expected to ask the operator to deal with those invites by hand first.
+    """
+    user = get_user_by_id(conn, user_id)
+    if user is None:
+        return None
+
+    created_invite_count = conn.execute(
+        sql_text("SELECT count(*) FROM invites WHERE created_by = :user_id"),
+        {"user_id": user_id},
+    ).scalar_one()
+    if created_invite_count > 0:
+        raise ValueError(
+            f"User {user_id} ('{user['username']}') created {created_invite_count} invite(s) and cannot be "
+            "deleted while they still exist. Remove or reassign those invite rows first."
+        )
+
+    archive_db_ref = user["archive_db_ref"]
+    try:
+        # refresh_tokens (ON DELETE CASCADE) and invites.used_by (ON DELETE SET NULL) are handled by the database itself the moment the users row goes -
+        # see control_db/schema.py's own column comments - so there is nothing to delete/null out for them explicitly here.
+        # The audit entry for the deletion itself is inserted BEFORE the DELETE below (while user_id is still a valid reference) rather than after;
+        # ON DELETE SET NULL then nulls it out along with every other historical row this user ever appeared in,
+        # the instant the DELETE below runs - see auth_audit_log's own column comments for why that's the intended outcome, not something to work around.
+        _insert_audit_log(conn, event_type="user_deleted", user_id=user_id, actor_id=actor_id)
+        result = conn.execute(sql_text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
+        if result.rowcount == 0:
+            # Deleted concurrently between the get_user_by_id() lookup above and here - vanishingly unlikely for a personal-scale app,
+            # but rolling back rather than committing a bare audit row with nothing for it to have actually accompanied
+            # keeps this function's own "all or nothing" promise.
+            conn.rollback()
+            return None
+        conn.commit()
+        return archive_db_ref
     except Exception:
         conn.rollback()
         raise

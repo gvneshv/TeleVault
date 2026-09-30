@@ -26,10 +26,10 @@ from fastapi.staticfiles import StaticFiles
 
 import control_db
 import db
-from api.dependencies import require_instance_owner
+from api.dependencies import require_instance_owner, require_admin
 from config import settings
 
-from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, archive
+from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, archive, admin
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,11 @@ app = FastAPI(
 # not the single-instance-owner action backfill/telethon are.
 # See those routers' own module docstrings.
 #
+# admin:
+# gated at the router level on require_admin - every route in api/routes/admin.py requires the same one thing (the caller is the sole admin),
+# so a blanket router-level dependency is the right shape here, same reasoning as backfill/telethon's require_instance_owner just above.
+# See that router's own module docstring.
+#
 # auth stays open: it's what issues the tokens everything else then checks.
 # health requires a token (get_current_user) but is registered without a router-level dependency,
 # same reasoning as chats/messages/deleted/stats above: it resolves the CALLING user's own archive per request,
@@ -121,6 +126,7 @@ app.include_router(telegram.router,  prefix="/api")
 app.include_router(archive.router,   prefix="/api")
 app.include_router(backfill.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
 app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
+app.include_router(admin.router,     prefix="/api", dependencies=[Depends(require_admin)])
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,16 @@ from .telegram import (
     TelegramUnlinkOut,
 )
 from .archive import ArchiveProvisionOut
+from .admin import (
+    AdminUserOut,
+    AdminUserListOut,
+    AdminActionOut,
+    AdminUserDeleteOut,
+    AdminInviteCreateIn,
+    AdminInviteOut,
+    AdminInviteListItemOut,
+    AdminInviteListOut,
+)
 
 __all__ = [
     # chat
@@ -56,4 +66,13 @@ __all__ = [
     "TelegramUnlinkOut",
     # archive
     "ArchiveProvisionOut",
+    # admin
+    "AdminUserOut",
+    "AdminUserListOut",
+    "AdminActionOut",
+    "AdminUserDeleteOut",
+    "AdminInviteCreateIn",
+    "AdminInviteOut",
+    "AdminInviteListItemOut",
+    "AdminInviteListOut",
 ]

@@ -51,12 +51,13 @@ Login throttling (read this before changing MAX_FAILED_LOGIN_ATTEMPTS / LOGIN_LO
     Still worth confirming on the actual VPS, not assumed here.
 
 What this file deliberately does NOT do:
-    - No admin/invite-creation endpoints (POST /admin/invites etc.) - out of scope for now, see project brief.
-      Invite tokens are assumed to already exist in the invites table by the time register() runs.
+    - Admin-only account management (list/lock/unlock/delete users, create/list invites) lives in api/routes/admin.py, not here -
+      this file is deliberately just "how does someone get a session", whether that's a brand-new account (register()) or an existing one (login()/refresh()).
     - No brute-force lockout tied to users.is_locked - that column is for a human (an admin) to set deliberately;
       the automatic throttle here is a separate, self-clearing mechanism (see above).
 """
 
+import secrets
 from datetime import datetime, timedelta
 
 import jwt
@@ -66,6 +67,7 @@ from sqlalchemy.exc import IntegrityError
 
 from api.dependencies import get_control_db, get_current_user
 from api.schemas import AccessTokenOut, LoginIn, RegisterIn, UserOut
+from config import settings
 from control_db import queries as cq
 from utils.security import (
     DecodedAccessToken,
@@ -138,6 +140,52 @@ def _issue_tokens(conn: Connection, response: Response, request: Request, user_i
     return AccessTokenOut(access_token=access_token)
 
 
+def _is_bootstrap_admin_token(conn: Connection, invite_token: str) -> bool:
+    """
+    Whether THIS register() call should create the one-and-only admin account instead of redeeming an ordinary invite -
+    see config.Settings.bootstrap_admin_token's own docstring for the chicken-and-egg problem this solves and
+    control_db.queries.create_admin_user()'s docstring for what happens once this returns True.
+
+    All three conditions matter:
+      - settings.bootstrap_admin_token is not None: an instance that never set TELEVAULT_BOOTSTRAP_ADMIN_TOKEN has this path fully disabled -
+        compared against None (never against ""), so an unset .env value can never accidentally match an empty invite_token some other caller sent.
+      - secrets.compare_digest(...): a CONSTANT-TIME comparison, same reasoning as verify_password() elsewhere in this codebase -
+        an ordinary `==` would let a network attacker recover the token one byte at a time via response-time differences, same as it would for a password.
+      - not cq.admin_exists(conn): this path works EXACTLY ONCE per instance - see admin_exists()'s own docstring.
+        Once it returns False, the configured phrase is permanently inert for this purpose, regardless of whether it's still sitting in .env;
+        whoever holds it can never use it as a normal invite token either
+        (an invite token is looked up in the invites table, which this string was never inserted into).
+    """
+    return (
+        settings.bootstrap_admin_token is not None
+        and secrets.compare_digest(invite_token, settings.bootstrap_admin_token)
+        and not cq.admin_exists(conn)
+    )
+
+
+def _register_bootstrap_admin(conn: Connection, response: Response, request: Request, body: RegisterIn) -> AccessTokenOut:
+    """
+    The bootstrap-token branch of register() below, split out for readability.
+    From the caller's own perspective this is indistinguishable from an ordinary registration
+    (same request shape, same response shape, same auto-login) - see config.Settings.bootstrap_admin_token's own docstring for why that's the whole point.
+    """
+    password_hash = hash_password(body.password)
+    try:
+        user_id = cq.create_admin_user(conn, body.username, password_hash, event_type="admin_created_via_bootstrap_token")
+    except IntegrityError:
+        # conn.rollback() already happened inside create_admin_user() before it re-raised - safe to keep using.
+        # Two distinct causes collapse into the same IntegrityError here:
+        # an ordinary username collision (the common case, same as register_user_via_invite()'s own IntegrityError handling below),
+        # or - only possible in a genuine startup race between two simultaneous bootstrap attempts -
+        # a SECOND request losing the race against control_db.schema.ix_users_single_admin after both passed the admin_exists() check above.
+        # Re-checking admin_exists() here (cheap, and this is already the unhappy path) tells the loser of that race apart from an ordinary taken username,
+        # rather than showing it a misleading message.
+        if cq.admin_exists(conn):
+            raise HTTPException(status_code=409, detail="An admin account already exists. Ask your administrator for an invite.")
+        raise HTTPException(status_code=409, detail="That username is already taken.")
+    return _issue_tokens(conn, response, request, user_id, is_admin=True)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -145,12 +193,18 @@ def _issue_tokens(conn: Connection, response: Response, request: Request, user_i
 @router.post("/register", response_model=AccessTokenOut, status_code=201, summary="Consume an invite token to create an account")
 def register(body: RegisterIn, request: Request, response: Response, conn: Connection = Depends(get_control_db)) -> AccessTokenOut:
     """
-    Create a new (non-admin) user from a valid, unused invite token and log them straight in.
+    Create a new user from a valid, unused invite token and log them straight in -
+    UNLESS body.invite_token is this instance's configured bootstrap-admin token and no admin exists yet (see config.Settings.bootstrap_admin_token's own docstring),
+    in which case this creates the one-and-only admin account instead, via the exact same request.
+    See _is_bootstrap_admin_token()/_register_bootstrap_admin() above for that branch; everything below this check is the ordinary, non-admin invite path, unchanged.
 
     Auto-login on success (returning an access token here rather than requiring a separate POST /auth/login right after) -
     the person just proved they hold a legitimate invite AND chose a password in the same request;
     there's no additional factor a follow-up login would check that this request hasn't already established.
     """
+    if _is_bootstrap_admin_token(conn, body.invite_token):
+        return _register_bootstrap_admin(conn, response, request, body)
+
     invite = cq.get_valid_invite_by_token(conn, body.invite_token)
     if invite is None:
         raise HTTPException(status_code=400, detail="That invite token is invalid, expired, or already used.")

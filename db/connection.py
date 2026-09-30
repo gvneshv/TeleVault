@@ -38,6 +38,7 @@ from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine, make_url
+from sqlalchemy.exc import OperationalError
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,21 @@ def close_tenant_engines() -> None:
         engine.dispose()
         logger.info("Tenant database engine for %r disposed.", db_name)
     _tenant_engines = {}
+
+
+def dispose_tenant_engine(db_name: str) -> None:
+    """
+    Dispose and forget the cached engine/pool for exactly ONE tenant database, if this process has one cached
+    (a no-op otherwise - most callers won't know or care whether a connection was ever actually made).
+
+    Unlike close_tenant_engines() above (every tenant, called once at process shutdown), this exists for db.deprovisioning.drop_archive_database():
+    dropping a database this process is still pooling connections to would otherwise fail (Postgres refuses to DROP DATABASE while it has active connections),
+    so that function calls this first to release exactly the one pool that could be holding one open - never every OTHER user's live tenant connection along with it.
+    """
+    engine = _tenant_engines.pop(db_name, None)
+    if engine is not None:
+        engine.dispose()
+        logger.info("Tenant database engine for %r disposed (single-tenant).", db_name)
 
 
 def is_missing_database_error(exc: OperationalError) -> bool:
