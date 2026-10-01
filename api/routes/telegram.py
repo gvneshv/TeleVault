@@ -60,6 +60,7 @@ from telethon.sessions import StringSession
 
 import control_db
 from api.dependencies import get_control_db, get_current_user
+from api.process_utils import running_process_reason
 from api.schemas import (
     TelegramConfirmIn,
     TelegramConfirmOut,
@@ -70,6 +71,7 @@ from api.schemas import (
     TelegramStatusOut,
     TelegramUnlinkOut,
 )
+from config import settings
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.security import DecodedAccessToken
 
@@ -304,7 +306,22 @@ async def unlink(
     Idempotent - returns the same 200 whether or not a session actually existed to clear (see clear_telegram_session()'s own docstring).
     The only failure mode is the account itself no longer existing, which can't happen in practice
     (get_current_user already named a real row) but is handled the same "not a crash" way get_status() above does, rather than assuming it can't happen.
+
+    Refuses (409) while the live archiver or a backfill is running -
+    see api.process_utils.running_process_reason()'s own docstring for why this doesn't first check whether either belongs to THIS account specifically.
+    Checked before _discard_pending_link()/clear_telegram_session() below, not after:
+    there is nothing to undo if this refuses, so there is no reason to touch either first.
     """
+    reason = running_process_reason(settings.heartbeat_path, settings.backfill_status_path)
+    if reason is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Stop the userbot and any running backfill before unlinking Telegram - it's still using this session.",
+                "reason": reason,
+            },
+        )
+
     await _discard_pending_link(current["user_id"])
     control_db.queries.clear_telegram_session(control_conn, current["user_id"])
     return TelegramUnlinkOut()

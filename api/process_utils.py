@@ -81,3 +81,34 @@ def is_archiver_running(heartbeat_path, stale_after_seconds: int = 60) -> bool:
         return (time.time() - data["updated_at"]) < stale_after_seconds
     except Exception:
         return False
+
+
+def running_process_reason(heartbeat_path, backfill_status_path) -> str | None:
+    """
+    Whether it's currently unsafe to unlink a Telegram session or delete an account,
+    as a reason string a caller turns into its own error - or None if it's safe to proceed.
+
+    Composes is_archiver_running()/is_backfill_running() above rather than either check alone:
+    three call sites (api/routes/telegram.py's unlink(), api/routes/admin.py's delete_user(), and scripts/manage_admin.py's cmd_delete_admin())
+    all need the same "is anything actively using Telegram or writing to an archive database right now" answer,
+    for the same reason start_archiver()/start_backfill() (api/routes/telethon.py, api/routes/backfill.py) already treat the two as mutually exclusive:
+    a live archiver holds the Telegram session open and writes to its archive continuously, and a running backfill writes to one too.
+    Pulling a session out from under either, or dropping the database either is actively writing to, is exactly the kind of corruption/crash this exists to prevent -
+    not something each of the three call sites should have to reason about (or risk forgetting to check) independently.
+
+    Deliberately does NOT try to first work out whether the archiver/backfill in question actually belongs to the SAME account being unlinked/deleted
+    (today, only ever the instance owner's - see api/dependencies.py's require_instance_owner() docstring for that concept) before blocking.
+    There is exactly one physical Telethon process per instance regardless of which account this call is about,
+    so a narrower "only block if it's THIS account's own session" check would need to duplicate that concept here for no real safety benefit today,
+    and would need revisiting anyway the moment per-account worker processes (Decisions Log, still unbuilt) exist -
+    simplest to hold every account to the same "nothing is actively running, instance-wide" bar now and revisit only if/when that assumption stops being true.
+
+    Reuses the SAME reason strings start_archiver()'s own guards already use ("already_running", "backfill_running") rather than minting new ones -
+    both are already wired end-to-end (web/js/lib/errors.js, i18n/{en,uk}.js), and the situation being reported is identical either way:
+    something is running and has to be stopped first.
+    """
+    if is_archiver_running(heartbeat_path):
+        return "already_running"
+    if is_backfill_running(backfill_status_path):
+        return "backfill_running"
+    return None
