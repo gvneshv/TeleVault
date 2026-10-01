@@ -8,21 +8,38 @@
  * it still needs a live connection to the API to show real data.
  *
  * Bump CACHE_NAME whenever shell files change, so old caches are evicted on the next visit instead of silently serving outdated JS/CSS.
+ * This is NOT automatic and NOT enforced by anything -
+ * a shell file changing without this being bumped in the SAME commit is exactly what happened across several earlier commits
+ * (errors.js, i18n/{en,uk}.js, health.js, app.js, base.css all changed while this stayed at v18):
+ * the fetch handler below is strict cache-first with no revalidation,
+ * and the browser only re-runs `install` (which is what actually re-fetches SHELL_FILES) when it notices sw.js ITSELF changed byte-for-byte -
+ * so a shell file edit with no accompanying CACHE_NAME bump can sit silently stale through any number of ordinary page reloads,
+ * only fixable once a future commit happens to touch this file for an unrelated reason.
+ * v19 fixes that specific staleness (bumped here for that reason alone, nothing else in this file's logic changed)
+ * and also adds every shell file that had been missing from SHELL_FILES entirely
+ * (login.html/register.html/telegram-setup.html and their own JS, lib/auth.js, lib/chat-filter.js, lib/archive-error.js) -
+ * those were never stale, just never precached/offline-capable at all, which is a smaller gap but the same kind of drift.
  */
 
-const CACHE_NAME = "televault-shell-v18";
+const CACHE_NAME = "televault-shell-v19";
 const SHELL_FILES = [
   "/",
   "/index.html",
+  "/login.html",
+  "/register.html",
+  "/telegram-setup.html",
   "/favicon.ico",
   "/css/variables.css",
   "/css/base.css",
   "/js/theme.js",
   "/js/i18n.js",
   "/js/lib/dom.js",
+  "/js/lib/auth.js",
   "/js/lib/pagination.js",
   "/js/lib/order-toggle.js",
   "/js/lib/errors.js",
+  "/js/lib/chat-filter.js",
+  "/js/lib/archive-error.js",
   "/js/archiver-toggle.js",
   "/js/app.js",
   "/js/views/chats.js",
@@ -31,6 +48,10 @@ const SHELL_FILES = [
   "/js/views/stats.js",
   "/js/views/health.js",
   "/js/views/backfill.js",
+  "/js/views/settings.js",
+  "/js/views/telegram-setup.js",
+  "/js/views/login.js",
+  "/js/views/register.js",
   "/js/i18n/en.js",
   "/js/i18n/uk.js",
   "/manifest.webmanifest",

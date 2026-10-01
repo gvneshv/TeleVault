@@ -20,7 +20,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
-import { describeError } from "../lib/errors.js";
+import { renderArchiveErrorState } from "../lib/archive-error.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -44,7 +44,9 @@ const messagesViewState = {
   // Populated from the chat filter's persisted (localStorage) selection - see initFilterBar().
   // Empty array means "All chats" - no chat_ids param is sent in that case.
   chatIds: [],
-  lastData: null,
+  // Tagged union of the last thing loadMessages() actually rendered -
+  // see chatsViewState.lastRender's own comment (chats.js) for the three shapes and why this replaced a lastData-only flag.
+  lastRender: null,
   // True once initMessagesView() has run - guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
   initialized: false,
 };
@@ -137,6 +139,19 @@ function renderMessagesView(root, data) {
   });
 }
 
+/** Render messagesViewState.lastRender's current value into `root` - see chatsViewState's redraw() (chats.js) for why this shape exists. */
+function redraw(root) {
+  const r = messagesViewState.lastRender;
+  if (!r) return;
+  if (r.type === "data") {
+    renderMessagesView(root, r.data);
+  } else if (r.type === "error") {
+    renderArchiveErrorState(root, r.detail);
+  } else {
+    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
+  }
+}
+
 /** Fetch one page of messages (with current filters applied), cache it, and render it. */
 async function loadMessages(root) {
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
@@ -152,23 +167,22 @@ async function loadMessages(root) {
     params.append("chat_ids", String(id)),
   );
 
-  let data;
   try {
     const res = await apiFetch(`/api/messages?${params.toString()}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      messagesViewState.lastRender = { type: "error", detail: body.detail };
+      redraw(root);
       return;
     }
-    data = await res.json();
+    const data = await res.json();
+    messagesViewState.lastRender = { type: "data", data };
+    redraw(root);
   } catch {
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
-    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
-    return;
+    messagesViewState.lastRender = { type: "networkError" };
+    redraw(root);
   }
-
-  messagesViewState.lastData = data;
-  renderMessagesView(root, data);
 }
 
 /**
@@ -261,8 +275,8 @@ function initMessagesView() {
 
 export { initMessagesView };
 
-// Re-render the already-fetched page in the new language - no re-fetch needed for the list,
-// but the filter bar's static labels (placeholder, checkbox text) need rebuilding since they aren't data-i18n elements either.
+// Re-render whatever's currently shown (data, error, or network error - see messagesViewState.lastRender's own comment) in the new language -
+// no re-fetch needed for the list, but the filter bar's static labels (placeholder, checkbox text) need rebuilding since they aren't data-i18n elements either.
 document.addEventListener("televault:langchange", () => {
   if (!messagesViewState.initialized) return;
 
@@ -277,7 +291,5 @@ document.addEventListener("televault:langchange", () => {
     filterBarRoot.querySelector("#messages-only-edited").checked =
       currentOnlyEdited;
   }
-  if (listRoot && messagesViewState.lastData) {
-    renderMessagesView(listRoot, messagesViewState.lastData);
-  }
+  if (listRoot) redraw(listRoot);
 });

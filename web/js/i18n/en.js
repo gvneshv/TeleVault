@@ -21,6 +21,7 @@ export const en = {
   "common.comingSoon": "This view isn't built yet.",
   "common.loading": "Loading…",
   "common.error": "Something went wrong.",
+  "common.goToSettings": "Go to settings",
   "common.pageOf": "Page {page} of {pages}",
   "common.pageOfPrefix": "Page",
   "common.pageOfSuffix": "of",

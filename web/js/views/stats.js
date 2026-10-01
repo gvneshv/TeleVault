@@ -15,11 +15,13 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
-import { describeError } from "../lib/errors.js";
+import { renderArchiveErrorState } from "../lib/archive-error.js";
 
 const statsViewState = {
   initialized: false,
-  lastData: null,
+  // Tagged union of the last thing loadStats() actually rendered -
+  // see chatsViewState.lastRender's own comment (chats.js) for the three shapes and why this replaced a lastData-only flag.
+  lastRender: null,
   // Client-side sort of per_chat - the API always returns it sorted by message_count descending (see StatsOut's docstring);
   // this tracks whatever the user last clicked, defaulting to that same order so the initial render matches what the API already gives us.
   sortKey: "message_count",
@@ -218,27 +220,39 @@ function renderStatsView(root, data) {
   wireSortableHeaders(root, data);
 }
 
+/** Render statsViewState.lastRender's current value into `root` - see chatsViewState's redraw() (chats.js) for why this shape exists. */
+function redraw(root) {
+  const r = statsViewState.lastRender;
+  if (!r) return;
+  if (r.type === "data") {
+    renderStatsView(root, r.data);
+  } else if (r.type === "error") {
+    renderArchiveErrorState(root, r.detail);
+  } else {
+    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
+  }
+}
+
 /** Fetch stats once, cache, and render. */
 async function loadStats(root) {
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
-  let data;
   try {
     const res = await apiFetch("/api/stats");
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      statsViewState.lastRender = { type: "error", detail: body.detail };
+      redraw(root);
       return;
     }
-    data = await res.json();
+    const data = await res.json();
+    statsViewState.lastRender = { type: "data", data };
+    redraw(root);
   } catch {
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
-    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
-    return;
+    statsViewState.lastRender = { type: "networkError" };
+    redraw(root);
   }
-
-  statsViewState.lastData = data;
-  renderStatsView(root, data);
 }
 
 /** Entry point called by app.js the first time the Stats tab is opened. */
@@ -255,7 +269,5 @@ export { initStatsView };
 document.addEventListener("televault:langchange", () => {
   if (!statsViewState.initialized) return;
   const root = document.getElementById("stats-root");
-  if (root && statsViewState.lastData) {
-    renderStatsView(root, statsViewState.lastData);
-  }
+  if (root) redraw(root);
 });

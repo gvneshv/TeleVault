@@ -372,6 +372,13 @@ input:focus-visible {
   color: var(--color-ink-muted);
 }
 
+/* Self-fix link shown for archive_unattached only (lib/archive-error.js, web/js/views/health.js) - an ordinary inline link, not a button:
+   it's one option among "wait", "read the message", or "go fix it", not the primary action of whatever empty state or status message it's appended to. */
+.settings-fix-link {
+  color: var(--color-focus);
+  text-decoration: underline;
+}
+
 /* ---------------------------------------------------------------------
    Signature element - the wax-seal badge.
    The one deliberately expressive touch in an otherwise quiet UI.

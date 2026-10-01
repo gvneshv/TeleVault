@@ -10,7 +10,7 @@
  * Each row still carries `data-chat-id` so that wiring is a one-line addition once a per-chat view exists, instead of a re-render change here.
  *
  * State is kept minimal and re-fetched fresh on every page change;
- * nothing is cached client-side beyond the last page (see lastData below, kept only for language-switch re-rendering).
+ * nothing is cached client-side beyond the last page (see lastRender below, kept only for language-switch re-rendering).
  * This is a personal single-user archive, not a high-traffic API,
  * so the extra request per page turn is not a real cost - and it keeps this file free of cache-invalidation logic it doesn't need yet.
  */
@@ -18,7 +18,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
-import { describeError } from "../lib/errors.js";
+import { renderArchiveErrorState } from "../lib/archive-error.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
@@ -31,9 +31,18 @@ const CHATS_PER_PAGE = 50;
 const chatsViewState = {
   page: 1,
   order: "desc",
-  /** Last successfully fetched page from the API, kept so a language
-   *  change can re-render without re-fetching. Null until the first load. */
-  lastData: null,
+  /**
+   * The last thing loadChats() actually rendered, kept so a later language change can redraw it WITHOUT re-fetching - a tagged union rather than three separate flags,
+   * so redraw() below (used by both the initial load and the "televault:langchange" listener) has exactly one thing to branch on instead of three that could,
+   * through a future edit, end up simultaneously set or all unset:
+   *   { type: "data", data }      - a successful page (renderChatsView() below can redraw it)
+   *   { type: "error", detail }   - a structured API error
+   *                               (see lib/archive-error.js's own docstring for why this is exactly the same code path
+   *                               chats.js/messages.js/deleted.js/stats.js all share, and what turns `detail` into displayed text)
+   *   { type: "networkError" }    - fetch() itself threw, so there's no response body to describe at all
+   *   null                        - nothing loaded yet (before the very first loadChats() call resolves)
+   */
+  lastRender: null,
 };
 
 /**
@@ -161,29 +170,48 @@ function initChatsFilterBar(filterBarRoot, listRoot) {
   );
 }
 
+/**
+ * Render chatsViewState.lastRender's current value into `root` - whatever it is
+ * (data, error, or network error; see that field's own comment above for the three shapes).
+ * Shared by loadChats() below (right after setting lastRender) and the "televault:langchange" listener at the bottom of this file
+ * (redrawing the SAME lastRender value again, in whatever language is now active, without a re-fetch) -
+ * one render path instead of two that could drift apart, which is exactly what used to leave an error message frozen in its original language after a language switch:
+ * the old code only ever re-rendered here when lastData was set, silently doing nothing for an error state.
+ */
+function redraw(root) {
+  const r = chatsViewState.lastRender;
+  if (!r) return;
+  if (r.type === "data") {
+    renderChatsView(root, r.data);
+  } else if (r.type === "error") {
+    renderArchiveErrorState(root, r.detail);
+  } else {
+    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
+  }
+}
+
 /** Fetch one page of chats, cache it, and render it. */
 async function loadChats(root) {
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
 
-  let data;
   try {
     const res = await apiFetch(
       `/api/chats?page=${chatsViewState.page}&per_page=${CHATS_PER_PAGE}&order=${chatsViewState.order}`,
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      chatsViewState.lastRender = { type: "error", detail: body.detail };
+      redraw(root);
       return;
     }
-    data = await res.json();
+    const data = await res.json();
+    chatsViewState.lastRender = { type: "data", data };
+    redraw(root);
   } catch {
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
-    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
-    return;
+    chatsViewState.lastRender = { type: "networkError" };
+    redraw(root);
   }
-
-  chatsViewState.lastData = data;
-  renderChatsView(root, data);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -193,14 +221,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (root) loadChats(root);
 });
 
-// Re-render the already-fetched page in the new language - no re-fetch needed, since only the labels change, not the underlying chat data.
+// Re-render whatever's currently shown (data, error, or network error - see chatsViewState.lastRender's own comment) in the new language - no re-fetch needed,
+// since only the labels/message text change, not the underlying data or error condition itself.
 document.addEventListener("televault:langchange", () => {
   const root = document.getElementById("chats-root");
   const filterBarRoot = document.getElementById("chats-filter-bar");
   if (filterBarRoot) {
     initChatsFilterBar(filterBarRoot, root);
   }
-  if (root && chatsViewState.lastData) {
-    renderChatsView(root, chatsViewState.lastData);
-  }
+  if (root) redraw(root);
 });

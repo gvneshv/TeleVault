@@ -17,6 +17,7 @@ export const uk = {
   "common.comingSoon": "Цей розділ ще не готовий.",
   "common.loading": "Завантаження…",
   "common.error": "Щось пішло не так.",
+  "common.goToSettings": "Перейти до налаштувань",
   "common.pageOf": "Сторінка {page} з {pages}",
   "common.pageOfPrefix": "Сторінка",
   "common.pageOfSuffix": "з",

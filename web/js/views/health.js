@@ -68,10 +68,15 @@ function renderHealthReport(data) {
   // instead of collapsing all three into one flat "not readable" line - see HealthOut's own docstring.
   // "misconfigured" gets its own message rather than reusing "unavailable"'s "try again shortly" wording,
   // since retrying can never fix a database that was never created - this is deliberately an "administrator, now" message, not a "retry" one.
+  // "unattached" is the only one of the three that's self-fixable BY THE USER (finish the setup wizard) -
+  // same SELF_FIXABLE_REASONS reasoning as lib/archive-error.js (used by chats/messages/deleted/stats for the exact same three-way split),
+  // so it's the only one that gets a link rather than just prose.
+  // "unavailable" is a transient outage (nothing to click, just wait) and "misconfigured" is explicitly admin-only.
   // "ok" is the only case with an actual message count to show.
+  const settingsLink = ` <a href="/telegram-setup.html" class="settings-fix-link">${t("common.goToSettings")}</a>`;
   const archiveMessage =
     data.archive_status === "unattached"
-      ? `<p class="health-archive-message">${t("health.unattached")}</p>`
+      ? `<p class="health-archive-message">${t("health.unattached")}${settingsLink}</p>`
       : data.archive_status === "unavailable"
         ? `<p class="health-archive-message">${t("health.unavailable")}</p>`
         : data.archive_status === "misconfigured"

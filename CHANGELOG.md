@@ -108,6 +108,65 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `-8px` top margin (tuned for the compact login/register card it was designed for) pulled the
   subtitle up almost onto the wordmark's own line-height. Scoped override
   (`.setup-page__header .auth-card__subtitle`) removes just that negative margin on this page
+- `db/connection.py`'s new `is_missing_database_error()` referenced `OperationalError` in its own
+  signature without importing it - would have raised `NameError` at import time and taken the whole
+  app down on startup. Added the missing `sqlalchemy.exc.OperationalError` import
+- The four archive-reading tabs (`chats.js`/`messages.js`/`deleted.js`/`stats.js`) tracked only the
+  last *successful* page for their `televault:langchange` reactive re-render, silently doing nothing
+  for an error state - so an error message (e.g. "archive not set up yet") stayed frozen in whatever
+  language was active when it first appeared, only picking up a language change on the next real
+  reload or tab re-entry (which re-fetches). All four now track a single tagged-union
+  `lastRender` (`data` / `error` / `networkError`) and share one `redraw()` used by both the initial
+  load and the langchange listener, so every state - not just the successful one - re-renders
+  immediately on a language switch
+- `web/sw.js`'s `CACHE_NAME` was never bumped across several commits that changed precached shell
+  files (`errors.js`, `i18n/{en,uk}.js`, `health.js`, `app.js`, `base.css`) - the service worker's
+  fetch handler is strict cache-first with no revalidation, and the browser only re-runs `install`
+  (which is what actually re-fetches `SHELL_FILES`) when `sw.js` itself changes byte-for-byte, so
+  those edits could sit silently stale through any number of ordinary reloads. Bumped to v19 (fixes
+  the staleness) and added `login.html`/`register.html`/`telegram-setup.html` and their own JS,
+  `lib/auth.js`, `lib/chat-filter.js`, and the new `lib/archive-error.js` below, all previously
+  missing from `SHELL_FILES` entirely (never stale, just never precached)
+
+### Added (continued)
+
+- **Single-admin model.** TeleVault now has exactly one admin account, enforced at the database level
+  by a partial unique index (`ix_users_single_admin` on `users.is_admin WHERE is_admin = true` -
+  `control_db/schema.py`, migration `e7e73e114fac`). The old `promote_user_to_admin()` query function
+  and `scripts/manage_admin.py`'s `promote` subcommand are removed entirely - there is no "grant admin"
+  path any more, by design
+- **Bootstrap-admin-token registration** - solves the chicken-and-egg problem of the very first admin
+  needing an invite that only an admin could have created. An operator sets
+  `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` in `.env` (`config.py`); the first person to register through the
+  ordinary `POST /auth/register` with that exact value (constant-time compared) becomes the admin
+  automatically, indistinguishably from an ordinary registration from the caller's point of view. Works
+  exactly once per instance - `control_db.queries.admin_exists()` gates it, and the underlying unique
+  index makes a second admin impossible even under a race. `scripts/manage_admin.py`'s `create`
+  subcommand remains as a shell-access fallback and now refuses if an admin already exists
+- **Admin panel API** (`api/routes/admin.py`, all routes gated on the new `require_admin` dependency in
+  `api/dependencies.py`): `GET /admin/users` (list every account), `POST /admin/users/{id}/lock` and
+  `/unlock`, `DELETE /admin/users/{id}` (full account deletion, see below), `POST /admin/invites` and
+  `GET /admin/invites` - bringing most of `scripts/manage_admin.py`'s capabilities into the API/UI.
+  `create` (bootstrapping), `delete-admin`, and `set-archive` deliberately remain CLI-only
+- **Full, irreversible account deletion** - `control_db.queries.delete_user_completely()` removes the
+  `users` row itself (so the username becomes reusable), every refresh token (`ON DELETE CASCADE`), and
+  nulls out (not deletes) any invite `used_by`/audit-log `user_id`/`actor_id` reference that pointed at
+  the account (`ON DELETE SET NULL` - migration `e7e73e114fac`), keeping invite/audit history intact
+  without it pointing at a row that no longer exists. `db/deprovisioning.py`'s new
+  `drop_archive_database()` then drops the account's archive database entirely, mirroring
+  `db/provisioning.py`'s create path. Reachable via `DELETE /admin/users/{id}` for ordinary accounts, or
+  `scripts/manage_admin.py delete-admin` (never wired to HTTP) for the admin account itself
+- **Safety check before Telegram unlink or account deletion**: `api/process_utils.py`'s new
+  `running_process_reason()` refuses (409, reusing the existing `already_running`/`backfill_running`
+  reasons) to unlink a Telegram session (`DELETE /telegram/session`) or delete an account
+  (`DELETE /admin/users/{id}`, `scripts/manage_admin.py delete-admin`) while the live userbot or a
+  backfill is running against this instance - pulling a session or dropping a database out from under
+  either would corrupt or crash it
+- **Self-fix links for recoverable errors.** New `web/js/lib/archive-error.js`, shared by
+  `chats.js`/`messages.js`/`deleted.js`/`stats.js`, and `health.js`'s own archive message: an
+  `archive_unattached` error now includes a "Go to settings" link to `telegram-setup.html`. Deliberately
+  never shown for `archive_unavailable` (transient - nothing to click) or `archive_misconfigured`
+  (admin-only - the database was never created; a settings link couldn't fix it)
 
 ### Planned - Phase 3 (Advanced Features)
 

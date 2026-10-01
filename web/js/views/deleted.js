@@ -22,6 +22,7 @@ import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
+import { renderArchiveErrorState } from "../lib/archive-error.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -43,7 +44,7 @@ const deletedViewState = {
   // Populated from the chat filter's persisted (localStorage) selection - see initDeletedFilterBar().
   // Empty array means "All chats" - no chat_ids param is sent in that case.
   chatIds: [],
-  lastData: null,
+  lastRender: null,
   initialized: false,
   /** message_id -> DeletionOut-shaped detail object, or "error".
    *  Populated lazily on first expand; avoids re-fetching a record that can't change.
@@ -281,6 +282,19 @@ function renderDeletedView(root, data) {
   });
 }
 
+/** Render deletedViewState.lastRender's current value into `root` - see chatsViewState's redraw() (chats.js) for why this shape exists. */
+function redraw(root) {
+  const r = deletedViewState.lastRender;
+  if (!r) return;
+  if (r.type === "data") {
+    renderDeletedView(root, r.data);
+  } else if (r.type === "error") {
+    renderArchiveErrorState(root, r.detail);
+  } else {
+    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
+  }
+}
+
 /** Fetch one page of deleted messages (with current search applied), cache it, and render it. */
 async function loadDeleted(root) {
   root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
@@ -295,23 +309,22 @@ async function loadDeleted(root) {
     params.append("chat_ids", String(id)),
   );
 
-  let data;
   try {
     const res = await apiFetch(`/api/deleted?${params.toString()}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      root.innerHTML = `<div class="empty-state">${escapeHtml(describeError(body.detail))}</div>`;
+      deletedViewState.lastRender = { type: "error", detail: body.detail };
+      redraw(root);
       return;
     }
-    data = await res.json();
+    const data = await res.json();
+    deletedViewState.lastRender = { type: "data", data };
+    redraw(root);
   } catch {
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
-    root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
-    return;
+    deletedViewState.lastRender = { type: "networkError" };
+    redraw(root);
   }
-
-  deletedViewState.lastData = data;
-  renderDeletedView(root, data);
 }
 
 /**
@@ -399,7 +412,5 @@ document.addEventListener("televault:langchange", () => {
     initDeletedFilterBar(filterBarRoot, listRoot);
     filterBarRoot.querySelector("#deleted-search").value = currentQ;
   }
-  if (listRoot && deletedViewState.lastData) {
-    renderDeletedView(listRoot, deletedViewState.lastData);
-  }
+  if (listRoot) redraw(listRoot);
 });
