@@ -118,7 +118,8 @@ async def _discard_pending_link(user_id: int) -> None:
         pending = _pending_links.pop(user_id, None)
     if pending is not None:
         try:
-            await pending.client.disconnect()
+            await pending.client.disconnect()  # type: ignore[func-returns-value]  # Telethon's own stubs mistype disconnect() as returning None;
+            # it's awaitable at runtime regardless (telethon/client/telegrambaseclient.py).
         except Exception:
             pass  # best-effort cleanup - a half-torn-down client isn't worth failing the request over
 
@@ -177,6 +178,11 @@ def set_credentials(
 
     encrypted_api_id = encrypt_secret(str(api_id))
     encrypted_api_hash = encrypt_secret(body.api_hash)
+    # encrypt_secret()'s signature is (str | None) -> (str | None) - generic enough to also encrypt an absent value (e.g. clearing a credential) elsewhere.
+    # Here the inputs are str(api_id) and body.api_id, a required Pydantic field - both always str, so the result is always str too;
+    # assert narrows that for the type checker and doubles as a guard if that ever stops being true
+    # (these columns are nullable, so a silent None here would otherwise store NULL instead of failing loudly).
+    assert encrypted_api_id is not None and encrypted_api_hash is not None
     control_db.queries.set_telegram_credentials(control_conn, current["user_id"], encrypted_api_id, encrypted_api_hash)
     return TelegramCredentialsOut()
 
@@ -201,8 +207,17 @@ async def send_code(
             "telegram_credentials_missing",
         )
 
-    api_id = int(decrypt_secret(user["telegram_api_id"]))
-    api_hash = decrypt_secret(user["telegram_api_hash"])
+    api_id_ciphertext = user["telegram_api_id"]
+    api_hash_ciphertext = user["telegram_api_hash"]
+    # decrypt_secret()'s signature is (str | None) -> (str | None) - generic enough to also decrypt an absent value elsewhere.
+    # Both ciphertexts here are already guaranteed non-None by the is-None check just above, so the decrypted results are too;
+    # assert narrows that for the type checker rather than silently letting a None slip into int()
+    # (which would raise its own, less informative TypeError) or into api_hash below.
+    raw_api_id = decrypt_secret(api_id_ciphertext)
+    raw_api_hash = decrypt_secret(api_hash_ciphertext)
+    assert raw_api_id is not None and raw_api_hash is not None
+    api_id = int(raw_api_id)
+    api_hash = raw_api_hash
 
     await _discard_pending_link(current["user_id"])
 
@@ -211,13 +226,13 @@ async def send_code(
         await client.connect()
         sent = await client.send_code_request(body.phone)
     except ApiIdInvalidError:
-        await client.disconnect()
+        await client.disconnect()  # type: ignore[func-returns-value]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
         raise _reason(400, "The saved api_id/api_hash pair isn't valid.", "invalid_api_credentials")
     except PhoneNumberInvalidError:
-        await client.disconnect()
+        await client.disconnect()  # type: ignore[func-returns-value]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
         raise _reason(400, "That phone number isn't valid.", "telegram_invalid_phone")
     except FloodWaitError:
-        await client.disconnect()
+        await client.disconnect()  # type: ignore[func-returns-value]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
         raise _reason(429, "Telegram is asking us to slow down. Wait a few minutes before trying again.", "telegram_flood_wait")
 
     async with _lock:
@@ -279,8 +294,12 @@ async def confirm(
         raise _reason(429, "Telegram is asking us to slow down. Wait a few minutes before trying again.", "telegram_flood_wait")
 
     # Signed in - extract, encrypt, and save the session string, then tear down the in-memory client.
-    session_string = pending.client.session.save()
-    control_db.queries.set_telegram_session(control_conn, current["user_id"], encrypt_secret(session_string))
+    session_string = pending.client.session.save()  # type: ignore[union-attr]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
+    encrypted_session = encrypt_secret(session_string)
+    # encrypt_secret()'s signature is (str | None) -> (str | None) - session.save() above always returns a str at runtime, so the result is always str too;
+    # assert narrows that for the type checker (see set_credentials()'s own comment on this exact pattern, above).
+    assert encrypted_session is not None
+    control_db.queries.set_telegram_session(control_conn, current["user_id"], encrypted_session)
     await _discard_pending_link(current["user_id"])
     return TelegramConfirmOut(linked=True)
 
