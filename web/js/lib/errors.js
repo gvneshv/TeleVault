@@ -18,6 +18,7 @@ const ERROR_REASON_KEYS = {
   archive_unavailable: "error.archiveUnavailable",
   archive_misconfigured: "error.archiveMisconfigured",
   not_instance_owner: "error.notInstanceOwner",
+  not_admin: "error.notAdmin",
   db_unavailable: "error.dbUnavailable",
   control_db_unavailable: "error.dbUnavailable",
 

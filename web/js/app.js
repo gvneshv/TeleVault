@@ -24,7 +24,8 @@ import { initStatsView } from "./views/stats.js";
 import { initHealthView } from "./views/health.js";
 import { initBackfillView } from "./views/backfill.js";
 import { initSettingsView } from "./views/settings.js";
-import { logout, isAdmin } from "./lib/auth.js";
+import { initAdminView } from "./views/admin.js";
+import { logout, isAdmin, fetchCurrentUser } from "./lib/auth.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   const links = document.querySelectorAll(".app-nav__link[data-view]");
@@ -50,6 +51,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (viewName === "health") initHealthView();
     if (viewName === "backfill") initBackfillView();
     if (viewName === "settings") initSettingsView();
+    if (viewName === "admin") initAdminView();
   }
 
   links.forEach((link) => {
@@ -69,15 +71,32 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // "admin" badge next to the wordmark (see lib/auth.js's isAdmin() for why this is UI-only, never an access check).
+  // "admin" badge next to the wordmark, and the Admin nav tab itself
+  // (see lib/auth.js's isAdmin() for why this is UI-only, never an access check - api.dependencies.require_admin is the real gate).
   // Driven by the "televault:authchange" event (also lib/auth.js) rather than checked once here,
   // since accessToken isn't populated yet at DOMContentLoaded time - refresh-on-load resolves asynchronously
   // (chats.js/archiver-toggle.js each kick it off independently;
   // see this file's own module docstring on why there's no shared init).
   const adminBadge = document.getElementById("admin-badge");
-  if (adminBadge) {
-    document.addEventListener("televault:authchange", () => {
-      adminBadge.hidden = !isAdmin();
-    });
-  }
+  const adminNavLink = document.getElementById("admin-nav-link");
+  // Current username, shown under the wordmark - deliberately plain text, not a link or button
+  // (the person asked for a quiet reminder of who they're logged in as while testing multiple accounts, not another control).
+  // Needs its own fetchCurrentUser() call (GET /auth/me) rather than a JWT claim like is_admin above:
+  // the access token never carried a username claim and adding one would mean re-issuing every token shape -
+  // one extra request on login is simpler and has no security implications either way.
+  const usernameEl = document.getElementById("current-username");
+  document.addEventListener("televault:authchange", async (event) => {
+    const admin = isAdmin();
+    if (adminBadge) adminBadge.hidden = !admin;
+    if (adminNavLink) adminNavLink.hidden = !admin;
+
+    if (usernameEl) {
+      if (event.detail.state === "in") {
+        const me = await fetchCurrentUser();
+        usernameEl.textContent = me ? me.username : "";
+      } else {
+        usernameEl.textContent = "";
+      }
+    }
+  });
 });

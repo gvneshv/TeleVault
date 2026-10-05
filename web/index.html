@@ -38,6 +38,8 @@
         <span class="app-nav__wordmark" data-i18n="app.wordmark">TeleVault</span>
         <span id="admin-badge" class="info-badge" data-i18n="app.adminBadge" hidden>Admin</span>
       </a>
+      <!-- Not a link, not a button - see app.js's own comment on #current-username for why this is deliberately inert. -->
+      <div id="current-username" class="app-nav__username"></div>
 
       <ul class="app-nav__list">
         <li><button class="app-nav__link" data-view="chats" aria-current="page">
@@ -60,6 +62,12 @@
         </button></li>
         <li><button class="app-nav__link" data-view="settings">
           <span data-i18n="nav.settings">Settings</span>
+        </button></li>
+        <!-- Hidden for non-admins by app.js (isAdmin(), same check the wordmark's admin badge already uses) -
+             real enforcement is server-side (api.dependencies.require_admin);
+             this is purely so a non-admin never sees a tab that would just 403. -->
+        <li><button id="admin-nav-link" class="app-nav__link" data-view="admin" hidden>
+          <span data-i18n="nav.admin">Admin</span>
         </button></li>
       </ul>
 
@@ -124,6 +132,12 @@
         <h1 data-i18n="nav.settings">Settings</h1>
         <!-- Populated by js/views/settings.js -->
         <div id="settings-root"></div>
+      </section>
+
+      <section class="app-view" data-view="admin" hidden>
+        <h1 data-i18n="nav.admin">Admin</h1>
+        <!-- Populated by js/views/admin.js -->
+        <div id="admin-root"></div>
       </section>
     </main>
   </div>

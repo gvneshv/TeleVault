@@ -17,6 +17,7 @@ export const en = {
   "nav.stats": "Stats",
   "nav.health": "Health",
   "nav.settings": "Settings",
+  "nav.admin": "Admin",
 
   "common.comingSoon": "This view isn't built yet.",
   "common.loading": "Loading…",
@@ -172,6 +173,7 @@ export const en = {
     "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator immediately.",
   "error.notInstanceOwner":
     "This account does not control this instance's Telegram connection.",
+  "error.notAdmin": "This action requires admin privileges.",
   "error.dbUnavailable":
     "The database is currently unavailable. Try again shortly, or contact your administrator.",
 
@@ -304,4 +306,38 @@ export const en = {
     "This account already has an archive database.",
   "error.provisioningPermissionDenied":
     "The database role TeleVault connects as doesn't have permission to create databases. Contact your administrator.",
+
+  // Admin panel (web/js/views/admin.js)
+  "admin.usersCardTitle": "Users",
+  "admin.roleAdmin": "Admin",
+  "admin.statusLocked": "Locked",
+  "admin.youLabel": "(you)",
+  "admin.adminLabel": "Admin account",
+  "admin.lockButton": "Lock",
+  "admin.unlockButton": "Unlock",
+  "admin.deleteButton": "Delete",
+  "admin.tgLinked": "Telegram linked",
+  "admin.tgNotLinked": "Telegram not linked",
+  "admin.archiveSet": "Archive set up",
+  "admin.archiveMissing": "No archive",
+  "admin.createdLabel": "Created",
+  "admin.lastLoginLabel": "Last login",
+  "admin.lockConfirm":
+    "Lock this account? They won't be able to log in until you unlock it.",
+  "admin.unlockConfirm": "Unlock this account?",
+  "admin.deleteConfirmPrompt":
+    'This permanently deletes the account, its archive database, and its Telegram link. Type "{username}" to confirm:',
+  "admin.invitesCardTitle": "Invites",
+  "admin.invitesCardBody":
+    "Create a single-use invite token for someone to register with. Hand it to them directly - anyone who has it can register before it expires.",
+  "admin.expiresHoursLabel": "Expires in (hours)",
+  "admin.createInviteButton": "Create invite",
+  "admin.creatingInvite": "Creating…",
+  "admin.noInvitesYet": "No invites created yet.",
+  "admin.inviteCreatedLabel":
+    "Invite created - copy it now, it won't be shown again:",
+  "admin.inviteExpiresLabel": "Expires",
+  "admin.inviteUnused": "Not used yet",
+  "admin.inviteUsedBy": "Used by",
+  "admin.inviteUsedByDeleted": "(account since deleted)",
 };

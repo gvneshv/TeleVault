@@ -36,7 +36,7 @@
 
 import { t } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
-import { apiFetch, isAdmin } from "../lib/auth.js";
+import { apiFetch, isAdmin, fetchCurrentUser } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
 
 // Reasons from POST /telegram/link/confirm that mean "the handshake itself is dead" rather than "you typed the wrong thing" -
@@ -567,7 +567,20 @@ document.addEventListener("televault:langchange", () => {
 // "admin" badge next to this page's own wordmark - same reasoning and same UI-only caveat as app.js's copy of this (see lib/auth.js's isAdmin()).
 // This page has its own header (web/telegram-setup.html), not index.html's nav rail, so it needs its own listener rather than sharing app.js's
 // (a separate ES module entry point - see this file's own top-of-file docstring on why the setup page and the app shell don't share init code).
-document.addEventListener("televault:authchange", () => {
+// Current username, shown under the wordmark - deliberately plain text,
+// not a link or button (a quiet reminder of who you're logged in as while testing multiple accounts, not another control).
+// See app.js's copy of this exact comment for why it needs its own fetchCurrentUser() call rather than a JWT claim.
+document.addEventListener("televault:authchange", async (event) => {
   const adminBadge = document.getElementById("admin-badge");
   if (adminBadge) adminBadge.hidden = !isAdmin();
+
+  const usernameEl = document.getElementById("current-username");
+  if (usernameEl) {
+    if (event.detail.state === "in") {
+      const me = await fetchCurrentUser();
+      usernameEl.textContent = me ? me.username : "";
+    } else {
+      usernameEl.textContent = "";
+    }
+  }
 });

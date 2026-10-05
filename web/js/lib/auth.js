@@ -69,20 +69,56 @@ function setAuthState(state) {
 }
 
 /**
- * Decode the CURRENT accessToken's payload for its `is_admin` claim, without verifying the signature.
- * This is a UI-only convenience (e.g. showing an "admin" badge next to the wordmark) - it must NEVER be treated as an access check.
- * Every admin-only endpoint re-verifies is_admin server-side on every request (see utils/security.py's create_access_token()/decode_access_token());
+ * Decode the CURRENT accessToken's payload, without verifying the signature.
+ * UI-only, same caveat for every caller of this (isAdmin()/getCurrentUserId() below): this must NEVER be treated as an access check or as trustworthy identity.
+ * Every protected endpoint re-verifies the token server-side on every request (see utils/security.py's create_access_token()/decode_access_token());
  * nothing here could substitute for that even if it were wrong, tampered with, or simply stale relative to a change another session just made.
- * Returns false (not throws) for a missing/malformed token, since callers only ever want a yes/no for a badge.
+ * Returns null (not throws) for a missing/malformed token.
  */
-function isAdmin() {
-  if (!accessToken) return false;
+function decodeAccessTokenClaims() {
+  if (!accessToken) return null;
   try {
     const payload = accessToken.split(".")[1];
     const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return Boolean(JSON.parse(json).is_admin);
+    return JSON.parse(json);
   } catch {
-    return false;
+    return null;
+  }
+}
+
+/** UI-only convenience (e.g. showing an "admin" badge next to the wordmark) - see decodeAccessTokenClaims()'s own docstring. */
+function isAdmin() {
+  return Boolean(decodeAccessTokenClaims()?.is_admin);
+}
+
+/**
+ * UI-only convenience (e.g. telling "is this row me?" apart in the admin user list, web/js/views/admin.js) - see decodeAccessTokenClaims()'s own docstring.
+ * Returns null rather than a number for "don't know" so callers can't mistake it for a real,
+ * falsy-but-valid id (user id 0 can't occur here since Postgres Identity columns start at 1, but null is still the honest "no claim decoded" value regardless).
+ */
+function getCurrentUserId() {
+  const claims = decodeAccessTokenClaims();
+  return claims && typeof claims.user_id === "number" ? claims.user_id : null;
+}
+
+/**
+ * Fetch and cache GET /auth/me's response (username, is_admin, etc. - see api/schemas/auth.py's UserOut) for this page load.
+ * Cached rather than re-fetched on every call: callers (app.js, telegram-setup.js) want this once,
+ * right after auth resolves, to show the signed-in username next to the wordmark - not a live profile view that needs to track in-session changes
+ * (a username change, were one ever added, would need its own cache-busting at that point, not before).
+ * Returns null on any failure (network, 401 that redirectToLogin() already handles via apiFetch()) - callers treat that the same as "nothing to show", not a crash.
+ */
+let cachedMe = null;
+
+async function fetchCurrentUser() {
+  if (cachedMe) return cachedMe;
+  try {
+    const res = await apiFetch("/api/auth/me");
+    if (!res.ok) return null;
+    cachedMe = await res.json();
+    return cachedMe;
+  } catch {
+    return null;
   }
 }
 
@@ -157,6 +193,7 @@ async function logout() {
     // Not worth blocking the user's own logout on a flaky connection to enforce that.
   }
   accessToken = null;
+  cachedMe = null;
   redirectToLogin();
 }
 
@@ -244,4 +281,6 @@ export {
   apiFetch,
   setAuthState,
   isAdmin,
+  getCurrentUserId,
+  fetchCurrentUser,
 };

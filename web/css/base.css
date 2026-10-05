@@ -223,7 +223,7 @@ input:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px 20px;
+  padding: 0 8px 2px;
   text-decoration: none;
 }
 
@@ -233,6 +233,21 @@ input:focus-visible {
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--color-ink);
+}
+
+/* Current username (app.js) - a quiet reminder of who's logged in while testing multiple accounts,
+   deliberately NOT a link or button (plain text, no hover/focus treatment) and visually subordinate to the wordmark above it:
+   small, muted, monospace (same family timestamps/IDs use elsewhere in this app for de-emphasized text).
+   The 20px bottom padding .app-nav__wordmark-link lost above moves here,
+   so the gap before the nav list is the same whether or not a username happens to be populated yet. */
+.app-nav__username {
+  padding: 0 8px 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-nav__list {
@@ -1146,8 +1161,8 @@ input:focus-visible {
 }
 
 /* "misconfigured" (HealthOut.archive_status) is a permanent, admin-only-fixable state,
-    unlike the plain .health-archive-message text used for "unattached"/"unavailable" - it's styled like .auth-card__error (same --color-seal pairing)
-    so it reads as more urgent than "try again shortly" ever should. */
+   unlike the plain .health-archive-message text used for "unattached"/"unavailable" -
+   it's styled like .auth-card__error (same --color-seal pairing) so it reads as more urgent than "try again shortly" ever should. */
 .health-archive-message--urgent {
   padding: 8px 10px;
   border-radius: var(--radius-sm);
@@ -1200,6 +1215,16 @@ input:focus-visible {
   gap: 8px;
   text-decoration: none;
   margin-bottom: 8px;
+}
+
+/* Current username (telegram-setup.js) - same quiet, inert reminder as .app-nav__username (index.html's nav rail); see that rule's own comment for the full reasoning.
+   Centered and given its own small bottom margin here (rather than reusing .auth-card__subtitle's spacing)
+   since it sits between the wordmark and the subtitle, not after both. */
+.setup-page__username {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-muted);
 }
 
 /* .auth-card__subtitle's own -8px top margin is tuned for login/register,
@@ -1261,6 +1286,12 @@ input:focus-visible {
   border: 1px solid var(--color-border);
   margin-bottom: 20px;
   max-width: 420px;
+}
+
+/* web/js/views/admin.js's two cards (users, invites) need more room than a settings form ever does -
+   a username plus role/lock badges plus lock/delete buttons on one line doesn't fit .settings-card's 420px. */
+.settings-card--admin {
+  max-width: 720px;
 }
 
 .settings-card h2 {
@@ -1337,6 +1368,107 @@ input:focus-visible {
   font-size: 12.5px;
 }
 
+/* ---------------------------------------------------------------------
+   Admin panel (web/js/views/admin.js) - user list and invites card.
+   ------------------------------------------------------------------- */
+
+.admin-user-list,
+.admin-invite-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-user-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.admin-user-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.admin-user-row__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-user-row__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-user-row__name {
+  font-weight: 600;
+}
+
+/* Same seal/danger pairing as .health-archive-message--urgent and .modal__btn--danger - a locked account is the one status in this list worth drawing the eye to. */
+.admin-user-row__locked-badge {
+  border-color: var(--color-seal);
+  color: var(--color-seal);
+}
+
+.admin-user-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-muted);
+}
+
+.admin-user-row__actions {
+  flex-shrink: 0;
+}
+
+.admin-invite-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+
+.admin-invite-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* Shown once, right after a successful create - see api/schemas/admin.py's AdminInviteOut docstring for why the token itself can never be shown again after this.
+   Seal-toned border, same as .modal__btn--danger,
+   not because this is an error but because it's the one thing on this card the admin needs to notice and act on (copy it) before navigating away. */
+.admin-invite-result {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--color-seal);
+  border-radius: var(--radius-sm);
+}
+
+.admin-invite-token {
+  display: block;
+  margin: 6px 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  word-break: break-all;
+  user-select: all;
+}
+
 /* Numbered how-to list (e.g. getting the Telegram API ID/hash) - same muted type as .settings-help.
    Links inside open in a new tab (target=_blank is set in the markup) and match .auth-card__switch a. */
 .settings-guide {
@@ -1375,6 +1507,11 @@ input:focus-visible {
 
   .app-nav__wordmark-link {
     padding: 0 12px 0 0;
+  }
+
+  .app-nav__username {
+    padding: 0 12px 0 0;
+    max-width: 120px;
   }
 
   .app-nav__list {

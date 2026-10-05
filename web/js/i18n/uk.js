@@ -13,6 +13,7 @@ export const uk = {
   "nav.stats": "Статистика",
   "nav.health": "Стан системи",
   "nav.settings": "Налаштування",
+  "nav.admin": "Адміністрування",
 
   "common.comingSoon": "Цей розділ ще не готовий.",
   "common.loading": "Завантаження…",
@@ -168,6 +169,7 @@ export const uk = {
     "Посилання на вашу базу даних архіву неправильне, і це неможливо виправити повторною спробою. Негайно зверніться до адміністратора.",
   "error.notInstanceOwner":
     "Цей обліковий запис не керує підключенням Telegram цього інстансу.",
+  "error.notAdmin": "Ця дія потребує прав адміністратора.",
   "error.dbUnavailable":
     "База даних тимчасово недоступна. Спробуйте пізніше або зверніться до адміністратора.",
 
@@ -295,4 +297,38 @@ export const uk = {
   "error.archiveAlreadyProvisioned": "У цього акаунта вже є база даних архіву.",
   "error.provisioningPermissionDenied":
     "Роль бази даних, під якою підключається TeleVault, не має прав на створення баз даних. Зверніться до адміністратора.",
+
+  // Admin panel (web/js/views/admin.js)
+  "admin.usersCardTitle": "Користувачі",
+  "admin.roleAdmin": "Адмін",
+  "admin.statusLocked": "Заблоковано",
+  "admin.youLabel": "(ви)",
+  "admin.adminLabel": "Обліковий запис адміна",
+  "admin.lockButton": "Заблокувати",
+  "admin.unlockButton": "Розблокувати",
+  "admin.deleteButton": "Видалити",
+  "admin.tgLinked": "Telegram підключено",
+  "admin.tgNotLinked": "Telegram не підключено",
+  "admin.archiveSet": "Архів налаштовано",
+  "admin.archiveMissing": "Без архіву",
+  "admin.createdLabel": "Створено",
+  "admin.lastLoginLabel": "Останній вхід",
+  "admin.lockConfirm":
+    "Заблокувати цей обліковий запис? Користувач не зможе увійти, доки ви його не розблокуєте.",
+  "admin.unlockConfirm": "Розблокувати цей обліковий запис?",
+  "admin.deleteConfirmPrompt":
+    'Це остаточно видалить обліковий запис, його базу даних архіву та підключення Telegram. Введіть "{username}" для підтвердження:',
+  "admin.invitesCardTitle": "Запрошення",
+  "admin.invitesCardBody":
+    "Створіть одноразовий токен запрошення для реєстрації. Передайте його напряму - будь-хто, у кого він є, може зареєструватися до завершення терміну дії.",
+  "admin.expiresHoursLabel": "Діє протягом (годин)",
+  "admin.createInviteButton": "Створити запрошення",
+  "admin.creatingInvite": "Створення…",
+  "admin.noInvitesYet": "Запрошень ще не створено.",
+  "admin.inviteCreatedLabel":
+    "Запрошення створено - скопіюйте зараз, повторно воно не відображатиметься:",
+  "admin.inviteExpiresLabel": "Діє до",
+  "admin.inviteUnused": "Ще не використано",
+  "admin.inviteUsedBy": "Використав(ла)",
+  "admin.inviteUsedByDeleted": "(обліковий запис видалено)",
 };

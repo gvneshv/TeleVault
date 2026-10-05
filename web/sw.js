@@ -19,9 +19,11 @@
  * and also adds every shell file that had been missing from SHELL_FILES entirely
  * (login.html/register.html/telegram-setup.html and their own JS, lib/auth.js, lib/chat-filter.js, lib/archive-error.js) -
  * those were never stale, just never precached/offline-capable at all, which is a smaller gap but the same kind of drift.
+ * v20 bumps again for the same reason as v19 (shell files changed: index.html, telegram-setup.html, app.js, auth.js, telegram-setup.js, base.css, i18n/{en,uk}.js)
+ * and adds the new admin.js to SHELL_FILES.
  */
 
-const CACHE_NAME = "televault-shell-v19";
+const CACHE_NAME = "televault-shell-v20";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -49,6 +51,7 @@ const SHELL_FILES = [
   "/js/views/health.js",
   "/js/views/backfill.js",
   "/js/views/settings.js",
+  "/js/views/admin.js",
   "/js/views/telegram-setup.js",
   "/js/views/login.js",
   "/js/views/register.js",

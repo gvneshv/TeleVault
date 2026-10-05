@@ -168,6 +168,36 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never shown for `archive_unavailable` (transient - nothing to click) or `archive_misconfigured`
   (admin-only - the database was never created; a settings link couldn't fix it)
 
+- **Admin panel UI** (`web/js/views/admin.js`, new "Admin" nav tab in `index.html`, hidden for non-admins):
+  wires `api/routes/admin.py` into the app - a Users card (lock/unlock, and delete with a
+  type-the-username-to-confirm prompt, same posture as `scripts/manage_admin.py`'s own `delete-admin`) and
+  an Invites card (create a token with a configurable expiry, shown once; a history list of past invites)
+- **Current username shown under the "TeleVault" wordmark** on both `index.html` and `telegram-setup.html` -
+  plain, muted text, deliberately not a link or button, so it's easy to tell which test account you're
+  logged in as without it competing for attention. Fetched once via `GET /auth/me` and cached
+  (`lib/auth.js`'s new `fetchCurrentUser()`) rather than added as a JWT claim, to avoid touching token
+  issuance for a purely cosmetic reminder
+- `.env.example` was missing `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` entirely - added, with the same
+  `openssl rand` convention as `FERNET_KEY`/`JWT_SECRET`
+
+### Fixed (continued)
+
+- Three pre-existing static-typing gaps in `api/routes/telegram.py` (not runtime bugs, but real strict-mode
+  type-checker complaints): `encrypt_secret()`/`decrypt_secret()`'s generic `str | None -> str | None`
+  signature was triggering `str | None` vs `str` mismatches at every call site in this file (the only
+  caller of either function anywhere in the codebase) even though each call site already guarantees a
+  non-`None` input - added explicit `assert ...is not None` at each site, which satisfies the type checker
+  and doubles as a real guard (these are nullable columns; a silent `None` getting through would otherwise
+  store `NULL` instead of failing loudly). Telethon's own type stubs separately mistype
+  `TelegramClient.disconnect()` and `.session` as non-awaitable/`None` - narrow, commented
+  `# type: ignore[...]` added at each of those four call sites instead, since that one's a stub gap, not
+  ours to fix
+- Migration `e7e73e114fac`'s `ix_users_single_admin` can fail with a `UniqueViolation` on an instance that
+  has more than one `is_admin = true` row already (e.g. from testing `scripts/manage_admin.py create`
+  before the single-admin model existed) - resolve by demoting every row but the one real admin
+  (`UPDATE users SET is_admin = false WHERE id <> <id>;`) before re-running `alembic upgrade head`; this
+  is a one-time manual data-cleanup step, not something the migration itself should paper over
+
 ### Planned - Phase 3 (Advanced Features)
 
 - Admin API endpoints (invite creation, listing/locking users) for the auth backend above -
