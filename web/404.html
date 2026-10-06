@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeleVault - Page not archived</title>
+  <meta name="theme-color" content="#14181d" />
+  <!-- Search engines/bots: this is an error page, never index it. -->
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <!--
+    ABSOLUTE asset paths on purpose: the server returns this one file for ANY unknown URL, however deep (/a/b/c/nope),
+    so a relative "css/base.css" would resolve against that bogus path and the page would render unstyled.
+  -->
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <!--
+    Served by api/server.py (_WebStaticFiles) with a real HTTP 404 status.
+    Reuses the auth pages' centered layout and theme/language controls;
+    deliberately NOT gated on data-auth and makes no API calls - an error page must work whether or not the person is signed in (and even if the API is down).
+  -->
+  <div class="auth-page">
+    <div class="auth-page__controls">
+      <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+      <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="uk">UK</option>
+      </select>
+    </div>
+
+    <main class="notfound-card">
+      <!--
+        Illustration: an empty archive folder, with the messages that should have been inside it dissolving upward.
+        Pure inline SVG using the theme's CSS variables, so it follows light/dark automatically.
+        Decorative -> aria-hidden.
+      -->
+      <svg class="notfound-card__art" viewBox="0 0 200 130" aria-hidden="true" focusable="false">
+        <g class="notfound-card__dust">
+          <rect x="62" y="30" width="30" height="18" rx="5" />
+          <rect x="108" y="16" width="24" height="14" rx="4" />
+          <rect x="88" y="4" width="16" height="10" rx="3" />
+          <circle cx="142" cy="44" r="2.5" />
+          <circle cx="54" cy="14" r="2" />
+          <circle cx="124" cy="6" r="1.8" />
+        </g>
+        <path class="notfound-card__folder" d="M30 62 h46 l10 10 h84 a6 6 0 0 1 6 6 v38 a6 6 0 0 1 -6 6 H30 a6 6 0 0 1 -6 -6 V68 a6 6 0 0 1 6 -6 z" />
+        <path class="notfound-card__folder-front" d="M24 84 h152 v26 a6 6 0 0 1 -6 6 H30 a6 6 0 0 1 -6 -6 z" />
+      </svg>
+
+      <p class="notfound-card__code">404</p>
+      <h1 class="notfound-card__title" data-i18n="notFound.title">This page wasn't archived</h1>
+      <p class="notfound-card__body" data-i18n="notFound.body">
+        Nothing lives at this address. Unlike your messages, this page was never saved.
+      </p>
+      <a class="notfound-card__link" href="/" data-i18n="notFound.button">Back to your archive</a>
+    </main>
+  </div>
+
+  <!-- i18n.js initializes itself on DOMContentLoaded (applies data-i18n, wires #lang-select), so no page-specific script is needed. -->
+  <script type="module" src="/js/i18n.js"></script>
+</body>
+</html>

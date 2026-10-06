@@ -25,9 +25,11 @@
  * adds the new lib/dialog.js, and REMOVES admin.js from SHELL_FILES again: it is now only loaded (dynamic import) for the admin account,
  * so precaching it on every device would put the admin UI's code into every user's browser cache for no benefit.
  * Not precached means the fetch handler below simply falls through to the network for it - the admin panel needs the live API anyway.
+ * v22 bumps for base.css (404 + invite spacing) and i18n/{en,uk}.js (notFound.* strings). 404.html itself is deliberately NOT in SHELL_FILES:
+ * it is only ever the server's answer to an unknown URL, and the fetch handler below passes that response straight through.
  */
 
-const CACHE_NAME = "televault-shell-v21";
+const CACHE_NAME = "televault-shell-v22";
 const SHELL_FILES = [
   "/",
   "/index.html",

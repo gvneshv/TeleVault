@@ -358,4 +358,9 @@ export const en = {
   "dialog.typedBlank": "Type the text exactly as shown to continue.",
   "dialog.typedMismatch":
     "That doesn't match. Check spelling and capitalization.",
+  // 404 page (web/404.html)
+  "notFound.title": "This page wasn't archived",
+  "notFound.body":
+    "Nothing lives at this address. Unlike your messages, this page was never saved.",
+  "notFound.button": "Back to your archive",
 };

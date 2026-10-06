@@ -23,6 +23,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import control_db
 import db
@@ -135,10 +136,29 @@ app.include_router(admin.router,     prefix="/api", dependencies=[Depends(requir
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
+class _WebStaticFiles(StaticFiles):
+    """
+    StaticFiles with one deliberate carve-out: unknown /api/... paths keep the plain JSON 404.
+
+    With html=True, StaticFiles already serves web/404.html (with a real 404 status) for any path that matches no file -
+    exactly what we want for a person mistyping a page URL, and why adding web/404.html is the whole "custom 404 page" feature.
+    But this mount sits at "/", so it is also what catches a request for an API route that doesn't exist (a typo'd or removed endpoint).
+    The frontend's apiFetch() and any script calling the API expect a JSON body there, not an HTML page -
+    so for that namespace we skip the HTML fallback and raise the ordinary 404, which FastAPI renders as {"detail": "Not Found"} like before.
+
+    `path` is relative to the mount point ("/"), so "/api/foo" arrives as "api/foo".
+    """
+
+    async def get_response(self, path, scope):
+        if path == "api" or path.startswith("api/"):
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
 if _WEB_DIR.exists():
     # Mount at "/" so index.html is served at the root.
-    # The API routes registered above take precedence because FastAPI matches them before falling through to StaticFiles.
-    app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")
+    # The API routes registered above take precedence because FastAPI matches them before falling through to the static mount.
+    app.mount("/", _WebStaticFiles(directory=_WEB_DIR, html=True), name="web")
 else:
     import logging
     logging.getLogger(__name__).warning(

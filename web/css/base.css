@@ -1524,6 +1524,7 @@ input:focus-visible {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
+  margin-bottom: 16px; /* breathing room before the token result / search box below */
   --admin-control-height: 36px;
 }
 
@@ -1565,6 +1566,100 @@ input:focus-visible {
 .admin-btn--sm {
   padding: 4px 10px;
   font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------------
+   404 page (web/404.html) - sits inside the shared .auth-page centered layout
+   ------------------------------------------------------------------- */
+
+.notfound-card {
+  width: 100%;
+  max-width: 380px;
+  margin: 16px;
+  padding: 32px 28px;
+  text-align: center;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 24px var(--color-shadow);
+}
+
+.notfound-card__art {
+  width: 180px;
+  height: auto;
+  margin: 0 auto 4px;
+  fill: none;
+  stroke: var(--color-ink-muted);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.notfound-card__folder-front {
+  fill: var(--color-bg-raised);
+}
+
+/* The "lost messages": seal-colored (the app's color for gone/preserved things), fading out as they rise. */
+.notfound-card__dust rect {
+  stroke: var(--color-seal);
+  stroke-dasharray: 3 3;
+}
+
+.notfound-card__dust circle {
+  fill: var(--color-seal);
+  stroke: none;
+}
+
+.notfound-card__dust {
+  animation: notfound-drift 4s ease-in-out infinite alternate;
+}
+
+@keyframes notfound-drift {
+  from { transform: translateY(2px); opacity: 0.9; }
+  to   { transform: translateY(-4px); opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notfound-card__dust { animation: none; }
+}
+
+.notfound-card__code {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--color-seal);
+}
+
+.notfound-card__title {
+  margin: 4px 0 10px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.notfound-card__body {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+}
+
+.notfound-card__link {
+  display: inline-block;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.notfound-card__link:hover,
+.notfound-card__link:focus-visible {
+  border-color: var(--color-ink-muted);
 }
 
 /* Numbered how-to list (e.g. getting the Telegram API ID/hash) - same muted type as .settings-help.
