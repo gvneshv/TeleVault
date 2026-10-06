@@ -63,12 +63,9 @@
         <li><button class="app-nav__link" data-view="settings">
           <span data-i18n="nav.settings">Settings</span>
         </button></li>
-        <!-- Hidden for non-admins by app.js (isAdmin(), same check the wordmark's admin badge already uses) -
-             real enforcement is server-side (api.dependencies.require_admin);
-             this is purely so a non-admin never sees a tab that would just 403. -->
-        <li><button id="admin-nav-link" class="app-nav__link" data-view="admin" hidden>
-          <span data-i18n="nav.admin">Admin</span>
-        </button></li>
+        <!-- The Admin tab is deliberately NOT in this file: app.js creates it (mountAdminTab) only once the signed-in account is confirmed to be the admin,
+             so a non-admin's DOM never contains it.
+             See that function for what this does and doesn't protect. -->
       </ul>
 
       <div class="app-nav__spacer"></div>
@@ -132,12 +129,6 @@
         <h1 data-i18n="nav.settings">Settings</h1>
         <!-- Populated by js/views/settings.js -->
         <div id="settings-root"></div>
-      </section>
-
-      <section class="app-view" data-view="admin" hidden>
-        <h1 data-i18n="nav.admin">Admin</h1>
-        <!-- Populated by js/views/admin.js -->
-        <div id="admin-root"></div>
       </section>
     </main>
   </div>
