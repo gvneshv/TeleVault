@@ -4,6 +4,11 @@ A personal Telegram userbot that archives all your messages in real time and
 preserves deleted ones so you can retrieve them later - with a web UI to
 browse, search, and review what's been archived.
 
+> **Disclaimer:** TeleVault is an independent, community-built project and is
+> not affiliated with, endorsed by, or in any way officially connected to
+> Telegram Messenger or Telegram FZ-LLC. Use of this software is at your own
+> risk and responsibility.
+
 **Phase 1 (userbot):** text messages only, all chat types, PostgreSQL storage.
 **Phase 2 (web UI):** read-only REST API + installable PWA - Chats, Messages,
 Deleted, Stats, and Health views, backfill for historical messages, a
@@ -352,9 +357,11 @@ Health in the nav rail.
 > instance's Telegram connection" there, which is expected too, not an
 > error to fix.
 >
-> For exercising raw endpoints directly (without the web UI), **http://localhost:8000/api/docs**
-> still works - click "Authorize" and paste the `access_token` from
-> `POST /auth/login`.
+> For exercising raw endpoints directly (without the web UI), set
+> `ENABLE_API_DOCS=true` in your local `.env`, restart the API, and open
+> **http://localhost:8000/api/docs** - click "Authorize" and paste the
+> `access_token` from `POST /auth/login`. The docs are off by default (see
+> `.env.example` for why).
 
 A few things worth knowing:
 
@@ -369,8 +376,9 @@ A few things worth knowing:
   theme, EN/UK for language) - on narrow/mobile screens, where the nav
   collapses to a top bar, they move to the right end of that bar instead.
   Both persist across visits via `localStorage`.
-- **Interactive API docs:** available at `http://localhost:8000/api/docs`
-  (Swagger UI) if you want to explore the endpoints directly.
+- **Interactive API docs:** off by default; with `ENABLE_API_DOCS=true` in
+  `.env` they're available at `http://localhost:8000/api/docs` (Swagger UI)
+  and `/api/redoc` if you want to explore the endpoints directly.
 - **Deployment note:** for always-on use, run this the same way as the
   userbot (systemd, etc.), with Nginx proxying `/api/*` to this process and
   serving `/` - see `api/server.py`'s docstring for the exact setup.
