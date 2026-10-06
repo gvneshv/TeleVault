@@ -165,6 +165,50 @@ def create_invite(conn: Connection, created_by: int, expires_at: datetime) -> st
     return token
 
 
+def delete_unused_invite(conn: Connection, invite_id: int, actor_id: int) -> bool:
+    """
+    Permanently delete an invite that nobody has redeemed yet (expired or still-valid alike).
+    Returns True on success, False if no such invite exists.
+
+    Raises ValueError (not caught here - the route layer decides how to report it, same split delete_user_completely() uses) if the invite HAS been redeemed:
+    a used invite is the only record linking an account to the invite that created it (invites.used_by / used_at),
+    so it is kept as registration history rather than being deletable.
+    Deleting an unused one is different in kind - nothing was ever built on top of it, and for a still-valid token it doubles as "revoke":
+    once the row is gone, register_user_via_invite() can no longer find it, so a token that leaked is dead immediately.
+
+    "Unused" is enforced inside the DELETE itself (AND used_at IS NULL), not by a SELECT first:
+    checking and then deleting would let someone redeem the invite in the gap between the two statements,
+    and the redeemed row would then be deleted out from under the account that had just registered with it.
+    The follow-up SELECT only runs when nothing was deleted, purely to tell "doesn't exist" apart from "already used".
+
+    Not offered for expired invites as a separate case on purpose: an expired, unused invite is just a dead row, and this same function cleans it up.
+    There is deliberately NO "revive an expired invite" counterpart -
+    a token that was already handed out (and may have been forwarded or screenshotted) should not become valid again by flipping a date;
+    creating a fresh invite is one click and yields a new, unrelated token.
+    """
+    try:
+        result = conn.execute(
+            sql_text("DELETE FROM invites WHERE id = :invite_id AND used_at IS NULL"),
+            {"invite_id": invite_id},
+        )
+        if result.rowcount == 0:
+            exists = conn.execute(
+                sql_text("SELECT 1 FROM invites WHERE id = :invite_id"),
+                {"invite_id": invite_id},
+            ).first()
+            conn.rollback()
+            if exists is not None:
+                raise ValueError(f"Invite {invite_id} has already been used and is kept as registration history.")
+            return False
+        _insert_audit_log(conn, event_type="invite_deleted_by_admin", actor_id=actor_id)
+        conn.commit()
+        return True
+    except Exception:
+        # Also catches the ValueError raised above; a second rollback on an already-rolled-back connection is harmless.
+        conn.rollback()
+        raise
+
+
 # ---------------------------------------------------------------------------
 # registration (users + invites, one transaction)
 # ---------------------------------------------------------------------------

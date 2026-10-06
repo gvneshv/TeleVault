@@ -187,6 +187,28 @@ def create_invite(
     return AdminInviteOut(token=token, expires_at=expires_at)
 
 
+@router.delete("/invites/{invite_id}", response_model=AdminActionOut, summary="Delete an unused invite")
+def delete_invite(
+    invite_id: int,
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> AdminActionOut:
+    """
+    Delete an invite that has not been redeemed (see control_db.queries.delete_unused_invite() for exactly why only unused ones, and why no "revive").
+    Doubles as revocation for a still-valid token: the row is gone, so registration with it fails immediately.
+
+    404 for an unknown id;
+    409 for an already-used invite (conflicts with existing state - it is kept as registration history).
+    """
+    try:
+        deleted = control_db.queries.delete_unused_invite(control_conn, invite_id, actor_id=current["user_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No such invite.")
+    return AdminActionOut()
+
+
 @router.get("/invites", response_model=AdminInviteListOut, summary="List every invite ever created")
 def list_invites(control_conn: Connection = Depends(get_control_db)) -> AdminInviteListOut:
     rows = control_db.queries.list_invites(control_conn)
