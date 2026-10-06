@@ -141,6 +141,13 @@ class Settings:
     # rather than a blank .env value ever accidentally matching an empty invite_token some other caller sent.
     bootstrap_admin_token: str | None
 
+    # --- API documentation endpoints ---
+    # Whether the interactive API docs (Swagger UI at /api/docs, ReDoc at /api/redoc) and the machine-readable schema (/api/openapi.json) are served.
+    # OFF by default - secure by default: those pages are a complete, browsable map of every endpoint and its parameters,
+    # which is exactly what a production instance shouldn't hand to anyone who asks (the endpoints stay protected either way; this is about not advertising them).
+    # Set ENABLE_API_DOCS=true in your local .env while developing.
+    enable_api_docs: bool
+
 
 def _load() -> Settings:
     """
@@ -161,6 +168,9 @@ def _load() -> Settings:
     bootstrap_admin_token_raw = _optional("TELEVAULT_BOOTSTRAP_ADMIN_TOKEN", "")
     bootstrap_admin_token = bootstrap_admin_token_raw if bootstrap_admin_token_raw else None
 
+    # Accept the usual spellings of "yes"; anything else (including unset) is False.
+    enable_api_docs = _optional("ENABLE_API_DOCS", "false").lower() in ("1", "true", "yes", "on")
+
     return Settings(
         api_id=                 api_id,
         api_hash=               _require("TG_API_HASH"),
@@ -176,6 +186,7 @@ def _load() -> Settings:
         heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),
         backfill_status_path=   _optional("BACKFILL_STATUS_PATH", "data/backfill_status.json"),
         bootstrap_admin_token=  bootstrap_admin_token,
+        enable_api_docs=        enable_api_docs,
     )
 
 

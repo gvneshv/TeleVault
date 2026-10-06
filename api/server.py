@@ -76,11 +76,11 @@ app = FastAPI(
         "All write operations are performed exclusively by the userbot process."
     ),
     version="2.0.0",
-    # Disable the default /docs and /redoc in production by setting these to None.
-    # Leave them enabled for now - useful during development.
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    # Interactive docs + schema are opt-in (ENABLE_API_DOCS in .env, off by default - see config.Settings.enable_api_docs for why).
+    # Passing None removes the route entirely: the paths then fall through to the static mount and get the same 404 as any other unknown /api/ path.
+    docs_url="/api/docs" if settings.enable_api_docs else None,
+    redoc_url="/api/redoc" if settings.enable_api_docs else None,
+    openapi_url="/api/openapi.json" if settings.enable_api_docs else None,
     lifespan=lifespan,
 )
 
