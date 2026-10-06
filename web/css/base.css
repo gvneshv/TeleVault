@@ -1505,9 +1505,24 @@ input:focus-visible {
   border-radius: var(--radius-sm);
 }
 
+/* Token + Copy button on one row;
+   the token takes the remaining width and wraps long values rather than pushing the button off-screen. */
+.admin-invite-token-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.admin-invite-token-row .modal__btn {
+  flex-shrink: 0;
+}
+
 .admin-invite-token {
   display: block;
-  margin: 6px 0;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   padding: 8px;
   border-radius: var(--radius-sm);
   background: var(--color-bg-raised);

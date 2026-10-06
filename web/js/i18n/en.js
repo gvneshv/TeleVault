@@ -363,4 +363,7 @@ export const en = {
   "notFound.body":
     "Nothing lives at this address. Unlike your messages, this page was never saved.",
   "notFound.button": "Back to your archive",
+  "admin.copyButton": "Copy",
+  "admin.copied": "Copied",
+  "admin.copyManual": "Selected - press Ctrl+C",
 };

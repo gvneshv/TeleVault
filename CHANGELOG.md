@@ -130,6 +130,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added (continued)
 
+- **Custom 404 page** (`web/404.html`): unknown non-API URLs now get a themed, bilingual "This page wasn't
+  archived" page with a link back to `/`, served with a real 404 status (Starlette's `StaticFiles` does this
+  automatically once the file exists). `api/server.py`'s `_WebStaticFiles` keeps unknown `/api/...` paths on
+  the plain JSON 404 that `apiFetch` and scripts expect. The page makes no API calls, so it works signed in,
+  signed out, or with the API down
+- **Copy button for new invite tokens** in the admin panel (Clipboard API, with a select-the-text fallback
+  on plain HTTP / refused permission). Worth having because the token is shown exactly once
+
 - **Admin panel: search, pagination, invite status and cleanup** - both lists get a client-side search box
   (users by name; invites by redeemer's name or `#id` - never by token, which the API deliberately never
   returns again) and the shared pager. Invites now show Active / Expired / Used, and unused ones (expired
@@ -192,6 +200,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `openssl rand` convention as `FERNET_KEY`/`JWT_SECRET`
 
 ### Fixed (continued)
+
+- A failed sign-in (401) now clears the password field and refocuses it; the username is kept. Not done for
+  403 (locked) or 429 (rate limited), where the password was correct. Registration keeps all fields on
+  errors about other fields (username taken, bad invite) and clears only the passwords when the server
+  rejects the password itself (422). `lib/auth.js` now attaches the HTTP status to errors thrown by
+  `login()` / `register()` so pages can tell these cases apart
+- Small gap between the invite hours/Create row and the token result / search box in the admin panel
 
 - The Admin tab was visible to non-admins: `.app-nav__link { display: flex }` overrides the `hidden`
   attribute. Added a global `[hidden] { display: none !important }` and, beyond that, the tab (button,

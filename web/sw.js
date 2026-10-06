@@ -27,9 +27,10 @@
  * Not precached means the fetch handler below simply falls through to the network for it - the admin panel needs the live API anyway.
  * v22 bumps for base.css (404 + invite spacing) and i18n/{en,uk}.js (notFound.* strings). 404.html itself is deliberately NOT in SHELL_FILES:
  * it is only ever the server's answer to an unknown URL, and the fetch handler below passes that response straight through.
+ * v23 bumps for lib/auth.js, views/login.js, views/register.js, css/base.css and i18n/{en,uk}.js (copy-token button, clear-password-on-failed-login).
  */
 
-const CACHE_NAME = "televault-shell-v22";
+const CACHE_NAME = "televault-shell-v23";
 const SHELL_FILES = [
   "/",
   "/index.html",
