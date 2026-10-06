@@ -402,6 +402,38 @@ async function handleCreateInvite(root) {
   }
 }
 
+/**
+ * Copy the freshly created token to the clipboard - it's shown exactly once (see AdminInviteOut), so a mistyped manual copy means creating another invite.
+ * navigator.clipboard only exists in a secure context (HTTPS or localhost); on plain HTTP, or if permission is refused,
+ * fall back to selecting the token's text so Ctrl+C / long-press works, and say so on the button.
+ * The button's label is changed in place (not via a re-render) so the confirmation doesn't wipe the search box or the visible token.
+ *
+ * @param {HTMLButtonElement} button
+ */
+async function handleCopyToken(button) {
+  const tokenEl = document.getElementById("admin-invite-token");
+  if (!tokenEl) return;
+
+  let label;
+  try {
+    await navigator.clipboard.writeText(tokenEl.textContent);
+    label = t("admin.copied");
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(tokenEl);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    label = t("admin.copyManual");
+  }
+
+  button.textContent = label;
+  setTimeout(() => {
+    // The view may have re-rendered meanwhile (button replaced) - only touch it if it's still the live one.
+    if (button.isConnected) button.textContent = t("admin.copyButton");
+  }, 2500);
+}
+
 // ---------------------------------------------------------------------------
 // skeleton + loading
 // ---------------------------------------------------------------------------
@@ -412,7 +444,10 @@ function renderInvitesCardShell() {
     ? `
       <div class="admin-invite-result">
         <p class="settings-help">${t("admin.inviteCreatedLabel")}</p>
-        <code class="admin-invite-token">${escapeHtml(adminViewState.inviteResult.token)}</code>
+        <div class="admin-invite-token-row">
+          <code class="admin-invite-token" id="admin-invite-token">${escapeHtml(adminViewState.inviteResult.token)}</code>
+          <button type="button" id="admin-copy-token" class="modal__btn">${t("admin.copyButton")}</button>
+        </div>
         <p class="settings-help">${t("admin.inviteExpiresLabel")}: ${formatDate(adminViewState.inviteResult.expires_at)}</p>
       </div>
     `
@@ -467,6 +502,9 @@ function renderRoot(root) {
   root
     .querySelector("#admin-create-invite")
     .addEventListener("click", () => handleCreateInvite(root));
+  root
+    .querySelector("#admin-copy-token")
+    ?.addEventListener("click", (e) => handleCopyToken(e.currentTarget));
 
   renderUsersList(root);
   renderInvitesList(root);
