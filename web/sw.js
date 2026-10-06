@@ -21,9 +21,13 @@
  * those were never stale, just never precached/offline-capable at all, which is a smaller gap but the same kind of drift.
  * v20 bumps again for the same reason as v19 (shell files changed: index.html, telegram-setup.html, app.js, auth.js, telegram-setup.js, base.css, i18n/{en,uk}.js)
  * and adds the new admin.js to SHELL_FILES.
+ * v21 bumps for the same reason (index.html, app.js, base.css, i18n/{en,uk}.js, archiver-toggle.js, backfill.js, telegram-setup.js changed),
+ * adds the new lib/dialog.js, and REMOVES admin.js from SHELL_FILES again: it is now only loaded (dynamic import) for the admin account,
+ * so precaching it on every device would put the admin UI's code into every user's browser cache for no benefit.
+ * Not precached means the fetch handler below simply falls through to the network for it - the admin panel needs the live API anyway.
  */
 
-const CACHE_NAME = "televault-shell-v20";
+const CACHE_NAME = "televault-shell-v21";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -40,6 +44,7 @@ const SHELL_FILES = [
   "/js/lib/pagination.js",
   "/js/lib/order-toggle.js",
   "/js/lib/errors.js",
+  "/js/lib/dialog.js",
   "/js/lib/chat-filter.js",
   "/js/lib/archive-error.js",
   "/js/archiver-toggle.js",
@@ -51,7 +56,6 @@ const SHELL_FILES = [
   "/js/views/health.js",
   "/js/views/backfill.js",
   "/js/views/settings.js",
-  "/js/views/admin.js",
   "/js/views/telegram-setup.js",
   "/js/views/login.js",
   "/js/views/register.js",

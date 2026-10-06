@@ -130,6 +130,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added (continued)
 
+- **Admin panel: search, pagination, invite status and cleanup** - both lists get a client-side search box
+  (users by name; invites by redeemer's name or `#id` - never by token, which the API deliberately never
+  returns again) and the shared pager. Invites now show Active / Expired / Used, and unused ones (expired
+  or still valid) can be deleted via `DELETE /admin/invites/{id}` (404 unknown, 409 already used -
+  used invites stay as registration history). Deleting doubles as revoking a leaked token. There is
+  intentionally no "revive expired invite"
+- **In-app dialogs** (`web/js/lib/dialog.js`: `showAlert` / `showConfirm` / `showTypedConfirm`) replace every
+  native `alert()` / `confirm()` / `prompt()`, so a browser's "stop showing dialogs" checkbox can no longer
+  silently disable a destructive-action guard. The typed-username delete confirmation now explains a
+  blank/mismatched entry inline instead of doing nothing
+
 - **Single-admin model.** TeleVault now has exactly one admin account, enforced at the database level
   by a partial unique index (`ix_users_single_admin` on `users.is_admin WHERE is_admin = true` -
   `control_db/schema.py`, migration `e7e73e114fac`). The old `promote_user_to_admin()` query function
@@ -181,6 +192,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `openssl rand` convention as `FERNET_KEY`/`JWT_SECRET`
 
 ### Fixed (continued)
+
+- The Admin tab was visible to non-admins: `.app-nav__link { display: flex }` overrides the `hidden`
+  attribute. Added a global `[hidden] { display: none !important }` and, beyond that, the tab (button,
+  section, and `views/admin.js` itself) is now created/loaded only for the admin account instead of shipped
+  hidden in `index.html`
+- Visual polish: `.info-badge` pills (Admin / Locked) vertically centered; invite hours field and Create
+  button share one height; user metadata is " · "-separated
 
 - Three pre-existing static-typing gaps in `api/routes/telegram.py` (not runtime bugs, but real strict-mode
   type-checker complaints): `encrypt_secret()`/`decrypt_secret()`'s generic `str | None -> str | None`
