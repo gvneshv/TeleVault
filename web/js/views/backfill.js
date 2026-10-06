@@ -14,6 +14,7 @@ import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { describeError } from "../lib/errors.js";
 import { apiFetch } from "../lib/auth.js";
+import { showAlert } from "../lib/dialog.js";
 import {
   render as renderPagination,
   attach as attachPaginationHandlers,
@@ -362,10 +363,10 @@ async function openModal(root) {
         started = res.ok;
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          window.alert(describeError(body.detail));
+          await showAlert(describeError(body.detail));
         }
       } catch {
-        window.alert(t("common.error"));
+        await showAlert(t("common.error"));
       }
       backfillViewState.modalOpen = false;
       if (started) {

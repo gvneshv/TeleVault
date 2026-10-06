@@ -203,6 +203,14 @@ input:focus-visible {
    App shell
    ------------------------------------------------------------------- */
 
+/* Author rules like .app-nav__link { display: flex } outrank the browser's built-in [hidden] { display: none }
+   (author origin beats user-agent origin regardless of specificity),
+   so `hidden` silently did nothing on any element whose class sets its own display - that is how the Admin tab stayed visible to non-admins.
+   !important restores the attribute's meaning everywhere, now and for future classes. */
+[hidden] {
+  display: none !important;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: var(--nav-width) 1fr;
@@ -225,6 +233,13 @@ input:focus-visible {
   gap: 8px;
   padding: 0 8px 2px;
   text-decoration: none;
+}
+
+/* Optical nudge for the Admin pill beside the wordmark: flex centering aligns BOX centers, but capital letters sit above their line box's center
+   (descender space below), so the pill reads slightly high. Tune this one number if it still looks off in your font. */
+.app-nav__wordmark-link .info-badge {
+  position: relative;
+  top: var(--wordmark-badge-offset, 2px);
 }
 
 .app-nav__wordmark {
@@ -499,11 +514,15 @@ input:focus-visible {
    Was chat-type-badge; renamed once a second, unrelated use needed the same neutral style. */
 .info-badge {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  padding: 2px 7px;
+  /* 3px above / 2px below, not 2/2: line-height 1 puts capitals slightly above the box center, so the extra top padding evens the visible gap. */
+  padding: 3px 7px 2px;
   border-radius: 999px;
   border: 1px solid var(--color-border);
   color: var(--color-ink-muted);
@@ -1418,14 +1437,19 @@ input:focus-visible {
   color: var(--color-seal);
 }
 
+/* One line of " · "-separated facts (joined in admin.js) so wrapping breaks at natural spaces and never strands a separator at a line start. */
 .admin-user-row__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
   margin-top: 6px;
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.6;
   color: var(--color-ink-muted);
+}
+
+/* Same optical nudge idea as the wordmark pill, smaller: the name is bold text in a flex row with the pills. */
+.admin-user-row__top .info-badge {
+  position: relative;
+  top: var(--badge-optical-offset, 1px);
 }
 
 .admin-user-row__actions {
@@ -1435,11 +1459,35 @@ input:focus-visible {
 .admin-invite-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 16px;
   padding: 10px 0;
   border-top: 1px solid var(--color-border);
   font-size: 13px;
   color: var(--color-ink-muted);
+}
+
+.admin-invite-row__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.admin-invite-row__id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.admin-status--active {
+  border-color: var(--color-patina);
+  color: var(--color-patina);
+}
+
+.admin-status--expired {
+  border-color: var(--color-seal);
+  color: var(--color-seal);
 }
 
 .admin-invite-row:first-child {
@@ -1467,6 +1515,56 @@ input:focus-visible {
   font-size: 13px;
   word-break: break-all;
   user-select: all;
+}
+
+/* Hours field + Create button: one shared height so they sit level and equal, bottoms aligned with the label's field
+   (.modal__field's own bottom margin is zeroed here, otherwise the button would align to the margin box and float above the input). */
+.admin-invite-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  --admin-control-height: 36px;
+}
+
+.admin-invite-controls .modal__field {
+  margin-bottom: 0;
+}
+
+.admin-invite-controls input,
+.admin-invite-controls .modal__btn {
+  box-sizing: border-box;
+  height: var(--admin-control-height);
+}
+
+.admin-invite-controls input {
+  width: 110px;
+}
+
+.admin-invite-controls .modal__btn {
+  display: inline-flex;
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.admin-search {
+  margin: 0 0 12px;
+}
+
+.admin-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+  color: var(--color-ink);
+}
+
+.admin-btn--sm {
+  padding: 4px 10px;
+  font-size: 12.5px;
 }
 
 /* Numbered how-to list (e.g. getting the Telegram API ID/hash) - same muted type as .settings-help.
@@ -1674,6 +1772,20 @@ input:focus-visible {
   color: var(--color-seal);
   font-size: 12.5px;
   margin-bottom: 14px;
+}
+
+.modal__message {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+/* Inline "that doesn't match" text under a typed-confirmation field (lib/dialog.js). */
+.modal__hint {
+  margin: -4px 0 12px;
+  font-size: 12.5px;
+  color: var(--color-seal);
 }
 
 .modal__field {

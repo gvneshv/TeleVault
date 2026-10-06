@@ -316,8 +316,6 @@ export const uk = {
   "admin.lockConfirm":
     "Заблокувати цей обліковий запис? Користувач не зможе увійти, доки ви його не розблокуєте.",
   "admin.unlockConfirm": "Розблокувати цей обліковий запис?",
-  "admin.deleteConfirmPrompt":
-    'Це остаточно видалить обліковий запис, його базу даних архіву та підключення Telegram. Введіть "{username}" для підтвердження:',
   "admin.invitesCardTitle": "Запрошення",
   "admin.invitesCardBody":
     "Створіть одноразовий токен запрошення для реєстрації. Передайте його напряму - будь-хто, у кого він є, може зареєструватися до завершення терміну дії.",
@@ -331,4 +329,24 @@ export const uk = {
   "admin.inviteUnused": "Ще не використано",
   "admin.inviteUsedBy": "Використав(ла)",
   "admin.inviteUsedByDeleted": "(обліковий запис видалено)",
+  "admin.deleteConfirmTitle": "Видалення облікового запису",
+  "admin.deleteConfirmMessage":
+    "Це остаточно видалить обліковий запис, його базу даних архіву та підключення Telegram.",
+  "admin.searchUsersPlaceholder": "Пошук користувачів за іменем…",
+  "admin.searchInvitesPlaceholder": "Пошук запрошень за іменем або #id…",
+  "admin.noMatches": "Нічого не знайдено.",
+  "admin.inviteStatusUsed": "Використано",
+  "admin.inviteStatusExpired": "Прострочено",
+  "admin.inviteStatusActive": "Активне",
+  "admin.inviteExpiredOnLabel": "Прострочено",
+  "admin.inviteDeleteButton": "Видалити",
+  "admin.inviteDeleteConfirm":
+    "Видалити це запрошення? Його токен одразу перестане працювати. Використані запрошення видалити не можна.",
+  // Shared in-app dialogs (web/js/lib/dialog.js)
+  "dialog.ok": "OK",
+  "dialog.confirm": "Підтвердити",
+  "dialog.typedInputLabel": 'Введіть "{value}" для підтвердження',
+  "dialog.typedBlank": "Введіть текст точно так, як показано, щоб продовжити.",
+  "dialog.typedMismatch":
+    "Не збігається. Перевірте написання та регістр літер.",
 };

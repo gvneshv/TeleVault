@@ -38,6 +38,7 @@ import { t } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch, isAdmin, fetchCurrentUser } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
+import { showConfirm } from "../lib/dialog.js";
 
 // Reasons from POST /telegram/link/confirm that mean "the handshake itself is dead" rather than "you typed the wrong thing" -
 // these send the user back to the phone step (with an explanatory message) instead of just re-showing the code/password form for another try.
@@ -350,8 +351,9 @@ function attachTelegramHandlers(root) {
   document
     .getElementById("settings-unlink")
     ?.addEventListener("click", async () => {
-      // window.confirm() - same pattern archiver-toggle.js already uses for its own irreversible-feeling action (stopping the archiver).
-      if (!window.confirm(t("tgSetup.unlinkConfirm"))) return;
+      // In-app confirm (lib/dialog.js) - same pattern archiver-toggle.js uses for its own irreversible-feeling action (stopping the archiver).
+      if (!(await showConfirm(t("tgSetup.unlinkConfirm"), { danger: true })))
+        return;
 
       setupState.telegramBusy = true;
       setupState.telegramError = null;

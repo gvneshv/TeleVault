@@ -12,6 +12,7 @@
 import { t } from "./i18n.js";
 import { describeError } from "./lib/errors.js";
 import { apiFetch } from "./lib/auth.js";
+import { showAlert, showConfirm } from "./lib/dialog.js";
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -92,7 +93,7 @@ async function handleClick(button) {
 
   if (
     state.status === "running" &&
-    !window.confirm(t("archiver.confirmStop"))
+    !(await showConfirm(t("archiver.confirmStop"), { danger: true }))
   ) {
     return;
   }
@@ -108,11 +109,11 @@ async function handleClick(button) {
     if (!res.ok) {
       ok = false;
       const body = await res.json().catch(() => ({}));
-      window.alert(describeError(body.detail));
+      await showAlert(describeError(body.detail));
     }
   } catch {
     ok = false;
-    window.alert(t("common.error"));
+    await showAlert(t("common.error"));
   }
 
   if (ok) {

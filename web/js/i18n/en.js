@@ -325,8 +325,6 @@ export const en = {
   "admin.lockConfirm":
     "Lock this account? They won't be able to log in until you unlock it.",
   "admin.unlockConfirm": "Unlock this account?",
-  "admin.deleteConfirmPrompt":
-    'This permanently deletes the account, its archive database, and its Telegram link. Type "{username}" to confirm:',
   "admin.invitesCardTitle": "Invites",
   "admin.invitesCardBody":
     "Create a single-use invite token for someone to register with. Hand it to them directly - anyone who has it can register before it expires.",
@@ -340,4 +338,24 @@ export const en = {
   "admin.inviteUnused": "Not used yet",
   "admin.inviteUsedBy": "Used by",
   "admin.inviteUsedByDeleted": "(account since deleted)",
+  "admin.deleteConfirmTitle": "Delete account",
+  "admin.deleteConfirmMessage":
+    "This permanently deletes the account, its archive database, and its Telegram link.",
+  "admin.searchUsersPlaceholder": "Search users by name…",
+  "admin.searchInvitesPlaceholder": "Search invites by used-by name or #id…",
+  "admin.noMatches": "Nothing matches your search.",
+  "admin.inviteStatusUsed": "Used",
+  "admin.inviteStatusExpired": "Expired",
+  "admin.inviteStatusActive": "Active",
+  "admin.inviteExpiredOnLabel": "Expired",
+  "admin.inviteDeleteButton": "Delete",
+  "admin.inviteDeleteConfirm":
+    "Delete this invite? Its token stops working immediately. Used invites can't be deleted.",
+  // Shared in-app dialogs (web/js/lib/dialog.js)
+  "dialog.ok": "OK",
+  "dialog.confirm": "Confirm",
+  "dialog.typedInputLabel": 'Type "{value}" to confirm',
+  "dialog.typedBlank": "Type the text exactly as shown to continue.",
+  "dialog.typedMismatch":
+    "That doesn't match. Check spelling and capitalization.",
 };
