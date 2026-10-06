@@ -366,4 +366,8 @@ export const en = {
   "admin.copyButton": "Copy",
   "admin.copied": "Copied",
   "admin.copyManual": "Selected - press Ctrl+C",
+  "app.disclaimer":
+    "TeleVault is an independent, community-built project and is not affiliated with, endorsed by, or in any way officially connected to Telegram Messenger or Telegram FZ-LLC. Use of this software is at your own risk and responsibility.",
+  "auth.invalidInput":
+    "Some of the entered values aren't acceptable. Please check them and try again.",
 };

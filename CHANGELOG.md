@@ -130,6 +130,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added (continued)
 
+- **Non-affiliation disclaimer** (EN/UK) on the sign-in and register cards, at the bottom of Settings, and
+  at the top of the README
+
 - **Custom 404 page** (`web/404.html`): unknown non-API URLs now get a themed, bilingual "This page wasn't
   archived" page with a link back to `/`, served with a real 404 status (Starlette's `StaticFiles` does this
   automatically once the file exists). `api/server.py`'s `_WebStaticFiles` keeps unknown `/api/...` paths on
@@ -199,7 +202,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `.env.example` was missing `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` entirely - added, with the same
   `openssl rand` convention as `FERNET_KEY`/`JWT_SECRET`
 
+### Changed (continued)
+
+- **API docs are now opt-in:** `/api/docs`, `/api/redoc` and `/api/openapi.json` are only served when
+  `ENABLE_API_DOCS=true` is set in `.env` (default off - they publish a full map of the API). Add that line
+  to your local `.env` to keep using Swagger UI while developing
+
 ### Fixed (continued)
+
+- Sign-in/registration no longer show "[object Object]" when the server rejects input with a structured
+  validation error (HTTP 422); the page now falls back to a localized "please check your input" message
 
 - A failed sign-in (401) now clears the password field and refocuses it; the username is kept. Not done for
   403 (locked) or 429 (rate limited), where the password was correct. Registration keeps all fields on

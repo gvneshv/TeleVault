@@ -28,9 +28,10 @@
  * v22 bumps for base.css (404 + invite spacing) and i18n/{en,uk}.js (notFound.* strings). 404.html itself is deliberately NOT in SHELL_FILES:
  * it is only ever the server's answer to an unknown URL, and the fetch handler below passes that response straight through.
  * v23 bumps for lib/auth.js, views/login.js, views/register.js, css/base.css and i18n/{en,uk}.js (copy-token button, clear-password-on-failed-login).
+ * v24 bumps for index.html, login.html, register.html (disclaimer), css/base.css, lib/auth.js, views/login.js, views/register.js and i18n/{en,uk}.js.
  */
 
-const CACHE_NAME = "televault-shell-v23";
+const CACHE_NAME = "televault-shell-v24";
 const SHELL_FILES = [
   "/",
   "/index.html",
