@@ -39,7 +39,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       window.location.href = "/index.html";
       return; // navigating away - no need to restore the button below
     } catch (err) {
-      errorEl.textContent = err.message || t("login.error");
+      errorEl.textContent =
+        err.message ||
+        t(err.status === 422 ? "auth.invalidInput" : "login.error");
       errorEl.hidden = false;
       // Wrong credentials (401): empty the password and put the cursor back in it, so the retry is a fresh attempt rather than an edit of a value the person can't see.
       // The username stays - it's usually right, and password managers fill the two fields independently.

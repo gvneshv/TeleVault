@@ -53,7 +53,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       window.location.href = "/telegram-setup.html";
       return; // navigating away - no need to restore the button below
     } catch (err) {
-      errorEl.textContent = err.message || t("register.error");
+      errorEl.textContent =
+        err.message ||
+        t(err.status === 422 ? "auth.invalidInput" : "register.error");
       errorEl.hidden = false;
       // Keep everything the person typed for errors about OTHER fields ("username taken", "invalid invite", rate limits) -
       // retyping two passwords because the username was taken is pure friction.

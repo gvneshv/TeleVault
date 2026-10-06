@@ -127,6 +127,23 @@ function redirectToLogin() {
 }
 
 /**
+ * Turn a response body's "detail" into the message string for httpError().
+ *
+ * FastAPI sends a plain string for errors the routes raise themselves ("That username is already taken."),
+ * but an ARRAY of objects for request-validation failures (HTTP 422 - e.g. a too-short password), which `new Error(array)` stringifies to "[object Object]".
+ * For anything that isn't a string, return "" so the calling page falls back to its own localized text
+ * (login.js/register.js: `err.message || t(...)`) instead of showing raw JSON or a bare status code.
+ * @param {unknown} detail
+ * @param {number} status
+ * @returns {string}
+ */
+function errorMessageFrom(detail, status) {
+  if (typeof detail === "string" && detail) return detail;
+  if (detail) return ""; // structured (validation) detail - not user-presentable as-is
+  return `HTTP ${status}`;
+}
+
+/**
  * Error for a failed login()/register() request, carrying the HTTP status as `.status` alongside the usual `.message`.
  * The pages show the message as-is; the status exists so they can tell failure KINDS apart
  * (e.g. login.js clears the password field only on 401 - wrong credentials - not on 403 "locked" or 429 "too many attempts", where the password was fine).
@@ -154,7 +171,7 @@ async function login(username, password) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw httpError(body.detail || `HTTP ${res.status}`, res.status);
+    throw httpError(errorMessageFrom(body.detail, res.status), res.status);
   }
   accessToken = body.access_token;
   setAuthState("in");
@@ -174,7 +191,7 @@ async function register(inviteToken, username, password) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw httpError(body.detail || `HTTP ${res.status}`, res.status);
+    throw httpError(errorMessageFrom(body.detail, res.status), res.status);
   }
   accessToken = body.access_token;
   setAuthState("in");
