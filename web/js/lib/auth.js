@@ -127,6 +127,18 @@ function redirectToLogin() {
 }
 
 /**
+ * Error for a failed login()/register() request, carrying the HTTP status as `.status` alongside the usual `.message`.
+ * The pages show the message as-is; the status exists so they can tell failure KINDS apart
+ * (e.g. login.js clears the password field only on 401 - wrong credentials - not on 403 "locked" or 429 "too many attempts", where the password was fine).
+ * @param {string} message
+ * @param {number} status
+ * @returns {Error & { status: number }}
+ */
+function httpError(message, status) {
+  return Object.assign(new Error(message), { status });
+}
+
+/**
  * POST /auth/login.
  * Throws an Error with a user-facing message
  * (the backend's own `detail` text, already written to be shown directly - see api/routes/auth.py's login()) on failure;
@@ -142,7 +154,7 @@ async function login(username, password) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    throw httpError(body.detail || `HTTP ${res.status}`, res.status);
   }
   accessToken = body.access_token;
   setAuthState("in");
@@ -150,7 +162,7 @@ async function login(username, password) {
 
 /**
  * POST /auth/register.
- * Same error-throwing contract as login() above - register.js shows err.message directly.
+ * Same error-throwing contract as login() above (err.message, plus err.status via httpError()) - register.js shows err.message directly.
  * Also logs the new account straight in (see api/routes/auth.py's register() for why:
  * proving a valid invite token AND choosing a password in one request already establishes everything a follow-up login would check).
  */
@@ -162,7 +174,7 @@ async function register(inviteToken, username, password) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    throw httpError(body.detail || `HTTP ${res.status}`, res.status);
   }
   accessToken = body.access_token;
   setAuthState("in");

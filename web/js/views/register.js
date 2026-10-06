@@ -55,6 +55,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (err) {
       errorEl.textContent = err.message || t("register.error");
       errorEl.hidden = false;
+      // Keep everything the person typed for errors about OTHER fields ("username taken", "invalid invite", rate limits) -
+      // retyping two passwords because the username was taken is pure friction.
+      // Clear only when the server rejected the password itself (422 validation, e.g. too short): that value must change anyway.
+      if (err.status === 422) {
+        passwordInput.value = "";
+        confirmInput.value = "";
+        passwordInput.focus();
+      }
     }
 
     submitButton.disabled = false;

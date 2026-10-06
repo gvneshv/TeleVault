@@ -41,6 +41,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (err) {
       errorEl.textContent = err.message || t("login.error");
       errorEl.hidden = false;
+      // Wrong credentials (401): empty the password and put the cursor back in it, so the retry is a fresh attempt rather than an edit of a value the person can't see.
+      // The username stays - it's usually right, and password managers fill the two fields independently.
+      // Deliberately NOT done for 403 (account locked) or 429 (rate limited): there the password was fine, and clearing it would just be an annoyance.
+      if (err.status === 401) {
+        passwordInput.value = "";
+        passwordInput.focus();
+      }
     }
 
     submitButton.disabled = false;
