@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeleVault - Privacy Policy</title>
+  <meta name="theme-color" content="#14181d" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- Absolute asset paths: this page is served at the clean URL /privacy (api/server.py), and must also work from /privacy.html. -->
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <!--
+    Public page: no sign-in required, no API calls - it has to be readable BEFORE registering (the register form links here).
+    The text is the operator's legal document for THIS instance: fill in every highlighted [PLACEHOLDER] before inviting anyone,
+    and when the content changes materially bump CURRENT_TERMS_VERSION in api/routes/auth.py and the "Last updated" line below.
+  -->
+  <div class="legal-page">
+    <div class="auth-page__controls">
+      <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+      <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="uk">UK</option>
+      </select>
+    </div>
+
+    <div class="legal-page__inner">
+      <a class="legal-page__home" href="/" data-i18n="legal.backHome">← Back to TeleVault</a>
+
+      <article class="legal-doc">
+        <h1>Privacy Policy</h1>
+        <p class="legal-doc__meta">Last updated: October 2026 · Version 2026-10 · Status: Private Beta</p>
+        <p class="legal-doc__note" data-i18n="legal.pageNote">This document is provided in English. If a translation is ever provided, the English version prevails.</p>
+
+        <p>Your privacy and data security matter. This policy explains what TeleVault stores, why, who can access it, and how you can have it deleted. It applies to this instance of TeleVault, operated by <mark class="legal-placeholder">[OPERATOR NAME]</mark> (the "Operator"). If someone else hosts their own copy of the open-source software, they are responsible for their own instance. Contact: <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
+
+        <h2>1. What we store</h2>
+        <h3>Account data</h3>
+        <ul>
+          <li>Your username and a one-way hash of your password (Argon2). Your actual password cannot be read back from it.</li>
+          <li>When the account was created, when you last signed in, whether it is locked, and when you accepted the Terms and which version.</li>
+          <li>Session records (refresh-token identifiers with issue and expiry times) so you can stay signed in and be signed out.</li>
+        </ul>
+        <h3>Telegram credentials</h3>
+        <ul>
+          <li>Your Telegram API ID and API Hash, and the Telegram login session created when you link your account. They are stored encrypted in the database.</li>
+          <li>The session works like a saved login: whoever holds it, together with the encryption key, can act as your Telegram account. Protect it accordingly, and revoke it in Telegram (Settings → Devices) if you ever have doubts.</li>
+        </ul>
+        <h3>Your archive</h3>
+        <ul>
+          <li>The text of messages you send and receive in your chats, with their dates, chat names, chat types and usernames, and the names and usernames of the people who wrote them.</li>
+          <li>Edit history (previous versions of edited messages) and records of messages that were deleted.</li>
+          <li>Each account's archive lives in its own separate database. The application does not apply an extra layer of encryption to message text, so someone with administrative access to the database can read it.</li>
+        </ul>
+        <h3>Security and technical data</h3>
+        <ul>
+          <li>For sign-ins, failed sign-ins, registration, and administrative actions: the event, a timestamp, your IP address, and your browser's user-agent string. This is used to detect abuse and to rate-limit repeated failed sign-ins.</li>
+          <li>Standard server and proxy logs (such as IP address, requested URL, and time).</li>
+        </ul>
+
+        <h2>2. Telegram login details are processed in transit only</h2>
+        <p>To link your account, Telegram requires your phone number, a one-time login code and, if you use it, your two-step-verification (2FA) password. These pass through the Service to Telegram's servers while you link your account.</p>
+        <ul>
+          <li>They are held in the server's memory only for the duration of the linking process.</li>
+          <li>They are not written to the database and not written to the application's logs.</li>
+          <li>When linking finishes, only the resulting encrypted session is kept.</li>
+        </ul>
+        <p>Because these details do pass through the server, linking requires trusting the Operator. If you are not comfortable with that, do not link your account.</p>
+
+        <h2>3. Why we use your data</h2>
+        <ul>
+          <li>To provide the Service: keep your archive, flag edits and deletions, and show them to you.</li>
+          <li>To keep the Service secure: sign-in protection, abuse prevention, and troubleshooting.</li>
+          <li>To meet legal obligations, if any apply.</li>
+        </ul>
+        <p>Your data is not sold, not used for advertising or profiling, and not used to train anything.</p>
+
+        <h2>4. Other people's messages</h2>
+        <p>Your archive necessarily includes messages written by other people, who have not interacted with TeleVault. The Operator does not read this content for any purpose other than running and securing the Service and does not use it for any other reason. You are responsible for how you use it (see the <a href="/tos">Terms of Service</a>). If you are in someone's archive and want to raise a concern, contact <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
+
+        <h2>5. Who has access</h2>
+        <ul>
+          <li><strong>You</strong>, through your account.</li>
+          <li><strong>The Operator.</strong> As the system administrator, the Operator has technical access to the server and database for maintenance and security. Telegram credentials are encrypted, but the encryption key is held on the same server, so the Operator is technically able to decrypt them.</li>
+          <li><strong>Service providers that are technically necessary:</strong> Telegram (the Service talks to Telegram's servers on your behalf), the hosting provider (<mark class="legal-placeholder">[HOSTING PROVIDER AND COUNTRY]</mark>), and Google Fonts (see section 6).</li>
+        </ul>
+        <p>Data is not shared with, sold to, or distributed to anyone else, except where the law requires it.</p>
+
+        <h2>6. Cookies, local storage, and fonts</h2>
+        <ul>
+          <li>An HTTP-only cookie (marked Secure when the site is served over HTTPS) keeps you signed in; it is strictly necessary and is not readable by page scripts.</li>
+          <li>Your browser's local storage remembers your theme and language choices.</li>
+          <li>There is no advertising, analytics, or tracking software.</li>
+          <li>Pages load their typefaces from Google Fonts, so your browser contacts Google's servers (which sees your IP address) when a page is opened.</li>
+        </ul>
+
+        <h2>7. Security</h2>
+        <p>Passwords are hashed with Argon2; Telegram credentials are encrypted; access is invite-only; repeated failed sign-ins are rate-limited; and sessions can be revoked. No system is perfectly secure, and the Operator cannot guarantee absolute security.</p>
+
+        <h2>8. Retention and deletion</h2>
+        <ul>
+          <li>Your data is kept while your account exists. Archived messages stay until you or the Operator delete them (automatic clean-up options may be offered in the future, and this policy will be updated first).</li>
+          <li><strong>Unlinking Telegram</strong> in Settings removes the stored Telegram session. Your saved API ID/API Hash and your existing archive are kept.</li>
+          <li><strong>Deleting your account</strong> (on request to the Operator) permanently removes your account, sessions, stored Telegram credentials and session, and your archive database.</li>
+          <li>The security-log entries about your account, including the IP addresses and browser identifiers in them, are permanently deleted with it. A minimal record that an account was deleted (with no IP address or browser identifier) is kept, and an invite you used remains as a used invite with no link back to you.</li>
+          <li>Backups, if any, may keep copies of deleted data until they expire: <mark class="legal-placeholder">[BACKUP RETENTION, e.g. 30 days - or delete this sentence if you keep no backups]</mark>.</li>
+        </ul>
+
+        <h2>9. Your rights</h2>
+        <p>Depending on where you live (for example under the EU or UK GDPR), you may have the right to access your data, correct it, delete it, restrict or object to its processing, receive a copy in a portable form, and complain to your local data-protection authority. Because this is a small private service, these requests are handled manually: contact <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
+
+        <h2>10. Children</h2>
+        <p>The Service is not intended for anyone under 18, and is not directed at children.</p>
+
+        <h2>11. International processing</h2>
+        <p>The Service is hosted in <mark class="legal-placeholder">[HOSTING PROVIDER AND COUNTRY]</mark>. Telegram operates its own servers around the world, and Google Fonts is served from Google's network, so some data may be processed outside your country.</p>
+
+        <h2>12. Changes to this policy</h2>
+        <p>This policy will be updated before TeleVault starts collecting new kinds of data or performing new kinds of actions (for example archiving media). The "Last updated" date and version above will change, and you may be asked to acknowledge the new version.</p>
+
+        <h2>13. Contact</h2>
+        <p>Privacy questions, access requests, and deletion requests: <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
+      </article>
+
+      <footer class="site-footer">
+        <span>TeleVault © 2026 <a href="https://github.com/gvneshv" target="_blank" rel="noopener">gvneshv</a></span>
+        <span class="site-footer__sep" aria-hidden="true">|</span>
+        <span data-i18n="app.releaseStage">Private Beta</span>
+        <span class="site-footer__sep" aria-hidden="true">|</span>
+        <a href="/tos" data-i18n="legal.tosLink">Terms of Service</a>
+        <span class="site-footer__sep" aria-hidden="true">|</span>
+        <a href="/privacy" data-i18n="legal.privacyLink">Privacy Policy</a>
+      </footer>
+    </div>
+  </div>
+
+  <script type="module" src="/js/i18n.js"></script>
+</body>
+</html>

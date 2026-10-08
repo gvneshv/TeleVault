@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -134,7 +135,37 @@ app.include_router(admin.router,     prefix="/api", dependencies=[Depends(requir
 # Static files - web UI
 # ---------------------------------------------------------------------------
 
+_log = logging.getLogger(__name__)
+
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+# Where the instance operator keeps their FILLED-IN legal pages (git-ignored - see .gitignore and the README's "Terms of Service and Privacy Policy" note).
+# The tracked web/tos.html and web/privacy.html are placeholder templates that every clone ships with;
+# the operator's real name/contact/jurisdiction live only here, on the server, and never reach the public repository.
+_INSTANCE_LEGAL_DIR = Path(__file__).resolve().parent.parent / "instance" / "legal"
+
+
+def _legal_page_route(slug: str):
+    """
+    Serve the Terms/Privacy page at the clean URL /<slug> (no ".html").
+
+    StaticFiles only maps a URL to an existing file name, so /tos would 404 even though /tos.html works -
+    and the legal pages are linked (and quoted in the Terms/Privacy text itself) as /tos and /privacy.
+    The ".html" URLs keep working through the static mount as well; this just adds the clean ones.
+
+    Which file is served is decided PER REQUEST:
+    instance/legal/<slug>.html (the operator's filled-in copy) if it exists, otherwise the tracked placeholder template in web/.
+    Deciding per request means dropping the file onto a running server just works, no restart.
+    """
+    template = _WEB_DIR / f"{slug}.html"
+
+    @app.get(f"/{slug}", include_in_schema=False)
+    def _serve() -> FileResponse:
+        instance_copy = _INSTANCE_LEGAL_DIR / f"{slug}.html"
+        return FileResponse(instance_copy if instance_copy.is_file() else template, media_type="text/html")
+
+    return _serve
+
 
 class _WebStaticFiles(StaticFiles):
     """
@@ -156,6 +187,16 @@ class _WebStaticFiles(StaticFiles):
 
 
 if _WEB_DIR.exists():
+    # Registered BEFORE the "/" mount below - routes added earlier win, and the mount would otherwise swallow these paths first.
+    for _slug in ("tos", "privacy"):
+        _legal_page_route(_slug)
+        if not (_INSTANCE_LEGAL_DIR / f"{_slug}.html").is_file():
+            # Not an error (a fresh clone or a dev machine legitimately has none), but a real deployment must not run on the placeholder text.
+            _log.warning(
+                "Serving the PLACEHOLDER template for /%s. Before going live, copy web/%s.html to %s and fill in its [PLACEHOLDER] fields (no restart needed afterwards).",
+                _slug, _slug, _INSTANCE_LEGAL_DIR / f"{_slug}.html",
+            )
+
     # Mount at "/" so index.html is served at the root.
     # The API routes registered above take precedence because FastAPI matches them before falling through to the static mount.
     app.mount("/", _WebStaticFiles(directory=_WEB_DIR, html=True), name="web")

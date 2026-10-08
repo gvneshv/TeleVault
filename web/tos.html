@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeleVault - Terms of Service</title>
+  <meta name="theme-color" content="#14181d" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- Absolute asset paths: this page is served at the clean URL /tos (api/server.py), and must also work from /tos.html. -->
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <!--
+    Public page: no sign-in required, no API calls - it has to be readable BEFORE registering (the register form links here).
+    The text is the operator's legal document for THIS instance: fill in every highlighted [PLACEHOLDER] before inviting anyone,
+    and when the content changes materially bump CURRENT_TERMS_VERSION in api/routes/auth.py and the "Last updated" line below.
+  -->
+  <div class="legal-page">
+    <div class="auth-page__controls">
+      <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+      <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="uk">UK</option>
+      </select>
+    </div>
+
+    <div class="legal-page__inner">
+      <a class="legal-page__home" href="/" data-i18n="legal.backHome">← Back to TeleVault</a>
+
+      <article class="legal-doc">
+        <h1>Terms of Service</h1>
+        <p class="legal-doc__meta">Last updated: October 2026 · Version 2026-10 · Status: Private Beta</p>
+        <p class="legal-doc__note" data-i18n="legal.pageNote">This document is provided in English. If a translation is ever provided, the English version prevails.</p>
+
+        <p>Welcome to TeleVault. By creating an account or using TeleVault (the "Service"), you agree to be bound by these Terms of Service. If you do not agree, please do not use the Service. These Terms should be read together with the <a href="/privacy">Privacy Policy</a>.</p>
+        <p>The Service is operated by <mark class="legal-placeholder">[OPERATOR NAME]</mark> (the "Operator"). Contact: <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
+
+        <h2>1. Eligibility and invite-only access</h2>
+        <p>You must be at least 18 years old (or the age of majority where you live) to use the Service. Access is by invitation only. An invite is for one person and one account; do not share or publish invite tokens.</p>
+
+        <h2>2. Description of the Service</h2>
+        <p>TeleVault is a personal archive for your own Telegram account. After you link your account, the Service connects to Telegram using the credentials you provide, stores a copy of the text messages you send and receive in the chats you are part of, records when a stored message is later edited or deleted, and lets you browse that archive in a web interface.</p>
+        <p>The Service does not send, edit, or delete messages on your Telegram account. Linking creates a login session that appears in your Telegram account's list of active sessions (Settings → Devices).</p>
+        <p>If a future feature performs actions on your Telegram account (for example, marking messages as read), it will be optional, off by default, and described in these Terms and the Privacy Policy before you can enable it.</p>
+
+        <h2>3. Limits of the archive (best effort)</h2>
+        <p>TeleVault is a convenience, not a guaranteed backup. In particular:</p>
+        <ul>
+          <li>It can only capture messages, edits, and deletions while it is running and connected to Telegram. Anything that happened while it was offline may be missing unless it can be recovered later, and Telegram may not report every deletion.</li>
+          <li>At present only text is archived; media (photos, videos, documents, voice messages) is not.</li>
+          <li>The archive may contain errors or gaps. It is not a substitute for Telegram's own data export or for backups you keep yourself.</li>
+        </ul>
+
+        <h2>4. Independent project (no affiliation)</h2>
+        <p>TeleVault is an independent, community-built project. It is not affiliated with, endorsed by, sponsored by, or in any way officially connected to Telegram Messenger, Telegram FZ-LLC, or any of their subsidiaries or affiliates. "Telegram" is a trademark of its respective owner. The official Telegram website is <a href="https://telegram.org" target="_blank" rel="noopener">telegram.org</a>.</p>
+
+        <h2>5. Your Telegram account, credentials, and Telegram's rules</h2>
+        <ul>
+          <li>You must generate and provide your own Telegram API ID and API Hash, and may link only a Telegram account that belongs to you.</li>
+          <li>You are solely responsible for keeping your credentials confidential. The Telegram session the Service stores for you grants access to your Telegram account.</li>
+          <li>You agree to comply with Telegram's own terms, including its <a href="https://telegram.org/tos" target="_blank" rel="noopener">Terms of Service</a> and API terms. Telegram may limit or restrict accounts that use third-party clients, and that decision is entirely Telegram's.</li>
+          <li>You can end the Service's access at any time by unlinking Telegram in Settings and by terminating the session in Telegram (Settings → Devices).</li>
+        </ul>
+
+        <h2>6. Other people's messages and acceptable use</h2>
+        <p>Your archive contains messages written by other people. You are responsible for using it lawfully and respectfully. You agree that you will not:</p>
+        <ul>
+          <li>publish, sell, or share other people's messages in ways that violate their rights or the law;</li>
+          <li>use the Service to harass, stalk, surveil, or harm anyone, or for any unlawful purpose;</li>
+          <li>attempt to access another account's data, probe or disrupt the Service, or bypass its rate limits or invite-only access;</li>
+          <li>link a Telegram account that is not yours.</li>
+        </ul>
+        <p>Laws about recording and storing private communications differ between countries; it is your responsibility to know and follow the ones that apply to you.</p>
+
+        <h2>7. Your account</h2>
+        <p>Provide accurate information, choose a strong password, and keep it private. You are responsible for activity under your account. Tell the Operator promptly if you believe it has been compromised. The Operator may lock, suspend, or delete accounts that break these Terms, that pose a security risk, or where required by law.</p>
+
+        <h2>8. Your data</h2>
+        <p>You keep whatever rights you have in your own messages. You give the Operator permission to store and process your data solely to provide the Service to you, as described in the <a href="/privacy">Privacy Policy</a>. You can ask for your account and archive to be deleted at any time.</p>
+
+        <h2>9. Private Beta and availability</h2>
+        <p>The Service is in Private Beta. Features may change or be removed, the Service may be unavailable at times, and data may be lost. Keep your own copies of anything important.</p>
+
+        <h2>10. Disclaimer of warranties</h2>
+        <p>The Service is provided on an "AS IS" and "AS AVAILABLE" basis, without warranties of any kind, express or implied.</p>
+
+        <h2>11. Limitation of liability</h2>
+        <p>To the maximum extent permitted by law, the Operator is not liable for:</p>
+        <ul>
+          <li>any account restrictions, limitations, or bans imposed on your account by Telegram;</li>
+          <li>any data loss, incomplete archives, service interruptions, or downtime;</li>
+          <li>any unauthorized access to your account resulting from your negligence or from a compromise of external servers;</li>
+          <li>any indirect, incidental, or consequential damages arising from your use of the Service.</li>
+        </ul>
+        <p>Nothing in these Terms excludes or limits liability that cannot be excluded or limited by law. Use of the Service is at your own risk and responsibility.</p>
+
+        <h2>12. Termination</h2>
+        <p>You may stop using the Service at any time and ask for your account to be deleted. The Operator may end or suspend your access as described in section 7. Sections that by their nature should survive termination (including 4, 6, 10, 11, and 13) will continue to apply.</p>
+
+        <h2>13. Changes to these Terms</h2>
+        <p>These Terms may be updated, for example when new features are added. The "Last updated" date and version above will change, and you may be asked to accept the updated version. Continuing to use the Service after a change means you accept it.</p>
+
+        <h2>14. Governing law and contact</h2>
+        <p>These Terms are governed by the laws of <mark class="legal-placeholder">[GOVERNING LAW / JURISDICTION]</mark>, without regard to conflict-of-law rules; this does not remove any mandatory consumer rights you have where you live. Questions: <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
+      </article>
+
+      <footer class="site-footer">
+        <span>TeleVault © 2026 <a href="https://github.com/Gvneshv" target="_blank" rel="noopener">Gvneshv</a></span>
+        <span class="site-footer__sep" aria-hidden="true">|</span>
+        <span data-i18n="app.releaseStage">Private Beta</span>
+        <span class="site-footer__sep" aria-hidden="true">|</span>
+        <a href="/tos" data-i18n="legal.tosLink">Terms of Service</a>
+        <span class="site-footer__sep" aria-hidden="true">|</span>
+        <a href="/privacy" data-i18n="legal.privacyLink">Privacy Policy</a>
+      </footer>
+    </div>
+  </div>
+
+  <script type="module" src="/js/i18n.js"></script>
+</body>
+</html>
