@@ -220,9 +220,13 @@ def register_user_via_invite(
     password_hash: str,
     ip_address: str | None,
     user_agent: str | None,
+    terms_version: str,
 ) -> int:
     """
     Create a new user, consume the invite that authorized it, and record the audit entry - all atomically.
+
+    `terms_version` is the version of the Terms/Privacy Policy the person accepted; it is stored with the acceptance timestamp on the users row
+    (the route layer has already refused the request if the checkbox wasn't ticked - this function only records it).
 
     All three happen in one transaction so a crash partway through can never leave a "used" invite with no corresponding user,
     a new user whose invite still looks unused (and so reusable by someone else), or a user with no audit trail of how their account came to exist -
@@ -235,12 +239,12 @@ def register_user_via_invite(
         new_user_id = conn.execute(
             sql_text(
                 """
-                INSERT INTO users (username, password_hash)
-                VALUES (:username, :password_hash)
+                INSERT INTO users (username, password_hash, terms_accepted_at, terms_version)
+                VALUES (:username, :password_hash, now(), :terms_version)
                 RETURNING id
                 """
             ),
-            {"username": username, "password_hash": password_hash},
+            {"username": username, "password_hash": password_hash, "terms_version": terms_version},
         ).scalar_one()
 
         conn.execute(
@@ -524,7 +528,13 @@ def admin_exists(conn: Connection) -> bool:
     return conn.execute(sql_text("SELECT 1 FROM users WHERE is_admin = true LIMIT 1")).first() is not None
 
 
-def create_admin_user(conn: Connection, username: str, password_hash: str, event_type: str = "admin_created_via_script") -> int:
+def create_admin_user(
+    conn: Connection,
+    username: str,
+    password_hash: str,
+    event_type: str = "admin_created_via_script",
+    terms_version: str | None = None,
+) -> int:
     """
     Insert a brand-new user with is_admin=True, bypassing the invite flow entirely.
 
@@ -540,6 +550,10 @@ def create_admin_user(conn: Connection, username: str, password_hash: str, event
     that's intentional defense in depth, not a gap to close here,
     since a query-layer function silently swallowing "an admin already exists" would hide exactly the bug a caller needs to see.
 
+    `terms_version`: the bootstrap-token path (a real person ticking the registration checkbox) passes the current version,
+    which is recorded together with an acceptance timestamp;
+    the shell script path leaves it None, and both columns stay NULL - nobody ticked anything there, so no acceptance is claimed.
+
     actor_id is left NULL in the resulting audit row on purpose: neither caller has an authenticated OTHER party to attribute this to - a script run at the shell,
     or the brand-new account acting on its own behalf - so recording one would fabricate an accountability trail that doesn't reflect what actually happened
     (see auth_audit_log's own docstring for why user_id and actor_id are allowed to differ / be absent).
@@ -548,12 +562,16 @@ def create_admin_user(conn: Connection, username: str, password_hash: str, event
         new_user_id = conn.execute(
             sql_text(
                 """
-                INSERT INTO users (username, password_hash, is_admin)
-                VALUES (:username, :password_hash, true)
+                INSERT INTO users (username, password_hash, is_admin, terms_accepted_at, terms_version)
+                VALUES (
+                    :username, :password_hash, true,
+                    CASE WHEN CAST(:terms_version AS text) IS NULL THEN NULL ELSE now() END,
+                    CAST(:terms_version AS text)
+                )
                 RETURNING id
                 """
             ),
-            {"username": username, "password_hash": password_hash},
+            {"username": username, "password_hash": password_hash, "terms_version": terms_version},
         ).scalar_one()
         _insert_audit_log(conn, event_type=event_type, user_id=new_user_id)
         conn.commit()
@@ -636,9 +654,15 @@ def delete_user_completely(conn: Connection, user_id: int, actor_id: int) -> str
     the users row itself, every refresh token, and every invite this user redeemed to register
     (its used_by pointer is nulled instead by the FK - see control_db/schema.py's own column comment -
     but the invite row survives for the admin's own invite-history bookkeeping).
-    Everything that would block reusing the same username afterward is gone;
-    nothing that merely REFERENCES the account (audit-log rows - see auth_audit_log's own column comments) survives with that reference still attached,
-    but the rows themselves are deliberately kept as a security/forensic trail independent of whether the account still exists.
+    Everything that would block reusing the same username afterward is gone.
+    Audit-log rows ABOUT this account (auth_audit_log.user_id = this user:
+    its registration, sign-ins, failed sign-ins, Telegram link/unlink events - the rows that carry its IP address and browser string) are DELETED outright,
+    not merely de-linked: a de-linked row would still hold a personal identifier (the IP) with nothing left to justify keeping it,
+    and the Privacy Policy promises it goes away with the account.
+    What stays: a single minimal "user_deleted" row
+    (no IP, no user agent; user_id nulled by the FK, actor_id = whoever performed the deletion, which for an admin deleting someone is the admin themselves)
+    so there is still an accountability trail for the deletion itself, and rows where this user merely appears as `actor_id` on SOMEONE ELSE's event
+    (only ever possible for the admin account) - those belong to the other account's history.
 
     Called from TWO places, both requiring their own confirmation UX already, one step removed from this function
     (this function itself asks nothing and confirms nothing, matching every other write in this module - see this file's own module docstring):
@@ -681,8 +705,9 @@ def delete_user_completely(conn: Connection, user_id: int, actor_id: int) -> str
         # refresh_tokens (ON DELETE CASCADE) and invites.used_by (ON DELETE SET NULL) are handled by the database itself the moment the users row goes -
         # see control_db/schema.py's own column comments - so there is nothing to delete/null out for them explicitly here.
         # The audit entry for the deletion itself is inserted BEFORE the DELETE below (while user_id is still a valid reference) rather than after;
-        # ON DELETE SET NULL then nulls it out along with every other historical row this user ever appeared in,
-        # the instant the DELETE below runs - see auth_audit_log's own column comments for why that's the intended outcome, not something to work around.
+        # ON DELETE SET NULL then nulls its user_id the instant the DELETE below runs - see auth_audit_log's own column comments for why that's the intended outcome.
+        # Purge BEFORE inserting the "user_deleted" row below, so that row (which also references this user_id until the FK nulls it) survives the purge.
+        conn.execute(sql_text("DELETE FROM auth_audit_log WHERE user_id = :user_id"), {"user_id": user_id})
         _insert_audit_log(conn, event_type="user_deleted", user_id=user_id, actor_id=actor_id)
         result = conn.execute(sql_text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
         if result.rowcount == 0:

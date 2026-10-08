@@ -78,6 +78,13 @@ from utils.security import (
     verify_password,
 )
 
+# Version label of the Terms of Service + Privacy Policy currently published at /tos and /privacy (web/tos.html, web/privacy.html).
+# Stamped onto an account at registration (users.terms_version) as the record of WHAT it agreed to.
+# Bump it - to the pages' "Last updated" month,
+# e.g. "2026-12" - whenever either document changes in a way that matters (new data collected, new feature acting on the Telegram account, changed retention).
+# Older accounts keep the version they accepted, which is exactly what makes a future "please accept the updated terms" prompt possible.
+CURRENT_TERMS_VERSION = "2026-10"
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MAX_FAILED_LOGIN_ATTEMPTS = 5
@@ -171,7 +178,13 @@ def _register_bootstrap_admin(conn: Connection, response: Response, request: Req
     """
     password_hash = hash_password(body.password)
     try:
-        user_id = cq.create_admin_user(conn, body.username, password_hash, event_type="admin_created_via_bootstrap_token")
+        user_id = cq.create_admin_user(
+            conn,
+            body.username,
+            password_hash,
+            event_type="admin_created_via_bootstrap_token",
+            terms_version=CURRENT_TERMS_VERSION,
+        )
     except IntegrityError:
         # conn.rollback() already happened inside create_admin_user() before it re-raised - safe to keep using.
         # Two distinct causes collapse into the same IntegrityError here:
@@ -202,6 +215,15 @@ def register(body: RegisterIn, request: Request, response: Response, conn: Conne
     the person just proved they hold a legitimate invite AND chose a password in the same request;
     there's no additional factor a follow-up login would check that this request hasn't already established.
     """
+    # Enforced here, not just by the form's `required` checkbox: the API is callable without the web UI,
+    # and consent that only exists in the browser isn't consent the server can vouch for.
+    # Checked before anything else (including the bootstrap-token branch), so no account of any kind is created without it.
+    if not body.accepted_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="You must agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
+        )
+
     if _is_bootstrap_admin_token(conn, body.invite_token):
         return _register_bootstrap_admin(conn, response, request, body)
 
@@ -221,6 +243,7 @@ def register(body: RegisterIn, request: Request, response: Response, conn: Conne
             password_hash=password_hash,
             ip_address=ip_address,
             user_agent=user_agent,
+            terms_version=CURRENT_TERMS_VERSION,
         )
     except IntegrityError:
         # Postgres's unique constraint on users.username - conn.rollback() already happened inside register_user_via_invite() before it re-raised,

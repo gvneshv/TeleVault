@@ -18,6 +18,13 @@ class RegisterIn(BaseModel):
     invite_token: str
     username: str = Field(..., min_length=1, max_length=255)
     password: str = Field(..., min_length=8, description="Minimum 8 characters. No other complexity rules imposed.")
+    accepted_terms: bool = Field(
+        False,
+        description=(
+            "Must be true: the person ticked 'I agree to the Terms of Service and acknowledge the Privacy Policy'. "
+            "Defaults to false (not omitted-means-true), so a client that forgets the field is refused rather than silently treated as having consented."
+        ),
+    )
 
 
 class LoginIn(BaseModel):

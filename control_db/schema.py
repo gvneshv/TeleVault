@@ -82,6 +82,11 @@ users = Table(
     Column("telegram_api_hash", Text),
     Column("telegram_session_string", Text),
     Column("archive_db_ref", Text),
+    # Consent record: when this account ticked "I agree to the Terms of Service and acknowledge the Privacy Policy" at registration,
+    # and which version of those documents was current (api/routes/auth.py's CURRENT_TERMS_VERSION).
+    # NULL for accounts that predate the checkbox and for admins created from the shell - see the migration's docstring.
+    Column("terms_accepted_at", TIMESTAMP(timezone=True)),
+    Column("terms_version", Text),
     # Single-admin model (Decisions Log):
     # TeleVault has exactly ONE admin account, full stop - there is no promotion path any more
     # (control_db.queries used to have promote_user_to_admin(); removed - see scripts/manage_admin.py's own module docstring for the reasoning).
