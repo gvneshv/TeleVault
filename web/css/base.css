@@ -1637,6 +1637,7 @@ input:focus-visible {
 
 .auth-card__terms a {
   color: var(--color-focus);
+  text-decoration: underline; /* colour alone can't set a link apart when the accent is as dark as the body text (light theme) */
 }
 
 /* Terms of Service / Privacy Policy pages (web/tos.html, web/privacy.html). */
@@ -1691,6 +1692,8 @@ input:focus-visible {
 
 .legal-doc a {
   color: var(--color-focus);
+  text-decoration: underline; /* same reason as .auth-card__terms a */
+  text-underline-offset: 2px;
 }
 
 .legal-doc__meta {
