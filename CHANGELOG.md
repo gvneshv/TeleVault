@@ -244,6 +244,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed (continued)
 
+- **Sign-in / registration errors are now localized.** `api/routes/auth.py` returned plain English strings, so
+  "Incorrect username or password." etc. appeared in English in the Ukrainian UI. They now use the project's
+  `{message, reason}` shape (`_auth_error()`), and `lib/errors.js` + `i18n/{en,uk}.js` translate the reason codes
+- **Footer sits at the bottom of every tab** (column-flex `.app-main`; `telegram-setup` page likewise). The Admin
+  tab's section was being appended after the footer, which put the footer above its content; it is now inserted before it
+- Removed the in-app non-affiliation disclaimer (sign-in/register cards, Settings): the Terms of Service now carry it
+
 - `db/queries.py`: `get_message()` and `get_deletion_record()` now return a plain `dict` (as annotated) instead of
   SQLAlchemy's `RowMapping`, which fixes the type-checker error
 

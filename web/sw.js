@@ -34,10 +34,12 @@
  * never a stale cached copy.
  * v26 bumps for the author link added to the footer of index/login/register/telegram-setup/404.html.
  * v27 bumps for the new palette + self-hosted fonts: variables.css, base.css, new css/fonts.css, every .html (Google Fonts links removed), privacy.html.
+ * v28 bumps for the footer-to-bottom layout (base.css, app.js),
+ * the removed in-app disclaimer (index/login/register.html, i18n) and localized sign-in errors (lib/auth.js, lib/errors.js, i18n).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v27";
+const CACHE_NAME = "televault-shell-v28";
 const SHELL_FILES = [
   "/",
   "/index.html",
