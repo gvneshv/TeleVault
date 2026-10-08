@@ -224,16 +224,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed (continued)
 
+- **New colour palette** (light: lavender, dark: midnight + orange) in `variables.css`; every text pair passes
+  WCAG AA. The `seal-bg` / `patina-bg` tints are now faint tints of their accents (they had been set equal to the
+  panel colour, which would have erased the deleted/edited row highlighting), and links in the legal pages /
+  registration checkbox are underlined, because the light-theme accent is almost as dark as body text
+- **Self-hosted fonts** replace Google Fonts: Tektur (display), Sofia Sans (UI), IBM Plex Mono (mono), all SIL OFL
+  1.1, subsetted to Latin + Cyrillic woff2 in `web/fonts/` with their license texts, declared in `css/fonts.css`
+  and precached by the service worker. No page makes a third-party font request any more; the Privacy Policy no
+  longer mentions Google Fonts or a hosting provider by name
+
 - **Deleting an account now purges its security-log rows** (`auth_audit_log` rows with that `user_id`,
   which carry its IP address and user-agent) instead of just de-linking them; only a minimal, IP-less
   `user_deleted` record remains. Privacy Policy updated to match
-- Footer credits the author: `TeleVault © 2026 Gvneshv` (links to the GitHub profile)
+- Footer credits the author: `TeleVault © 2026 gvneshv` (links to the GitHub profile)
 
 - **API docs are now opt-in:** `/api/docs`, `/api/redoc` and `/api/openapi.json` are only served when
   `ENABLE_API_DOCS=true` is set in `.env` (default off - they publish a full map of the API). Add that line
   to your local `.env` to keep using Swagger UI while developing
 
 ### Fixed (continued)
+
+- `db/queries.py`: `get_message()` and `get_deletion_record()` now return a plain `dict` (as annotated) instead of
+  SQLAlchemy's `RowMapping`, which fixes the type-checker error
 
 - Sign-in/registration no longer show "[object Object]" when the server rejects input with a structured
   validation error (HTTP 422); the page now falls back to a localized "please check your input" message
@@ -750,9 +762,9 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at)
 
 ---
 
-[Unreleased]: https://github.com/Gvneshv/TeleVault/compare/v2.1.0...HEAD
-[2.1.0]: https://github.com/Gvneshv/TeleVault/compare/v2.0.0...v2.1.0
-[2.0.0]: https://github.com/Gvneshv/TeleVault/compare/v1.2.0...v2.0.0
-[1.2.0]: https://github.com/Gvneshv/TeleVault/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/Gvneshv/TeleVault/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/Gvneshv/TeleVault/releases/tag/v1.0.0
+[Unreleased]: https://github.com/gvneshv/TeleVault/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/gvneshv/TeleVault/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/gvneshv/TeleVault/compare/v1.2.0...v2.0.0
+[1.2.0]: https://github.com/gvneshv/TeleVault/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/gvneshv/TeleVault/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/gvneshv/TeleVault/releases/tag/v1.0.0
