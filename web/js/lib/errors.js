@@ -22,6 +22,16 @@ const ERROR_REASON_KEYS = {
   db_unavailable: "error.dbUnavailable",
   control_db_unavailable: "error.dbUnavailable",
 
+  // Sign-in / registration (api/routes/auth.py)
+  invalid_credentials: "error.invalidCredentials",
+  login_rate_limited_ip: "error.loginRateLimitedIp",
+  login_rate_limited_account: "error.loginRateLimitedAccount",
+  account_locked: "error.accountLocked",
+  admin_exists: "error.adminExists",
+  username_taken: "error.usernameTaken",
+  invite_invalid: "error.inviteInvalid",
+  terms_not_accepted: "error.termsNotAccepted",
+
   // Telegram linking flow (api/routes/telegram.py) -
   // previously left unwired deliberately (see that file's CHANGELOG entry) until the Settings view gave these reasons somewhere to actually be shown.
   invalid_api_credentials: "error.invalidApiCredentials",

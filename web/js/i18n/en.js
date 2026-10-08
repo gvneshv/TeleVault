@@ -366,8 +366,6 @@ export const en = {
   "admin.copyButton": "Copy",
   "admin.copied": "Copied",
   "admin.copyManual": "Selected - press Ctrl+C",
-  "app.disclaimer":
-    "TeleVault is an independent, community-built project and is not affiliated with, endorsed by, or in any way officially connected to Telegram Messenger or Telegram FZ-LLC. Use of this software is at your own risk and responsibility.",
   "auth.invalidInput":
     "Some of the entered values aren't acceptable. Please check them and try again.",
   // Footer / legal pages
@@ -382,4 +380,18 @@ export const en = {
   "register.termsTosLink": "Terms of Service",
   "register.termsMiddle": " and acknowledge the ",
   "register.termsPrivacyLink": "Privacy Policy",
+  // Sign-in / registration errors (api/routes/auth.py reason codes)
+  "error.invalidCredentials": "Incorrect username or password.",
+  "error.loginRateLimitedIp":
+    "Too many failed login attempts from this address. Try again later.",
+  "error.loginRateLimitedAccount":
+    "Too many failed login attempts for this account. Try again later.",
+  "error.accountLocked": "This account is locked. Contact an administrator.",
+  "error.adminExists":
+    "An admin account already exists. Ask your administrator for an invite.",
+  "error.usernameTaken": "That username is already taken.",
+  "error.inviteInvalid":
+    "That invite token is invalid, expired, or already used.",
+  "error.termsNotAccepted":
+    "You must agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
 };

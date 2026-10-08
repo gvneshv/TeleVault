@@ -85,6 +85,16 @@ from utils.security import (
 # Older accounts keep the version they accepted, which is exactly what makes a future "please accept the updated terms" prompt possible.
 CURRENT_TERMS_VERSION = "2026-10"
 
+def _auth_error(status_code: int, reason: str, message: str) -> HTTPException:
+    """
+    HTTPException whose `detail` is {"message": <English text>, "reason": <stable code>} -
+    the same shape every other user-facing route already uses (see web/js/lib/errors.js).
+    The web UI shows its own translation of the reason code; `message` stays for API clients and as the fallback for codes the UI doesn't know.
+    A plain string detail can't be localized (the UI would have to match English text), which is why sign-in/registration errors showed up in English even in Ukrainian.
+    """
+    return HTTPException(status_code=status_code, detail={"message": message, "reason": reason})
+
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MAX_FAILED_LOGIN_ATTEMPTS = 5
@@ -194,8 +204,8 @@ def _register_bootstrap_admin(conn: Connection, response: Response, request: Req
         # Re-checking admin_exists() here (cheap, and this is already the unhappy path) tells the loser of that race apart from an ordinary taken username,
         # rather than showing it a misleading message.
         if cq.admin_exists(conn):
-            raise HTTPException(status_code=409, detail="An admin account already exists. Ask your administrator for an invite.")
-        raise HTTPException(status_code=409, detail="That username is already taken.")
+            raise _auth_error(409, "admin_exists", "An admin account already exists. Ask your administrator for an invite.")
+        raise _auth_error(409, "username_taken", "That username is already taken.")
     return _issue_tokens(conn, response, request, user_id, is_admin=True)
 
 
@@ -219,9 +229,10 @@ def register(body: RegisterIn, request: Request, response: Response, conn: Conne
     # and consent that only exists in the browser isn't consent the server can vouch for.
     # Checked before anything else (including the bootstrap-token branch), so no account of any kind is created without it.
     if not body.accepted_terms:
-        raise HTTPException(
-            status_code=400,
-            detail="You must agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
+        raise _auth_error(
+            400,
+            "terms_not_accepted",
+            "You must agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
         )
 
     if _is_bootstrap_admin_token(conn, body.invite_token):
@@ -229,7 +240,7 @@ def register(body: RegisterIn, request: Request, response: Response, conn: Conne
 
     invite = cq.get_valid_invite_by_token(conn, body.invite_token)
     if invite is None:
-        raise HTTPException(status_code=400, detail="That invite token is invalid, expired, or already used.")
+        raise _auth_error(400, "invite_invalid", "That invite token is invalid, expired, or already used.")
 
     ip_address = _client_ip(request)
     user_agent = request.headers.get("user-agent")
@@ -248,7 +259,7 @@ def register(body: RegisterIn, request: Request, response: Response, conn: Conne
     except IntegrityError:
         # Postgres's unique constraint on users.username - conn.rollback() already happened inside register_user_via_invite() before it re-raised,
         # so this connection is safe to keep using.
-        raise HTTPException(status_code=409, detail="That username is already taken.")
+        raise _auth_error(409, "username_taken", "That username is already taken.")
 
     return _issue_tokens(conn, response, request, user_id, is_admin=False)
 
@@ -272,21 +283,21 @@ def login(body: LoginIn, request: Request, response: Response, conn: Connection 
     if user is None:
         if cq.count_recent_login_failures_for_unknown_username(conn, ip_address, LOGIN_LOCKOUT_WINDOW) >= MAX_FAILED_LOGIN_ATTEMPTS:
             cq.record_login_blocked(conn, "login_blocked_rate_limited_unknown_username", user_id=None, ip_address=ip_address, user_agent=user_agent)
-            raise HTTPException(status_code=429, detail="Too many failed login attempts from this address. Try again later.")
+            raise _auth_error(429, "login_rate_limited_ip", "Too many failed login attempts from this address. Try again later.")
         cq.record_login_failure(conn, user_id=None, ip_address=ip_address, user_agent=user_agent)
-        raise HTTPException(status_code=401, detail="Incorrect username or password.")
+        raise _auth_error(401, "invalid_credentials", "Incorrect username or password.")
 
     if cq.count_recent_login_failures_for_user(conn, user["id"], LOGIN_LOCKOUT_WINDOW) >= MAX_FAILED_LOGIN_ATTEMPTS:
         cq.record_login_blocked(conn, "login_blocked_rate_limited_account", user_id=user["id"], ip_address=ip_address, user_agent=user_agent)
-        raise HTTPException(status_code=429, detail="Too many failed login attempts for this account. Try again later.")
+        raise _auth_error(429, "login_rate_limited_account", "Too many failed login attempts for this account. Try again later.")
 
     if user["is_locked"]:
         cq.record_login_blocked(conn, "login_blocked_locked", user_id=user["id"], ip_address=ip_address, user_agent=user_agent)
-        raise HTTPException(status_code=403, detail="This account is locked. Contact an administrator.")
+        raise _auth_error(403, "account_locked", "This account is locked. Contact an administrator.")
 
     if not verify_password(body.password, user["password_hash"]):
         cq.record_login_failure(conn, user_id=user["id"], ip_address=ip_address, user_agent=user_agent)
-        raise HTTPException(status_code=401, detail="Incorrect username or password.")
+        raise _auth_error(401, "invalid_credentials", "Incorrect username or password.")
 
     cq.record_login_success(conn, user["id"], ip_address, user_agent)
     return _issue_tokens(conn, response, request, user["id"], user["is_admin"])
@@ -335,7 +346,7 @@ def refresh(request: Request, response: Response, conn: Connection = Depends(get
             # Already handled below on the token that triggered it,
             # but a DIFFERENT still-cached client presenting one of the other tokens that got swept up in that same lock can land here -
             # same account, same answer.
-            raise HTTPException(status_code=403, detail="This account is locked. Contact an administrator.")
+            raise _auth_error(403, "account_locked", "This account is locked. Contact an administrator.")
         # revoked_reason is 'rotated', 'reuse_detected', or NULL
         # (revoked before this column existed - treated as suspicious by default, since the real reason is unknown).
         # Per the rotation model documented on refresh_tokens in control_db/schema.py,
@@ -350,7 +361,7 @@ def refresh(request: Request, response: Response, conn: Connection = Depends(get
     if row["owner_is_locked"]:
         _clear_refresh_cookie(response)
         cq.revoke_all_refresh_tokens_and_log(conn, row["user_id"], "account_locked", "refresh_blocked_locked", ip_address, user_agent)
-        raise HTTPException(status_code=403, detail="This account is locked. Contact an administrator.")
+        raise _auth_error(403, "account_locked", "This account is locked. Contact an administrator.")
 
     new_access_token = create_access_token(row["user_id"], row["owner_is_admin"])
     new_refresh_token, new_jti, new_expires_at = create_refresh_token(row["user_id"])

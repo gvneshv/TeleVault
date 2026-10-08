@@ -36,6 +36,8 @@
  * They never reach "in" themselves - hasActiveSession() resolving true means an immediate window.location redirect away from the page instead.
  */
 
+import { describeError } from "./errors.js";
+
 /** @type {string | null} */
 let accessToken = null;
 
@@ -139,6 +141,14 @@ function redirectToLogin() {
  */
 function errorMessageFrom(detail, status) {
   if (typeof detail === "string" && detail) return detail;
+  // Structured {message, reason} detail (what api/routes/auth.py sends): translate the reason code; unknown codes fall back to the English message.
+  if (
+    detail &&
+    typeof detail === "object" &&
+    !Array.isArray(detail) &&
+    detail.reason
+  )
+    return describeError(detail);
   if (detail) return ""; // structured (validation) detail - not user-presentable as-is
   return `HTTP ${status}`;
 }
