@@ -182,12 +182,20 @@ async function login(username, password) {
  * Same error-throwing contract as login() above (err.message, plus err.status via httpError()) - register.js shows err.message directly.
  * Also logs the new account straight in (see api/routes/auth.py's register() for why:
  * proving a valid invite token AND choosing a password in one request already establishes everything a follow-up login would check).
+ *
+ * `acceptedTerms` is the registration checkbox ("I agree to the Terms of Service and acknowledge the Privacy Policy").
+ * The form already blocks submission without it; it's sent anyway because the server enforces and records it (a 400 otherwise).
  */
-async function register(inviteToken, username, password) {
+async function register(inviteToken, username, password, acceptedTerms) {
   const res = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ invite_token: inviteToken, username, password }),
+    body: JSON.stringify({
+      invite_token: inviteToken,
+      username,
+      password,
+      accepted_terms: acceptedTerms,
+    }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {

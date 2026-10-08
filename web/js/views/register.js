@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const usernameInput = document.getElementById("register-username");
   const passwordInput = document.getElementById("register-password");
   const confirmInput = document.getElementById("register-confirm");
+  const termsInput = document.getElementById("register-terms");
   const errorEl = document.getElementById("register-error");
   const submitButton = form.querySelector("button[type=submit]");
 
@@ -46,6 +47,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         inviteInput.value.trim(),
         usernameInput.value,
         passwordInput.value,
+        termsInput.checked,
       );
       // A brand-new account can't do anything useful yet (no Telegram linked, no archive database) -
       // send it to the dedicated setup page instead of the normally-empty Chats tab.

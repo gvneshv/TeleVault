@@ -63,6 +63,18 @@
         <input id="register-confirm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required />
       </label>
 
+      <!-- Required consent.
+           The two bold names are the links (new tab, so the half-filled form isn't lost).
+           Split into separate spans, not one string with embedded <a> tags: i18n.js only sets textContent,
+           and the link text needs its own grammatical form per language (see register.terms* in i18n/en.js and uk.js).
+           The server re-checks this - see api/routes/auth.py's register(). -->
+      <label class="auth-card__terms">
+        <input id="register-terms" name="accepted_terms" type="checkbox" required />
+        <span>
+          <span data-i18n="register.termsPrefix">I agree to the </span><a href="/tos" target="_blank" rel="noopener"><strong data-i18n="register.termsTosLink">Terms of Service</strong></a><span data-i18n="register.termsMiddle"> and acknowledge the </span><a href="/privacy" target="_blank" rel="noopener"><strong data-i18n="register.termsPrivacyLink">Privacy Policy</strong></a><span>.</span>
+        </span>
+      </label>
+
       <p id="register-error" class="auth-card__error" role="alert" hidden></p>
 
       <button type="submit" data-i18n="register.submit">Create account</button>
@@ -74,6 +86,16 @@
 
       <p class="legal-note legal-note--card" data-i18n="app.disclaimer">TeleVault is an independent, community-built project and is not affiliated with, endorsed by, or in any way officially connected to Telegram Messenger or Telegram FZ-LLC. Use of this software is at your own risk and responsibility.</p>
     </form>
+
+    <footer class="site-footer site-footer--pinned">
+      <span>TeleVault © 2026 <a href="https://github.com/gvneshv" target="_blank" rel="noopener">gvneshv</a></span>
+      <span class="site-footer__sep" aria-hidden="true">|</span>
+      <span data-i18n="app.releaseStage">Private Beta</span>
+      <span class="site-footer__sep" aria-hidden="true">|</span>
+      <a href="/tos" target="_blank" rel="noopener" data-i18n="legal.tosLink">Terms of Service</a>
+      <span class="site-footer__sep" aria-hidden="true">|</span>
+      <a href="/privacy" target="_blank" rel="noopener" data-i18n="legal.privacyLink">Privacy Policy</a>
+    </footer>
   </div>
 
   <script type="module" src="/js/views/register.js"></script>

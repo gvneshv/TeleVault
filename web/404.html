@@ -27,8 +27,8 @@
 <body>
   <!--
     Served by api/server.py (_WebStaticFiles) with a real HTTP 404 status.
-    Reuses the auth pages' centered layout and theme/language controls;
-    deliberately NOT gated on data-auth and makes no API calls - an error page must work whether or not the person is signed in (and even if the API is down).
+    Reuses the auth pages' centered layout and theme/language controls; deliberately NOT gated on data-auth
+    and makes no API calls - an error page must work whether or not the person is signed in (and even if the API is down).
   -->
   <div class="auth-page">
     <div class="auth-page__controls">
@@ -42,8 +42,7 @@
     <main class="notfound-card">
       <!--
         Illustration: an empty archive folder, with the messages that should have been inside it dissolving upward.
-        Pure inline SVG using the theme's CSS variables, so it follows light/dark automatically.
-        Decorative -> aria-hidden.
+        Pure inline SVG using the theme's CSS variables, so it follows light/dark automatically. Decorative -> aria-hidden.
       -->
       <svg class="notfound-card__art" viewBox="0 0 200 130" aria-hidden="true" focusable="false">
         <g class="notfound-card__dust">
@@ -65,6 +64,16 @@
       </p>
       <a class="notfound-card__link" href="/" data-i18n="notFound.button">Back to your archive</a>
     </main>
+
+    <footer class="site-footer site-footer--pinned">
+      <span>TeleVault © 2026 <a href="https://github.com/gvneshv" target="_blank" rel="noopener">gvneshv</a></span>
+      <span class="site-footer__sep" aria-hidden="true">|</span>
+      <span data-i18n="app.releaseStage">Private Beta</span>
+      <span class="site-footer__sep" aria-hidden="true">|</span>
+      <a href="/tos" target="_blank" rel="noopener" data-i18n="legal.tosLink">Terms of Service</a>
+      <span class="site-footer__sep" aria-hidden="true">|</span>
+      <a href="/privacy" target="_blank" rel="noopener" data-i18n="legal.privacyLink">Privacy Policy</a>
+    </footer>
   </div>
 
   <!-- i18n.js initializes itself on DOMContentLoaded (applies data-i18n, wires #lang-select), so no page-specific script is needed. -->
