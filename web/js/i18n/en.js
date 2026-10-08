@@ -370,4 +370,16 @@ export const en = {
     "TeleVault is an independent, community-built project and is not affiliated with, endorsed by, or in any way officially connected to Telegram Messenger or Telegram FZ-LLC. Use of this software is at your own risk and responsibility.",
   "auth.invalidInput":
     "Some of the entered values aren't acceptable. Please check them and try again.",
+  // Footer / legal pages
+  "app.releaseStage": "Private Beta",
+  "legal.tosLink": "Terms of Service",
+  "legal.privacyLink": "Privacy Policy",
+  "legal.backHome": "← Back to TeleVault",
+  "legal.pageNote":
+    "This document is provided in English. If a translation is ever provided, the English version prevails.",
+  // Registration consent checkbox - link text sits in the sentence, so it needs its own grammatical form per language
+  "register.termsPrefix": "I agree to the ",
+  "register.termsTosLink": "Terms of Service",
+  "register.termsMiddle": " and acknowledge the ",
+  "register.termsPrivacyLink": "Privacy Policy",
 };

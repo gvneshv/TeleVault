@@ -29,9 +29,12 @@
  * it is only ever the server's answer to an unknown URL, and the fetch handler below passes that response straight through.
  * v23 bumps for lib/auth.js, views/login.js, views/register.js, css/base.css and i18n/{en,uk}.js (copy-token button, clear-password-on-failed-login).
  * v24 bumps for index.html, login.html, register.html (disclaimer), css/base.css, lib/auth.js, views/login.js, views/register.js and i18n/{en,uk}.js.
+ * v25 bumps for the footer (index/login/register/telegram-setup/404 .html), the registration consent checkbox (register.html, views/register.js, lib/auth.js),
+ * css/base.css and i18n/{en,uk}.js. tos.html / privacy.html are deliberately NOT in SHELL_FILES: legal text must always be the live version, never a stale cached copy.
+ * v26 bumps for the author link added to the footer of index/login/register/telegram-setup/404.html.
  */
 
-const CACHE_NAME = "televault-shell-v24";
+const CACHE_NAME = "televault-shell-v26";
 const SHELL_FILES = [
   "/",
   "/index.html",

@@ -501,6 +501,18 @@ A few things worth checking on periodically once this is deployed and running lo
 
 ## Notes
 
+- **Terms of Service and Privacy Policy:** served at `/tos` and `/privacy`,
+  linked from every page's footer and from the mandatory registration
+  checkbox. The tracked `web/tos.html` and `web/privacy.html` are
+  **placeholder templates** (highlighted `[PLACEHOLDER]` marks) so a fresh
+  clone works. To deploy: copy both to `instance/legal/` (git-ignored, so your
+  real name/contact/jurisdiction never reach the public repo), fill in every
+  placeholder there, and keep your own backup of those copies - they are not
+  in git. The server prefers `instance/legal/<name>.html` and logs a warning
+  at startup while it is still serving a template. When a document changes
+  materially, update its "Last updated" line and bump `CURRENT_TERMS_VERSION`
+  in `api/routes/auth.py`. Acceptance (time + version) is recorded per account;
+  run `alembic -c alembic_control.ini upgrade head` once to add those columns.
 - **`.session` file:** treat it like a password. It lets anyone run requests
   as your Telegram account. It's excluded from git via `.gitignore`.
 - **Telegram ToS:** TeleVault archives only messages from chats you're already
@@ -530,3 +542,12 @@ A few things worth checking on periodically once this is deployed and running lo
   "just open the file" - the Postgres container (or however you're running
   Postgres) needs to be up any time you want to connect to the database,
   including via a GUI client or `psql`. See step 2's note above.
+
+## License
+
+TeleVault is source-available under the **PolyForm Noncommercial License 1.0.0**
+(see [LICENSE](LICENSE)): you may use, modify and share it for noncommercial
+purposes; commercial use needs a separate agreement with the author. The
+software is provided without warranty and without liability. Anyone who
+distributes it must keep the license text (or its URL) and the
+`Required Notice:` line in [NOTICE](NOTICE).

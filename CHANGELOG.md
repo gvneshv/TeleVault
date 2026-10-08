@@ -130,6 +130,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added (continued)
 
+- **License: PolyForm Noncommercial 1.0.0** (`LICENSE`, verbatim from the PolyForm project) plus `NOTICE` with the
+  required copyright line; README gets a License section. Use, modification and sharing are allowed for
+  noncommercial purposes; commercial use needs a separate agreement
+- **Instance-specific legal pages:** `/tos` and `/privacy` now serve `instance/legal/<name>.html` when it exists,
+  falling back to the tracked placeholder templates in `web/`. `instance/` is git-ignored, so an operator's real
+  name/contact/jurisdiction never reach the public repo. A startup warning is logged while a template is being served
+
+- **Terms of Service and Privacy Policy** pages at `/tos` and `/privacy` (`web/tos.html`, `web/privacy.html`;
+  clean URLs served by explicit routes in `api/server.py`, since `StaticFiles` only maps real file names).
+  Written against what the code actually stores and does (Argon2 password hashes, encrypted Telegram
+  credentials/session, IP + user-agent in the security log, edit history, Google Fonts). Contain highlighted
+  `[PLACEHOLDER]` fields the instance operator must fill in (name, contact email, jurisdiction, hosting)
+- **Site footer** on every page: `TeleVault © 2026 | Private Beta | Terms of Service | Privacy Policy`
+- **Mandatory consent checkbox on registration** ("I agree to the Terms of Service and acknowledge the Privacy
+  Policy", both names link to the documents in a new tab). Enforced server-side (`accepted_terms`, 400
+  otherwise) and recorded per account in new `users.terms_accepted_at` / `users.terms_version` columns
+  (migration `b7d2e91f4a63`; `CURRENT_TERMS_VERSION` in `api/routes/auth.py` is the version stamp - bump it
+  when the documents change materially). Existing accounts and shell-created admins have NULL = no recorded
+  acceptance
+
 - **Non-affiliation disclaimer** (EN/UK) on the sign-in and register cards, at the bottom of Settings, and
   at the top of the README
 
@@ -203,6 +223,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `openssl rand` convention as `FERNET_KEY`/`JWT_SECRET`
 
 ### Changed (continued)
+
+- **Deleting an account now purges its security-log rows** (`auth_audit_log` rows with that `user_id`,
+  which carry its IP address and user-agent) instead of just de-linking them; only a minimal, IP-less
+  `user_deleted` record remains. Privacy Policy updated to match
+- Footer credits the author: `TeleVault © 2026 Gvneshv` (links to the GitHub profile)
 
 - **API docs are now opt-in:** `/api/docs`, `/api/redoc` and `/api/openapi.json` are only served when
   `ENABLE_API_DOCS=true` is set in `.env` (default off - they publish a full map of the API). Add that line
