@@ -105,7 +105,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const root = document.createElement("div");
     root.id = "admin-root";
     section.append(heading, root);
-    main.append(section);
+    // Before the footer (the footer is the last child of <main>, pinned to the bottom by CSS) - appending after it put the footer ABOVE the admin content.
+    main.insertBefore(section, main.querySelector(".site-footer"));
   }
 
   function unmountAdminTab() {
