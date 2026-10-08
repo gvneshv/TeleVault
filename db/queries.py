@@ -686,7 +686,10 @@ def get_message(
         ),
         {"tg_message_id": tg_message_id, "chat_id": chat_id},
     )
-    return cursor.mappings().first()
+    # .mappings().first() yields a SQLAlchemy RowMapping, which type checkers (rightly) don't treat as a plain dict;
+    # converting makes the declared `dict[str, Any] | None` return type true, and every caller only does row["col"] access anyway.
+    row = cursor.mappings().first()
+    return dict(row) if row is not None else None
 
 
 def get_deleted_messages(
@@ -760,4 +763,5 @@ def get_deletion_record(
         sql_text("SELECT * FROM message_deletions WHERE message_id = :message_id"),
         {"message_id": row["id"]},
     )
-    return cursor.mappings().first()
+    deletion = cursor.mappings().first()
+    return dict(deletion) if deletion is not None else None
