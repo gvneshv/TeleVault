@@ -52,7 +52,7 @@ per-view chat filter, EN/UK language support, and light/dark themes.
 
 ```bash
 # Clone the repo
-git clone https://github.com/Gvneshv/TeleVault.git
+git clone https://github.com/gvneshv/TeleVault.git
 cd TeleVault
 
 # Create and activate a virtual environment
@@ -542,6 +542,15 @@ A few things worth checking on periodically once this is deployed and running lo
   "just open the file" - the Postgres container (or however you're running
   Postgres) needs to be up any time you want to connect to the database,
   including via a GUI client or `psql`. See step 2's note above.
+
+## Fonts
+
+The UI uses Tektur, Sofia Sans and IBM Plex Mono, self-hosted from `web/fonts/`
+(subsetted to Latin + Cyrillic; declared in `web/css/fonts.css`). All three are
+licensed under the SIL Open Font License 1.1 - the license texts sit next to the
+files and must stay with them. To change a typeface, replace the woff2 file(s),
+update `fonts.css` and the `--font-*` tokens in `web/css/variables.css`, and add
+the new paths to `SHELL_FILES` in `web/sw.js` (and bump `CACHE_NAME`).
 
 ## License
 

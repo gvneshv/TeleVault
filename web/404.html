@@ -9,17 +9,11 @@
   <meta name="robots" content="noindex" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
-    rel="stylesheet"
-  />
-
   <!--
     ABSOLUTE asset paths on purpose: the server returns this one file for ANY unknown URL, however deep (/a/b/c/nope),
     so a relative "css/base.css" would resolve against that bogus path and the page would render unstyled.
   -->
+  <link rel="stylesheet" href="/css/fonts.css" />
   <link rel="stylesheet" href="/css/variables.css" />
   <link rel="stylesheet" href="/css/base.css" />
   <script src="/js/theme.js"></script>

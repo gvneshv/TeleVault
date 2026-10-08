@@ -1,0 +1,45 @@
+/*
+ * Self-hosted typefaces (no third-party font requests - see the Privacy Policy).
+ *
+ * All three are licensed under the SIL Open Font License 1.1; the license texts ship alongside the files in web/fonts/ (OFL-*.txt), as the OFL requires.
+ * The files are SUBSETTED woff2 builds of the originals from Google's open-source font repository (github.com/google/fonts):
+ * Basic Latin, Latin-1, Latin Extended-A, Cyrillic (U+0400-052F, which covers Ukrainian, incl. Ї є ґ), general punctuation, EUR/UAH signs, numero sign and arrows.
+ * Characters outside that set (e.g. the theme-toggle symbol) fall back to the system font, as before.
+ * Variable fonts are pinned to the range actually used (weights 400-700; Tektur's width axis fixed at its default) to keep the files small.
+ *
+ * Roles (see variables.css): display = Tektur, ui = Sofia Sans, mono = IBM Plex Mono.
+ * font-display: swap shows text immediately in the fallback font and swaps when the file arrives (no invisible text).
+ * Absolute /fonts/ URLs on purpose: the same stylesheet is used from pages at any depth (404 page, /tos, /privacy).
+ */
+
+@font-face {
+  font-family: "Tektur";
+  src: url("/fonts/tektur.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sofia Sans";
+  src: url("/fonts/sofia-sans.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/ibm-plex-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/ibm-plex-mono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
