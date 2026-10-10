@@ -9,7 +9,7 @@ This module does the first two steps programmatically;
 set-archive (or api/routes/archive.py calling control_db.queries.set_archive_db_ref directly) still does the third,
 deliberately kept as a separate step - see provision_archive_database()'s own docstring for why.
 
-Requires the SAME Postgres role already used for DATABASE_URL/CONTROL_DATABASE_URL to also have the CREATEDB privilege (`ALTER ROLE <role> CREATEDB;`),
+Requires the SAME Postgres role already used for CONTROL_DATABASE_URL to also have the CREATEDB privilege (`ALTER ROLE <role> CREATEDB;`),
 which most default local/dev setups already have (a fresh official postgres image's POSTGRES_USER is a superuser)
 but a deliberately least-privileged production role likely won't, on purpose.
 Missing that privilege is treated as a normal, expected outcome here - see ArchiveProvisioningError's own docstring -
@@ -26,7 +26,6 @@ import psycopg.errors
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ProgrammingError
 
 import db
@@ -70,7 +69,7 @@ def _tenant_database_name(user_id: int) -> str:
 
 def _create_database_if_missing(db_name: str) -> None:
     """
-    CREATE DATABASE db_name, on the same server as the primary DATABASE_URL - tolerates the database already existing (DuplicateDatabase),
+    CREATE DATABASE db_name, on the same server as the control database (see db.init_server()) - tolerates the database already existing (DuplicateDatabase),
     since that's exactly what a retry after an earlier partial failure (database created, then something failed before archive_db_ref got set) looks like;
     there's no reason to fail a retry just because the first attempt got further than it appeared to.
 
@@ -79,7 +78,7 @@ def _create_database_if_missing(db_name: str) -> None:
     execution_options() changing isolation level on a connection that's already mid-transaction (e.g. from an earlier SELECT on the same connection) would itself raise,
     so this deliberately never shares a connection with anything else.
     """
-    conn = db.get_connection().execution_options(isolation_level="AUTOCOMMIT")
+    conn = db.get_server_connection().execution_options(isolation_level="AUTOCOMMIT")
     try:
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
         logger.info("Created archive database %r", db_name)
@@ -99,14 +98,14 @@ def _create_database_if_missing(db_name: str) -> None:
 
 def _migrate_database(db_name: str) -> None:
     """
-    Run the archive schema's migrations (alembic/versions/) against db_name, exactly the same migration chain `alembic upgrade head` runs against DATABASE_URL -
+    Run the archive schema's migrations (alembic/versions/) against db_name, exactly the same migration chain a manual `alembic -x url=... upgrade head` runs -
     see this module's own docstring for why this reuses the real migration chain rather than a shortcut like metadata.create_all()
     (consistency: one mechanism that brings any archive database to the current schema, not two that could quietly drift apart as more migrations get added over time).
 
     Serialized by _provision_lock (see that lock's own comment) around the TELEVAULT_ALEMBIC_URL_OVERRIDE env var -
-    the only way to hand alembic/env.py a target database other than settings.database_url from inside an already-running process.
+    the only way to hand alembic/env.py its target database from inside an already-running process.
     """
-    target_url = make_url(db.get_engine().url).set(database=db_name)
+    target_url = db.server_database_url(db_name)
     # .set() returns a URL object - str(url) masks the password ("***"), which would silently break auth against the new database
     # (a real bug this exact line had until real end-to-end testing against a live Postgres caught it - see this module's own commit notes).
     # render_as_string with hide_password=False is required to get a connection string that actually authenticates.

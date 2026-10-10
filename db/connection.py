@@ -1,12 +1,22 @@
 """
 Manages the PostgreSQL connection pool for the entire application, via an SQLAlchemy Core Engine (psycopg v3 driver).
 
+Two kinds of process use this module, and they use different halves of it:
+
+  - WORKERS (main.py = live archiver, backfill.py), one per account: call init_db() with that ONE account's archive URL
+    (see server_database_url()) and then use get_connection() as "the" archive for the process's whole life.
+  - The API SERVER: never calls init_db() - it serves every account at once, so it has no single "primary" archive.
+    It calls init_server() once at startup and then reaches each account's archive through the per-tenant functions at the bottom of this file
+    (get_tenant_readonly_connection() for reads, get_tenant_connection() for the rare write),
+    plus get_server_connection() for CREATE/DROP DATABASE during provisioning.
+
 This replaces the old model of a single shared sqlite3.Connection held open for the app's entire lifetime.
 SQLAlchemy's Engine owns a connection pool internally (QueuePool by default) and hands out individual connections on checkout
 - this module wraps that in two functions matching what the two actual use cases need:
 
   - get_connection()          : a read-write connection for the userbot's live handlers and the backfill script.
-  - get_readonly_connection() : a connection for the API server, with `SET default_transaction_read_only = on` applied immediately after checkout.
+  - get_readonly_connection() : a read-only connection to this process's own database (init_db()'s).
+                                Currently has no caller: the API server reads through get_tenant_readonly_connection() (bottom of this file) instead.
 
 Why a pool instead of one global connection:
     The old sqlite3 approach worked because SQLite connections are cheap and a single-process app only ever has one in flight at a time.
@@ -37,7 +47,7 @@ from contextlib import contextmanager
 from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Connection, Engine, make_url
+from sqlalchemy.engine import URL, Connection, Engine, make_url
 from sqlalchemy.exc import OperationalError
 
 logger = logging.getLogger(__name__)
@@ -201,61 +211,90 @@ def get_readonly_connection() -> Generator[Connection, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# Per-tenant connections (auth/multi-user feature - API server only)
+# Per-tenant connections and the Postgres "server" (API server + provisioning)
 #
 # Each user's own archive lives in its own Postgres DATABASE, named by that user's control_db.schema.users.archive_db_ref -
-# see that column's docstring in config.py's owner_user_id-turned-per-tenant-lookup history
-# and api/dependencies.py's get_archive_connection() for the full reasoning.
-# Everything below assumes every tenant database lives on the SAME Postgres server/credentials as the primary database_url
-# (same host, port, username, password - only the database name differs), the same way control_database_url already does.
-# If tenant databases ever need their own separate credentials or a different server, this assumption is the first thing to revisit.
+# see api/dependencies.py's get_archive_connection() for the full reasoning.
+# Everything below assumes every archive database lives on the SAME Postgres server/credentials as the control database
+# (same host, port, username, password - only the database name differs).
+# If archive databases ever need their own separate credentials or a different server, this assumption is the first thing to revisit.
+#
+# The "server URL" is simply the control database's URL: it is only ever used as a template (host/port/credentials),
+# with the database name swapped for the one wanted - see server_database_url().
 # ---------------------------------------------------------------------------
 
+_server_url: Optional[URL] = None
+_server_engine: Optional[Engine] = None
 _tenant_engines: dict[str, Engine] = {}
 
 
-def _primary_database_name() -> str | None:
-    """The database name embedded in this process's own database_url (init_db()'s argument), or None if init_db() hasn't run yet."""
-    if _engine is None:
-        return None
-    return _engine.url.database
+def init_server(server_url: str) -> None:
+    """
+    Tell this module which Postgres server (and credentials) the per-account archive databases live on.
+    Pass any URL on that server - in practice settings.control_database_url.
+
+    Does not connect. Safe to call again (replaces the stored URL; already-cached engines keep working until closed).
+    Called by api/server.py's lifespan, and by workers just before they build their own archive URL with server_database_url().
+    """
+    global _server_url
+    _server_url = make_url(server_url)
 
 
-def get_primary_database_name() -> str | None:
+def _require_server_url() -> URL:
+    if _server_url is None:
+        raise RuntimeError("Database server not configured. Call init_server() first.")
+    return _server_url
+
+
+def server_database_url(db_name: str) -> URL:
     """
-    Public accessor for _primary_database_name() - used by api/dependencies.py's require_instance_owner() to check whether a user's archive_db_ref matches the database THIS running instance's userbot (main.py) actually archives into.
-    See get_tenant_engine()'s docstring for the broader reasoning this supports.
+    The connection URL for the database named `db_name` on the configured server (same host/credentials, different database).
+
+    Returns a URL OBJECT. To hand it to init_db() or alembic, render it with `.render_as_string(hide_password=False)` -
+    str(url) masks the password as "***", which silently breaks authentication
+    (the same trap db/provisioning.py's _migrate_database() documents from experience).
     """
-    return _primary_database_name()
+    return _require_server_url().set(database=db_name)
+
+
+def get_server_connection() -> Connection:
+    """
+    A connection to the server's own database (the control DB, in practice), for statements that must run outside any archive -
+    CREATE DATABASE / DROP DATABASE (see db/provisioning.py, db/deprovisioning.py).
+    Both refuse to run inside a transaction block, so callers wrap this in execution_options(isolation_level="AUTOCOMMIT").
+
+    Backed by its own small engine, created on first use and disposed by close_server().
+    Caller owns the connection and must close it.
+    """
+    global _server_engine
+    if _server_engine is None:
+        _server_engine = create_engine(_require_server_url(), pool_pre_ping=True, connect_args=_CONNECT_ARGS)
+    return _server_engine.connect()
+
+
+def close_server() -> None:
+    """Dispose the engine behind get_server_connection(), if one was created.
+    Call on API shutdown, next to close_tenant_engines()."""
+    global _server_engine
+    if _server_engine is not None:
+        _server_engine.dispose()
+        _server_engine = None
 
 
 def get_tenant_engine(db_name: str) -> Engine:
     """
-    Return a (possibly cached) Engine for the Postgres database named `db_name`,
-    on the same server/credentials as the primary database_url - see this section's module-level docstring.
+    Return a (cached) Engine for the archive database named `db_name`, on the configured server - see this section's header comment.
 
-    If `db_name` happens to BE the primary engine's own database
-    (true for whichever single user this running instance's userbot - main.py - currently archives into,
-    until real per-user provisioning spins up separate userbot processes per tenant),
-    returns the EXISTING primary engine rather than opening a second pool pointed at the identical database -
-    no reason to double the open connections to one physical database just because it's being reached through two different code paths
-    (main.py's live archiver vs. this per-tenant lookup).
-
-    Otherwise, builds and caches a new Engine the first time `db_name` is seen, reusing it on every later call -
+    Builds and caches a new Engine the first time `db_name` is seen, reusing it on every later call -
     opening a fresh Engine (and its own connection pool) per request would be wasteful
     and would defeat pooling entirely for a name that's requested repeatedly (which every archive view does, once per page load).
     """
-    if db_name == _primary_database_name():
-        return get_engine()
-
     if db_name in _tenant_engines:
         return _tenant_engines[db_name]
 
-    base_url = make_url(get_engine().url)
-    tenant_url = base_url.set(database=db_name)
     logger.info("Creating tenant database engine for %r", db_name)
     engine = create_engine(
-        tenant_url,
+        server_database_url(db_name),
         pool_pre_ping=True,
         connect_args=_CONNECT_ARGS,
     )
@@ -263,10 +302,22 @@ def get_tenant_engine(db_name: str) -> Engine:
     return engine
 
 
+def get_tenant_connection(db_name: str) -> Connection:
+    """
+    A READ-WRITE connection to the archive database `db_name`.
+    Caller owns it and must close it (or use `with`).
+
+    Exists for the one API-side write to an archive there is: marking a cancelled backfill's history row as cancelled
+    (api/routes/backfill.py's cancel_backfill() - see its comment for why the API has to do it rather than the killed worker).
+    Everything else the API does to an archive is a read and goes through get_tenant_readonly_connection() below.
+    """
+    return get_tenant_engine(db_name).connect()
+
+
 @contextmanager
 def get_tenant_readonly_connection(db_name: str) -> Generator[Connection, None, None]:
     """
-    Same contract as get_readonly_connection() above, but against the tenant database named `db_name` instead of the primary database_url.
+    Same contract as get_readonly_connection() above, but against the archive database named `db_name` instead of this process's own (the API server has none).
     See api/dependencies.py's get_archive_connection() for the one caller of this today.
     """
     conn = get_tenant_engine(db_name).connect()

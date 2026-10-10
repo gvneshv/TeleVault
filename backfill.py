@@ -1,12 +1,15 @@
 """
 One-off / on-demand script to archive historical messages - the ones sent before TeleVault was running, or before a chat was ever seen by it.
 
-Run with:
-    python backfill.py                      # every chat you're in
-    python backfill.py --chat @someusername  # one chat only
-    python backfill.py --chat -1001234567890 # one chat by numeric ID
-    python backfill.py --chat @someusername --limit 500  # cap per chat, useful for testing
-    python backfill.py --full                # force a full re-walk of every chat, ignoring what's already archived
+Run with (normally started for you by the web UI's Backfill tab - POST /api/backfill/start - which passes --user-id itself):
+    python backfill.py --user-id 1                      # every chat the account is in
+    python backfill.py --user-id 1 --chat @someusername  # one chat only
+    python backfill.py --user-id 1 --chat -1001234567890 # one chat by numeric ID
+    python backfill.py --user-id 1 --chat @someusername --limit 500  # cap per chat, useful for testing
+    python backfill.py --user-id 1 --full                # force a full re-walk of every chat, ignoring what's already archived
+
+--user-id is the control-database id of the account (see the admin panel).
+The account's Telegram login and archive database are read from the control database - nothing Telegram-related lives in .env any more (see utils/account.py).
 
 Incremental by default:
     Each chat only fetches messages newer than the highest tg_message_id TeleVault already has for it (see db.queries.get_last_archived_message_id),
@@ -26,8 +29,8 @@ Important limitations - Telegram's API, not something TeleVault can work around:
     so backfilled messages are stored as not-yet-edited (is_edited=0) even if they actually were edited before backfill ran.
     There's no way to see prior versions of a message you didn't already have archived.
 
-Do not run this at the same time as main.py (the live userbot) against the same .session file - Telethon sessions support one active connection at a time.
-Stop main.py first, run this, then start main.py again.
+Do not run this at the same time as main.py (the live userbot) FOR THE SAME ACCOUNT - Telethon sessions support one active connection at a time.
+Stop that account's archiver first, run this, then start it again. (Other accounts' archivers are unaffected.)
 
 Idempotent: insert_message() uses ON CONFLICT DO NOTHING (see db/queries.py), so running this more than once,
 or interrupting it partway through and re-running later, is always safe - already-archived messages are silently skipped, never duplicated.
@@ -48,6 +51,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from telethon import TelegramClient, functions, utils
+from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 from telethon.tl.types import PeerChat
 from sqlalchemy import text as sql_text
@@ -58,6 +62,8 @@ from utils.logging_setup import setup_logging
 from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
 from api.process_utils import is_archiver_running, is_backfill_running
+from utils.account import AccountContextError, load_account_context
+from utils.worker_paths import backfill_status_path, heartbeat_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +71,8 @@ logger = logging.getLogger(__name__)
 # and a completely silent script for that long looks hung even when it isn't.
 PROGRESS_INTERVAL = 500
 
-# If False, STATUS_PATH is ignored and status is printed to stderr instead.
-STATUS_PATH = (
-    Path(settings.backfill_status_path) if False else None
-)  # set properly below via settings import already present
+# This run's status file (utils/worker_paths.py) - set once in main(), once --user-id is known.
+_status_file: Path | None = None
 
 
 def _write_status(data: dict) -> None:
@@ -76,33 +80,35 @@ def _write_status(data: dict) -> None:
     Overwrite the backfill status file.
     Read by GET /api/backfill/status so the web UI can render progress without any direct coupling to this process beyond this one file.
     """
-    atomic_write_json(Path(settings.backfill_status_path), data)
+    assert _status_file is not None, "main() sets _status_file before run() is ever called"
+    atomic_write_json(_status_file, data)
 
 
 _cancelled = False
 
 
-def _refuse_if_conflicting() -> None:
+def _refuse_if_conflicting(user_id: int) -> None:
     """
-    Exit immediately if another backfill is already running, or if the live archiver (main.py) currently holds the Telegram session.
+    Exit immediately if this account already has a backfill running, or if its live archiver (main.py) currently holds the Telegram session.
 
     api/routes/backfill.py's start_backfill() already refuses both cases
     - but only when a backfill is launched THROUGH the API (the web UI's "Start Backfill" button).
     Running `python backfill.py` directly from a terminal skipped that check entirely
     - the same gap main.py itself had on the archiver side (see main.py's own _refuse_if_already_running()).
     Checking here, at the one true entry point regardless of how it was launched, is what actually closes it.
+    Only THIS account's files are consulted - other accounts have their own sessions and are unaffected.
     Runs before anything (DB, Telethon, the backfill_runs row) is opened, so exiting here needs no cleanup.
     """
-    if is_backfill_running(settings.backfill_status_path):
+    if is_backfill_running(backfill_status_path(user_id)):
         logger.error(
-            "A backfill is already running."
+            "A backfill is already running for this account. "
             "Refusing to start a second one - they would both write to the same database and fight over the same Telegram session."
         )
         sys.exit(1)
 
-    if is_archiver_running(settings.heartbeat_path):
+    if is_archiver_running(heartbeat_path(user_id)):
         logger.error(
-            "The live userbot (main.py) appears to be connected."
+            "The live userbot (main.py) appears to be connected for this account. "
             "Stop it before starting a backfill - Telethon sessions only support one active connection at a time."
         )
         sys.exit(1)
@@ -224,11 +230,21 @@ async def backfill_chat(
 
 
 async def run(
-    chat_selector: str | None, limit: int | None, force_full: bool = False
+    user_id: int, chat_selector: str | None, limit: int | None, force_full: bool = False
 ) -> None:
-    # Schema application is now `alembic upgrade head`, run explicitly as a deploy step - not called here (see db/schema.py's module docstring for why).
+    try:
+        account = load_account_context(user_id)
+    except AccountContextError as exc:
+        logger.error("Cannot start: %s", exc)
+        sys.exit(1)
+    except Exception:
+        logger.exception("Cannot start: the control database could not be read - is Docker (Postgres) running?")
+        sys.exit(1)
+
+    # Schema application is `alembic upgrade head`, run when the archive was provisioned (db/provisioning.py) - not called here (see db/schema.py's module docstring for why).
     # This assumes migrations have already been applied.
-    db.init_db(settings.database_url)
+    db.init_server(settings.control_database_url)
+    db.init_db(db.server_database_url(account.archive_db_name).render_as_string(hide_password=False))
 
     # init_db() only builds the Engine - it doesn't open a connection (see db/connection.py's docstring).
     # Without this check, an unreachable Postgres (e.g. Docker not running) would only surface once the loop
@@ -237,8 +253,9 @@ async def run(
         db.check_connection()
     except Exception:
         logger.error(
-            "Cannot reach the database - is Docker (Postgres) running? "
-            "Check `docker compose ps` and settings.database_url."
+            "Cannot reach the archive database %r - is Docker (Postgres) running? "
+            "Check `docker compose ps`.",
+            account.archive_db_name,
         )
         db.close_db()
         sys.exit(1)
@@ -272,8 +289,36 @@ async def run(
     }
     _write_status(status)
 
-    client = TelegramClient(settings.session_name, settings.api_id, settings.api_hash)
-    await client.start(phone=settings.phone)
+    # Non-interactive on purpose - see main.py's "Telethon client" step for why connect()+is_user_authorized() replaces client.start(phone=...),
+    # and why the client is built inside the try.
+    client: TelegramClient | None = None
+    try:
+        client = TelegramClient(StringSession(account.session_string), account.api_id, account.api_hash)
+        await client.connect()
+        authorized = await client.is_user_authorized()
+    except Exception:
+        logger.exception("Could not connect to Telegram with this account's saved credentials.")
+        authorized = False
+
+    if not authorized or client is None:
+        logger.error(
+            "This account's Telegram session is not valid (revoked, expired, corrupted, or the API credentials were rejected). "
+            "Sign in to Telegram again in the web UI (Settings -> Telegram setup)."
+        )
+        # Leave an honest record instead of a "running" row/status that nothing will ever finish.
+        status["state"] = "error"
+        _write_status(status)
+        run_conn.execute(
+            sql_text("UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = 'error' WHERE id = :run_id"),
+            {"run_id": run_id},
+        )
+        run_conn.commit()
+        run_conn.close()
+        conn.close()
+        if client is not None:
+            await client.disconnect()
+        db.close_db()
+        sys.exit(1)
 
     me = await client.get_me()
     logger.info(f"Authenticated as: {me.first_name} (id={me.id})")
@@ -415,6 +460,12 @@ def main() -> None:
         description="Archive historical messages sent before TeleVault was running."
     )
     parser.add_argument(
+        "--user-id",
+        type=int,
+        required=True,
+        help="Control-database id of the account to backfill. Its Telegram login and archive database are read from the control database.",
+    )
+    parser.add_argument(
         "--chat",
         metavar="ID_OR_USERNAME",
         default=None,
@@ -438,10 +489,13 @@ def main() -> None:
     args = parser.parse_args()
 
     setup_logging(log_level=settings.log_level, log_file=settings.log_file)
-    _refuse_if_conflicting()
+
+    global _status_file
+    _status_file = backfill_status_path(args.user_id)
+    _refuse_if_conflicting(args.user_id)
 
     try:
-        asyncio.run(run(args.chat, args.limit, args.full))
+        asyncio.run(run(args.user_id, args.chat, args.limit, args.full))
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
 

@@ -4,7 +4,7 @@ Loads all runtime configuration from environment variables (via a .env file).
 The settings are exposed as a single frozen dataclass instance - `settings` - imported directly wherever needed:
  
     from config import settings
-    print(settings.db_path)
+    print(settings.control_database_url)
  
 Why a dataclass rather than reading os.environ inline?
   - One import gives you everything; no hunting for os.getenv() calls scattered around the codebase.
@@ -12,9 +12,15 @@ Why a dataclass rather than reading os.environ inline?
   - Type annotations document what each setting is supposed to be.
   - Missing required values fail loudly at startup, not halfway through a run.
  
-Required .env keys:       TG_API_ID, TG_API_HASH, TG_PHONE, FERNET_KEY, JWT_SECRET
-Optional (have defaults): DB_PATH, DATABASE_URL, CONTROL_DATABASE_URL, SESSION_NAME, LOG_LEVEL, LOG_FILE
+Required .env keys:       FERNET_KEY, JWT_SECRET
+Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS
 Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN (see Settings.bootstrap_admin_token below)
+
+What is deliberately NOT here any more: Telegram credentials (api_id / api_hash / phone / a .session file).
+TeleVault is multi-account - every account supplies its OWN api_id/api_hash and signs in to Telegram through the web UI,
+and those values live encrypted in the control database (users.telegram_*), never in .env.
+The per-account archive databases are derived from CONTROL_DATABASE_URL (same server and credentials, different database name) -
+there is no separate "archive" connection string to configure. See utils/account.py for how a worker process loads one account's credentials.
 """
 
 import os
@@ -75,33 +81,21 @@ class Settings:
     Attributes map 1-to-1 with .env keys (lowercased and without the TG_ prefix where they're Telegram-specific).
     """
 
-    # --- Telegram credentials ---
-    # Obtain these from https://my.telegram.org -> API development tools.
-    # Treat them like passwords: never commit, never log.
-    api_id: int
-    api_hash: str
-    phone: str
-
-    # Name for the Telethon session file (stored as <name>.session).
-    # Changing this forces a fresh login - keep it stable.
-    session_name: str
-
-    # --- Storage (SQLite - active storage layer for now) ---
-    db_path: str
-
-    # --- Storage (PostgreSQL - migration in progress, see CHANGELOG "1.2.0").
-    # Not read by anything yet; db/connection.py still talks to SQLite only.
-    # Defaults to matching docker-compose.yml's local dev Postgres service. ---
-    database_url: str
-
-    # --- Storage (control DB - auth/multi-user feature) ---
-    # Deliberately a SEPARATE database from database_url above, not just a separate schema/table prefix within it:
-    # database_url points at ONE user's archive (chats/messages/etc.);
-    # this points at the single shared DB holding accounts, invites, refresh tokens, and audit log -
-    # see control_db/schema.py's module docstring for the full reasoning.
-    # Same Postgres instance as database_url by default (just a different database name) - nothing stops pointing
-    # this at a different host/instance entirely later, since it's a fully independent connection string.
+    # --- Storage (control DB) ---
+    # The single shared database holding accounts, invites, refresh tokens, the audit log and - encrypted - every account's Telegram credentials and session.
+    # See control_db/schema.py's module docstring for why this is its own database.
+    #
+    # It also doubles as the "which Postgres server are the per-account archives on" setting:
+    # every account's archive is a database on the SAME server with the SAME credentials, only the database name differs
+    # (db.provisioning creates them as televault_archive_<user_id>; see db/connection.py's per-tenant section).
+    # So there is deliberately no second connection string for archives.
     control_database_url: str
+
+    # --- Runtime files (per-account heartbeat + backfill status) ---
+    # Root directory for the small files the API server and the worker processes use to see each other
+    # (see utils/worker_paths.py - each account gets its own subdirectory under here).
+    # Resolved to an ABSOLUTE path at load time, so the API server and the workers it spawns agree on it regardless of which directory each was started from.
+    data_dir: str
 
     # --- Encryption (control DB credential columns: users.telegram_api_id/api_hash/session_string) ---
     # Symmetric (Fernet) key used by utils/crypto.py to encrypt/decrypt those three columns before they touch the database.
@@ -121,11 +115,6 @@ class Settings:
     # --- Logging ---
     log_level: str          # 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
     log_file: str | None    # None means log to console only
-
-    # --- Backfill ---
-    # These paths are relative to the db_path directory.
-    heartbeat_path: str
-    backfill_status_path: str
 
     # --- Bootstrap admin (control DB - single-admin model) ---
     # Solves an otherwise-unavoidable chicken-and-egg problem: every account is created FROM an invite (control_db.schema.invites.created_by is NOT NULL),
@@ -154,14 +143,6 @@ def _load() -> Settings:
     Build the Settings instance from environment variables.
     Called once at module import time.
     """
-    raw_api_id = _require("TG_API_ID")
-    try:
-        api_id = int(raw_api_id)
-    except ValueError:
-        sys.exit(
-            f"[config] TG_API_ID must be an integer, got: {raw_api_id!r}"
-        )
-
     log_file_raw = _optional("LOG_FILE", "")
     log_file = log_file_raw if log_file_raw else None
 
@@ -171,20 +152,19 @@ def _load() -> Settings:
     # Accept the usual spellings of "yes"; anything else (including unset) is False.
     enable_api_docs = _optional("ENABLE_API_DOCS", "false").lower() in ("1", "true", "yes", "on")
 
+    # A relative DATA_DIR is anchored to the repo root (this file's directory), NOT the current working directory:
+    # the API server and every worker it spawns must resolve the same folder even if one was launched from somewhere else.
+    data_dir = Path(_optional("DATA_DIR", "data"))
+    if not data_dir.is_absolute():
+        data_dir = Path(__file__).parent / data_dir
+
     return Settings(
-        api_id=                 api_id,
-        api_hash=               _require("TG_API_HASH"),
-        phone=                  _require("TG_PHONE"),
-        session_name=           _optional("SESSION_NAME", "televault"),
-        db_path=                _optional("DB_PATH", "data/televault.db"),
-        database_url=           _optional("DATABASE_URL", "postgresql+psycopg://televault:televault@localhost:5432/televault"),
         control_database_url=   _optional("CONTROL_DATABASE_URL", "postgresql+psycopg://televault:televault@localhost:5432/televault_control"),
+        data_dir=               str(data_dir.resolve()),
         fernet_key=             _require("FERNET_KEY"),
         jwt_secret=             _require("JWT_SECRET"),
         log_level=              _optional("LOG_LEVEL", "INFO"),
         log_file=               log_file,
-        heartbeat_path=         _optional("HEARTBEAT_PATH", "data/televault.heartbeat"),
-        backfill_status_path=   _optional("BACKFILL_STATUS_PATH", "data/backfill_status.json"),
         bootstrap_admin_token=  bootstrap_admin_token,
         enable_api_docs=        enable_api_docs,
     )

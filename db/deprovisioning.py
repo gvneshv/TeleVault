@@ -46,7 +46,7 @@ def drop_archive_database(db_name: str) -> None:
     don't guess at a recovery" posture as every other unhandled database error in this codebase.
     """
     db.dispose_tenant_engine(db_name)
-    conn = db.get_connection().execution_options(isolation_level="AUTOCOMMIT")
+    conn = db.get_server_connection().execution_options(isolation_level="AUTOCOMMIT")
     try:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
         logger.info("Dropped archive database %r.", db_name)
