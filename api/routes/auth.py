@@ -4,7 +4,7 @@ POST /auth/register, /auth/login, /auth/refresh, /auth/logout, GET /auth/me.
 Everything here writes to the CONTROL database (accounts/invites/refresh tokens/audit log) via api.dependencies.get_control_db() - a deliberate,
 narrow exception to this API server's usual "read-only against the archive DB" rule.
 See control_db/connection.py's module docstring for the full reasoning;
-nothing in this file ever touches db.get_db() (the archive DB).
+nothing in this file ever touches an archive database.
 
 Token transport (read this before touching anything cookie-related below):
     The refresh token travels ONLY as an httpOnly cookie (REFRESH_COOKIE_NAME),

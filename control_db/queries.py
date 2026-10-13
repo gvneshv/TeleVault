@@ -129,16 +129,20 @@ def list_invites(conn: Connection) -> list[dict[str, Any]]:
 # invites - writes
 # ---------------------------------------------------------------------------
 
-def create_invite(conn: Connection, created_by: int, expires_at: datetime) -> str:
+def create_invite(conn: Connection, created_by: int, expires_at: datetime, via_script: bool = False) -> str:
     """
     Insert a new, single-use invite token and return it.
 
     The token itself is generated HERE, not by the caller, so there's exactly one place in the codebase that decides what an invite token looks like
     (secrets.token_urlsafe - cryptographically random, URL-safe, no separators to trip up copy/paste).
-    Currently only called from scripts/manage_admin.py's create-invite subcommand;
-    a future HTTP endpoint for admins to create invites from the UI would call this same function rather than duplicating the generation logic,
-    but would need its own is_admin check before calling it - this function trusts created_by exactly as much as every other write in this module trusts its caller
-    (see this file's own module docstring).
+    Called from two places: POST /api/admin/invites (the web UI) and scripts/manage_admin.py's create-invite subcommand (a shell on the server) -
+    both go through this one function rather than duplicating the generation logic.
+    Neither is checked for admin rights HERE: the HTTP route has require_admin, the script resolves an admin by username/id itself -
+    this function trusts created_by exactly as much as every other write in this module trusts its caller (see this file's own module docstring).
+
+    via_script only decides which audit event is recorded: "invite_created" (default - the web UI) or "invite_created_via_script" (manage_admin.py passes True),
+    so the audit log tells the two origins apart instead of labelling every invite as made by a script.
+    (Rows written before this change keep the old label for invites that actually came from the web UI - the audit log is append-only and is not rewritten.)
 
     Does NOT verify created_by is actually an admin, or even that the id exists - a bad id fails loudly via the NOT NULL foreign key constraint on invites.created_by
     (IntegrityError, uncaught here, same as register_user_via_invite()'s duplicate-username case above) rather than silently.
@@ -157,7 +161,7 @@ def create_invite(conn: Connection, created_by: int, expires_at: datetime) -> st
             ),
             {"token": token, "created_by": created_by, "expires_at": expires_at},
         )
-        _insert_audit_log(conn, event_type="invite_created_via_script", actor_id=created_by)
+        _insert_audit_log(conn, event_type="invite_created_via_script" if via_script else "invite_created", actor_id=created_by)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -773,8 +777,8 @@ def set_telegram_credentials(conn: Connection, user_id: int, encrypted_api_id: s
     Does NOT touch archive_db_ref - resubmitting credentials shouldn't undo which archive this account is already pointed at.
 
     Self-service, unlike set_archive_db_ref() above:
-    called with the caller's OWN user_id from api/routes/telegram.py (Depends(get_current_user), not require_instance_owner) -
-    every account can set its own Telegram credentials, this isn't an admin-only or instance-owner-only action.
+    called with the caller's OWN user_id from api/routes/telegram.py (Depends(get_current_user)) -
+    every account can set its own Telegram credentials, this isn't an admin-only action.
     """
     try:
         result = conn.execute(

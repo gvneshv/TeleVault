@@ -99,12 +99,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import control_db
+import db
 from api.process_utils import running_process_reason
 from config import settings
 from control_db import queries as cq
 from db.deprovisioning import drop_archive_database
 from sqlalchemy.exc import IntegrityError
 from utils.security import hash_password
+from utils.worker_paths import backfill_status_path, heartbeat_path
 
 MIN_PASSWORD_LENGTH = 8  # matches RegisterIn.password in api/schemas/auth.py
 
@@ -190,9 +192,10 @@ def cmd_delete_admin(user_id: int | None, username: str | None) -> None:
         if not user["is_admin"]:
             sys.exit(f"'{user['username']}' (id={user['id']}) isn't an admin - this subcommand is for the admin account only.")
 
-        # Same instance-wide check api/routes/telegram.py's unlink() and api/routes/admin.py's delete_user() both make before their own destructive action -
-        # see api.process_utils.running_process_reason()'s own docstring for why this doesn't only check whether the archiver is running for THIS account.
-        reason = running_process_reason(settings.heartbeat_path, settings.backfill_status_path)
+        # Same check api/routes/telegram.py's unlink() and api/routes/admin.py's delete_user() make before their own destructive action:
+        # is anything running for THIS account right now?
+        # See api.process_utils.running_process_reason().
+        reason = running_process_reason(heartbeat_path(user["id"]), backfill_status_path(user["id"]))
         if reason is not None:
             sys.exit(
                 f"Refusing to delete: {'the userbot is running' if reason == 'already_running' else 'a backfill is running'}. "
@@ -263,7 +266,7 @@ def cmd_create_invite(user_id: int | None, username: str | None, expires_hours: 
             print("Cancelled. Nothing was written.")
             return
 
-        token = cq.create_invite(conn, creator["id"], expires_at)
+        token = cq.create_invite(conn, creator["id"], expires_at, via_script=True)
         print(f"\nInvite token: {token}")
         print(f"Expires: {expires_at.isoformat()}")
         print("Hand this to the invitee directly - anyone who has it can register with it before it expires.")
@@ -298,6 +301,8 @@ def main() -> None:
     args = parser.parse_args()
 
     control_db.init_control_db(settings.control_database_url)
+    # delete-admin drops the account's archive database (db.deprovisioning.drop_archive_database), which needs to know which Postgres server to talk to.
+    db.init_server(settings.control_database_url)
     try:
         if args.command == "create":
             cmd_create(args.username)
@@ -308,6 +313,7 @@ def main() -> None:
         elif args.command == "create-invite":
             cmd_create_invite(getattr(args, "user_id", None), getattr(args, "username", None), args.expires_hours)
     finally:
+        db.close_server()
         control_db.close_db()
 
 
