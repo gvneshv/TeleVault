@@ -2,11 +2,10 @@
 Self-service Telegram linking:
 GET /telegram/status, POST /telegram/credentials, POST /telegram/link/send-code, POST /telegram/link/confirm.
 
-This is the flow that was missing for every account except the one bootstrapped by hand into settings.api_id/api_hash/session_name (see main.py) -
-every OTHER user gets their own api_id/api_hash (from my.telegram.org) and their own Telegram session, stored encrypted on their own `users` row
+This is how EVERY account gets its Telegram login - there is no shared .env credential or .session file.
+Each user supplies their own api_id/api_hash (from my.telegram.org) and signs in; the result is stored encrypted on their own `users` row
 (telegram_api_id, telegram_api_hash, telegram_session_string - see utils/crypto.py's module docstring for why those three columns specifically are encrypted).
-Gated by Depends(get_current_user) only, NOT require_instance_owner:
-every account links its OWN Telegram, this isn't an instance-owner-only action the way /telethon/* and /backfill/* are.
+Gated by Depends(get_current_user): every account links its OWN Telegram.
 
 GET /telegram/status - read-only, answers "how far has this account gotten?" (has_credentials, has_session) without exposing the encrypted values themselves.
     Added so a UI can open directly to the right step instead of always starting an already-linked account back at square one -
@@ -26,8 +25,8 @@ What this deliberately does NOT do (see project roadmap for what's separate, lat
       linking Telegram and having somewhere to store the archived messages are separable concerns, and the frontend calling one right after the other is a UI choice,
       not something enforced at this layer.
     - Does not start a live userbot process for the newly-linked account.
-      main.py is still the one physical process for the one instance owner;
-      per-user worker processes (one per linked account) are the follow-up architecture work this flow is a prerequisite for, not something it does itself.
+      Starting one is a separate, explicit action (POST /api/telethon/start, api/routes/telethon.py): a per-account `main.py --user-id N` process
+      reads the credentials this flow saved - see utils/account.py.
 
 In-memory pending-link state (see _PENDING_LINKS below):
 the phone_code_hash and the not-yet-signed-in TelegramClient/StringSession returned by send_code_request() have to survive between the send-code and confirm HTTP requests,
@@ -61,6 +60,7 @@ from telethon.sessions import StringSession
 import control_db
 from api.dependencies import get_control_db, get_current_user
 from api.process_utils import running_process_reason
+from utils.worker_paths import backfill_status_path, heartbeat_path
 from api.schemas import (
     TelegramConfirmIn,
     TelegramConfirmOut,
@@ -71,7 +71,6 @@ from api.schemas import (
     TelegramStatusOut,
     TelegramUnlinkOut,
 )
-from config import settings
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.security import DecodedAccessToken
 
@@ -326,12 +325,11 @@ async def unlink(
     The only failure mode is the account itself no longer existing, which can't happen in practice
     (get_current_user already named a real row) but is handled the same "not a crash" way get_status() above does, rather than assuming it can't happen.
 
-    Refuses (409) while the live archiver or a backfill is running -
-    see api.process_utils.running_process_reason()'s own docstring for why this doesn't first check whether either belongs to THIS account specifically.
+    Refuses (409) while THIS account's live archiver or a backfill is running - see api.process_utils.running_process_reason().
     Checked before _discard_pending_link()/clear_telegram_session() below, not after:
     there is nothing to undo if this refuses, so there is no reason to touch either first.
     """
-    reason = running_process_reason(settings.heartbeat_path, settings.backfill_status_path)
+    reason = running_process_reason(heartbeat_path(current["user_id"]), backfill_status_path(current["user_id"]))
     if reason is not None:
         raise HTTPException(
             status_code=409,

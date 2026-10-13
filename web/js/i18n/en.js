@@ -83,8 +83,6 @@ export const en = {
   "health.dbReadable": "Database readable",
   "health.dbNotSetUp": "Archive database not set up yet",
   "health.sessionExists": "Telegram session found",
-  "health.sessionNotApplicable":
-    "Only the account that set up this instance's Telegram connection has a session.",
   "health.messageCount": "Archived messages",
   "health.unattached":
     "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
@@ -171,8 +169,8 @@ export const en = {
     "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
   "error.archiveMisconfigured":
     "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator immediately.",
-  "error.notInstanceOwner":
-    "This account does not control this instance's Telegram connection.",
+  "error.telegramNotLinked":
+    "Link your Telegram account first (Settings → Telegram setup).",
   "error.notAdmin": "This action requires admin privileges.",
   "error.dbUnavailable":
     "The database is currently unavailable. Try again shortly, or contact your administrator.",

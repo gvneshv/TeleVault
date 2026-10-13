@@ -16,12 +16,9 @@ A monitoring script that wants a pure liveness probe with no archive semantics s
 What this checks vs. what it doesn't:
     ✓ The caller's own archive database (resolved via control_db.users.archive_db_ref, same lookup get_archive_connection() uses for /chats, /messages, /deleted, /stats)
       is readable and returns rows
-    ✓ Whether THIS caller is the one account with a Telegram session at all (see is_instance_owner and session_exists' own notes below -
-      there is exactly one physical Telethon session today, belonging to one account, not "the instance" in the abstract)
+    ✓ Whether THIS caller has a Telegram session saved (session_exists - see its note in health_check()'s docstring)
     ✗ Whether the userbot is currently connected to Telegram (that requires IPC - a Phase 3 addition, see CHANGELOG)
 """
-
-from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.engine import Connection
@@ -31,7 +28,6 @@ import control_db
 import db
 from api.dependencies import get_control_db, get_current_user
 from api.schemas import HealthOut
-from config import settings
 from utils.security import DecodedAccessToken
 
 router = APIRouter(tags=["health"])
@@ -57,13 +53,8 @@ def health_check(
                           a permanent admin-fix-it situation that will NEVER resolve by retrying,
                           so it gets its own status rather than being told apart from "unavailable" only in prose
 
-    `is_instance_owner` / `session_exists`: there is exactly one physical Telethon .session file per running instance today
-    (see require_instance_owner()'s docstring in api/dependencies.py) - it belongs to whichever ONE account's archive_db_ref matches this instance's own database_url,
-    the same "instance owner" concept require_instance_owner() checks.
-    For every other account, a Telegram session genuinely doesn't exist yet - there's no per-user linking flow built yet (see project roadmap) -
-    so session_exists is correctly False for them, not a stale/borrowed reading of someone else's session.
-    `status` only folds session_exists into its ok/degraded computation FOR the instance owner:
-    a regular account's overall status shouldn't read "degraded" forever over a check that was never theirs to pass in the first place.
+    `session_exists`: whether this account has a Telegram session saved (signed in through the web UI - see api/routes/telegram.py).
+    It does NOT mean the archiver is currently connected to Telegram - that is GET /api/telethon/status's job.
 
     A 200 response is always returned once the caller is authenticated - the body carries the real state, not the HTTP status,
     so partial-health states (e.g. "unattached") render as a normal page state in the UI rather than an error.
@@ -89,21 +80,17 @@ def health_check(
             else:
                 archive_status = "unavailable"
 
-    is_instance_owner = archive_ref is not None and archive_ref == db.get_primary_database_name()
-    session_path = Path(settings.session_name).with_suffix(".session")
-    session_exists = is_instance_owner and session_path.exists()
+    # Whether the account has signed in to Telegram at all (control_db users.telegram_session_string - saved by api/routes/telegram.py's confirm()).
+    # Reads the control DB row already fetched above; nothing on disk is consulted (there is no shared .session file any more).
+    session_exists = bool(user and user["telegram_session_string"])
 
     db_readable = archive_status == "ok"
-    if is_instance_owner:
-        status = "ok" if (db_readable and session_exists) else "degraded"
-    else:
-        status = "ok" if db_readable else "degraded"
+    status = "ok" if (db_readable and session_exists) else "degraded"
 
     return HealthOut(
         status=status,
         archive_status=archive_status,
         db_readable=db_readable,
-        is_instance_owner=is_instance_owner,
         session_exists=session_exists,
         db_message_count=message_count,
     )

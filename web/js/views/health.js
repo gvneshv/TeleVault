@@ -38,17 +38,9 @@ function renderHealthReport(data) {
     </li>
   `;
 
-  // is_instance_owner: there is exactly one physical Telethon session per running instance, and it belongs to one account (see HealthOut's own docstring) -
-  // showing a plain ✗ to every OTHER account would look like a persistent, personal problem rather than "not applicable to you",
-  // so those accounts get an explanatory line instead of a checklist row here.
-  const sessionRow = data.is_instance_owner
-    ? checkRow(t("health.sessionExists"), data.session_exists)
-    : `
-    <li class="health-check health-check--info">
-      <span class="health-check__mark" aria-hidden="true">·</span>
-      <span>${t("health.sessionNotApplicable")}</span>
-    </li>
-  `;
+  // session_exists: whether this account has signed in to Telegram (Settings -> Telegram setup).
+  // Every account has its own session now, so this is a real per-account check - a plain ✗ here means "link Telegram", not "not applicable to you".
+  const sessionRow = checkRow(t("health.sessionExists"), data.session_exists);
 
   // An account with no archive_db_ref at all hasn't FAILED a database check - there is simply nothing to check yet.
   // This row used to render an ✗ for it unconditionally, which read as "your database is broken" directly above a message saying it just isn't set up yet.

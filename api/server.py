@@ -2,12 +2,13 @@
 FastAPI application factory and lifespan manager for the TeleVault API.
 
 Process topology reminder:
-    The userbot (main.py) and this API server are two separate processes sharing one PostgreSQL database.
-    The userbot writes; this server only reads.
-    Never open a write connection here - use db.get_readonly_connection() from api/dependencies.py exclusively.
+    Each account's userbot (main.py --user-id N) and this API server are separate processes; every account has its OWN archive database.
+    The userbots write to the archives; this server only reads them (db.get_tenant_readonly_connection(), via api/dependencies.py's get_archive_connection()).
+    Never open a write connection to an archive here.
+    The only exception is cancel_backfill() marking a killed backfill's history row (see api/routes/backfill.py).
     Exception:
     the CONTROL database (accounts/invites/refresh tokens/audit log, api/routes/auth.py) - this server is that database's only writer, by design.
-    See control_db/connection.py's module docstring for the full reasoning; the rule above is about the ARCHIVE database specifically.
+    See control_db/connection.py's module docstring for the full reasoning; the rule above is about the ARCHIVE databases specifically.
 
 Running in development:
     uvicorn televault.api.server:app --reload --port 8000
@@ -28,7 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import control_db
 import db
-from api.dependencies import require_instance_owner, require_admin
+from api.dependencies import require_admin
 from config import settings
 
 from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, archive, admin
@@ -45,24 +46,24 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan handler (replaces the deprecated on_event pattern).
 
-    Startup: creates the Postgres connection pool (db.init_db()) - this process is separate from main.py (the userbot),
-    so main.py's own init_db() call never runs here.
-    Without this, every request would fail with "Database not initialised" the moment a route's get_db() dependency tried
-    to check out a connection - there's no implicit fallback.
-    This is genuinely required now, unlike the old SQLite version (a raw sqlite3.connect() per request needed no prior setup at all).
+    Startup:
+      - control_db.init_control_db(): the control database's pool (accounts, invites, tokens, audit log, encrypted Telegram credentials).
+      - db.init_server(): tells db/connection.py which Postgres server the per-account archives live on (the control URL is the template -
+        same server/credentials, different database name).
+        Per-account archive engines are then created lazily, on each account's first request.
+    There is no single "primary" archive to open here any more: this process serves every account, and each request resolves the caller's own archive.
+    Without init_server(), the first request touching an archive (or provisioning one) would fail with "Database server not configured".
 
-    Shutdown: disposes the pool (db.close_db()) - closes every pooled connection cleanly rather than leaving them to the OS on process exit.
-
-    Also starts/stops the CONTROL database's own, separate pool (control_db.init_control_db() control_db.close_db()) -
-    see control_db/connection.py's module docstring for why it's a second, independent Engine rather than a second function bolted onto db.init_db().
+    Shutdown: disposes the control pool, every cached per-account archive pool, and the provisioning (CREATE/DROP DATABASE) connection -
+    closes every pooled connection cleanly rather than leaving them to the OS on process exit.
     """
     logger.info("TeleVault API starting up.")
-    db.init_db(settings.database_url)
     control_db.init_control_db(settings.control_database_url)
+    db.init_server(settings.control_database_url)
     yield
     control_db.close_db()
     db.close_tenant_engines()
-    db.close_db()
+    db.close_server()
     logger.info("TeleVault API shutting down.")
 
 
@@ -90,26 +91,26 @@ app = FastAPI(
 # API routes - all prefixed with /api to allow Nginx to proxy them cleanly
 #
 # chats/messages/deleted/stats:
-# each ROUTE (not the router as a whole) depends on # api.dependencies.get_archive_connection instead of get_db -
+# each ROUTE (not the router as a whole) depends on api.dependencies.get_archive_connection -
 # it resolves the CALLING user's own archive (control_db.users.archive_db_ref) per request,
 # so this is a per-user gate applied inside each route function's own Depends(),
 # not a blanket router-level one - see that dependency's docstring for why a single shared gate here would be the wrong shape
 # (there is no longer one instance-wide archive to gate as a whole).
 #
 # backfill/telethon:
-# gated at the router level on require_instance_owner,
-# since controlling this one running process's one live userbot is inherently single-owner regardless of how many control_db accounts exist -
-# see that dependency's docstring for why it's deliberately a different question from get_archive_connection's, even though they resolve the same today.
+# per-account, like everything else: each route acts on the CALLING account's own worker process, status and history.
+# Starting one additionally requires finished setup (api.dependencies.require_archiving_ready - Telegram linked + archive provisioned);
+# status/stop/cancel only need a valid login.
+# There is no router-level gate - see those routers' own module docstrings.
 #
 # telegram / archive:
-# each route depends on api.dependencies.get_current_user directly (like chats/messages/deleted/stats do via get_archive_connection),
-# NOT require_instance_owner - linking Telegram and provisioning your own archive are both per-account self-service actions every user does for themselves,
-# not the single-instance-owner action backfill/telethon are.
+# each route depends on api.dependencies.get_current_user directly (like chats/messages/deleted/stats do via get_archive_connection) -
+# linking Telegram and provisioning your own archive are per-account self-service actions every user does for themselves.
 # See those routers' own module docstrings.
 #
 # admin:
 # gated at the router level on require_admin - every route in api/routes/admin.py requires the same one thing (the caller is the sole admin),
-# so a blanket router-level dependency is the right shape here, same reasoning as backfill/telethon's require_instance_owner just above.
+# so a blanket router-level dependency is the right shape here (unlike backfill/telethon, whose routes are per-account and gated individually).
 # See that router's own module docstring.
 #
 # auth stays open: it's what issues the tokens everything else then checks.
@@ -126,8 +127,8 @@ app.include_router(deleted.router,   prefix="/api")
 app.include_router(stats.router,     prefix="/api")
 app.include_router(telegram.router,  prefix="/api")
 app.include_router(archive.router,   prefix="/api")
-app.include_router(backfill.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
-app.include_router(telethon.router,  prefix="/api", dependencies=[Depends(require_instance_owner)])
+app.include_router(backfill.router,  prefix="/api")
+app.include_router(telethon.router,  prefix="/api")
 app.include_router(admin.router,     prefix="/api", dependencies=[Depends(require_admin)])
 
 

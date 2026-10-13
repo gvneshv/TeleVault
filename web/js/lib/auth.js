@@ -1,7 +1,7 @@
 /**
  * In-memory access token, login/register/logout API calls, and apiFetch() -
  * the one thing every other view module on the authenticated app page (index.html) needs from this file,
- * since it's a drop-in replacement for fetch() against endpoints gated by get_archive_connection / require_instance_owner / get_current_user (api/dependencies.py):
+ * since it's a drop-in replacement for fetch() against endpoints gated by get_archive_connection / require_archiving_ready / get_current_user (api/dependencies.py):
  * /api/chats, /messages, /deleted, /stats, /health, /telethon/*, /backfill/*.
  *
  * PAGE SPLIT: login.html, register.html, and index.html (the app itself) are three separate pages,
@@ -276,9 +276,8 @@ function tryRefresh() {
  * without any separate bootstrap step (see this module's own docstring).
  *
  * On a 401 from the real request (the access token expired mid-session), refreshes once and retries.
- * Deliberately does NOT retry on a 403: that status means the caller IS a valid, authenticated account,
- * just not the one require_owner-family dependencies allow for this resource
- * (see api/dependencies.py's get_archive_connection() / require_instance_owner()) -
+ * Deliberately does NOT retry on a 403: that status means the caller IS a valid, authenticated account, just not allowed this particular action
+ * (e.g. a non-admin hitting an admin route, or a locked account - see api/dependencies.py's require_admin() / require_archiving_ready()) -
  * a fresh access token changes nothing about which account it belongs to.
  *
  * If there's no way to get a valid session (refresh itself fails), redirects to /login.html (see redirectToLogin() above)

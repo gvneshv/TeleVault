@@ -16,7 +16,7 @@ Every route here is gated at the ROUTER level (api/server.py: `dependencies=[Dep
 not per-route - unlike telegram.py/archive.py (every route self-service, gated on get_current_user only) or chats.py/messages.py/etc.
 (gated per-route via get_archive_connection, since each resolves a DIFFERENT per-caller archive).
 Every single route in THIS router requires the same one thing (the caller is the admin),
-so a blanket router-level dependency is the right shape here - same reasoning backfill.py/telethon.py already use for require_instance_owner.
+so a blanket router-level dependency is the right shape here (unlike backfill.py/telethon.py, whose routes are per-account and gated individually).
 """
 
 import logging
@@ -38,9 +38,9 @@ from api.schemas import (
     AdminUserListOut,
     AdminUserOut,
 )
-from config import settings
 from db.deprovisioning import drop_archive_database
 from utils.security import DecodedAccessToken
+from utils.worker_paths import backfill_status_path, heartbeat_path
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +120,8 @@ def delete_user(
     Under the single-admin model this is really one check (there is no "other admin" to delete),
     but both conditions are checked explicitly rather than collapsed into one, so the 400 message is specific about which rule was hit.
 
-    Refuses (409, reusing the SAME "already_running"/"backfill_running" reasons start_archiver()'s own guards use) while the live archiver or a backfill is running -
-    see api.process_utils.running_process_reason()'s own docstring for why.
+    Refuses (409, reusing the SAME "already_running"/"backfill_running" reasons start_archiver()'s own guards use)
+    while the TARGET account's live archiver or a backfill is running - see api.process_utils.running_process_reason().
     Checked AFTER the target lookup/is_admin check above, not before:
     there's no reason to make someone stop the archiver first only to then discover their target was never a valid one anyway.
 
@@ -138,9 +138,8 @@ def delete_user(
     if target["is_admin"]:
         raise HTTPException(status_code=400, detail="Admin accounts cannot be deleted here. See scripts/manage_admin.py's delete-admin subcommand.")
 
-    # See api.process_utils.running_process_reason()'s own docstring for why this checks instance-wide rather
-    # than trying to work out whether the archiver/backfill happens to belong to THIS target account.
-    reason = running_process_reason(settings.heartbeat_path, settings.backfill_status_path)
+    # The TARGET's own processes - another account's running archiver is no reason to refuse (see api.process_utils.running_process_reason()).
+    reason = running_process_reason(heartbeat_path(user_id), backfill_status_path(user_id))
     if reason is not None:
         raise HTTPException(
             status_code=409,

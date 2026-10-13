@@ -1,21 +1,15 @@
 """
 FastAPI dependencies shared across route modules.
 
-get_db() yields a read-only Postgres connection for the duration of one request and closes it
-(returning it to the pool) in the finally block - whether the request succeeds or raises an exception.
+The API server never opens "the" archive database - it serves every account at once,
+so each request resolves the CALLING account's own archive (get_archive_connection() below) and yields a read-only connection to it
+(db.get_tenant_readonly_connection(), see db/connection.py), closing it in the finally block whether the request succeeds or raises.
 
 Why read-only?
-    Enforced via db.get_readonly_connection() (see db/connection.py), which issues `SET default_transaction_read_only = on` on checkout.
-    Any write attempted through this connection errors out at the Postgres level - the same safeguard the old SQLite `file:path?mode=ro` URI mode gave,
-    just enforced by the server instead of the driver.
-    Matters for the same reason it did before:
-    the userbot and the API server are separate processes sharing one database, and a route handler has no business writing to it.
-
-Previously (SQLite era) this module opened a brand-new raw connection per request,
-since SQLite connections are cheap and pooling added complexity without benefit at personal-tool scale.
-Under Postgres, "new connection per request" would mean a fresh TCP handshake + auth round-trip per API call -
-this now checks out a connection from the shared pool instead
-(still one per request conceptually, just backed by a pool so the underlying network connections are reused rather than opened and torn down every time).
+    Enforced via `SET default_transaction_read_only = on` on checkout.
+    Any write attempted through the connection errors out at the Postgres level.
+    The workers (main.py, backfill.py) and the API server are separate processes that can touch the same archive database,
+    and a route handler has no business writing to it (the one deliberate exception, cancel_backfill(), opens its own explicit write connection).
 """
 
 from typing import Generator
@@ -34,48 +28,6 @@ logger = logging.getLogger(__name__)
 from utils.security import DecodedAccessToken, decode_access_token
 
 
-def get_db() -> Generator[Connection, None, None]:
-    """
-    Yield a read-only pooled connection for one request, then return it to the pool.
-
-    Usage in a route:
-        from fastapi import Depends
-        from api.dependencies import get_db
-
-        @router.get("/example")
-        def example(db: Connection = Depends(get_db)):
-            ...
-
-    Raises:
-        HTTPException 503 if the database is unreachable (e.g. Postgres isn't running, or the userbot has never run so nothing has been migrated/created yet).
-        `detail` is a {"message": <english>, "reason": "db_unavailable"} dict, not a bare string - see get_archive_connection()'s own docstring for why
-        (short version: the raw OperationalError text is for the server log, not an end user's screen).
-
-    Implementation note: the read-only context manager's __enter__/__exit__ are driven manually
-    (rather than a plain `with` wrapping the whole function body)
-    so that only the connection-open step is covered by the try/except below - an exception raised later,
-    while the route handler is actually using the connection, must NOT be swallowed and reported as "database unavailable";
-    it should propagate as whatever error it is.
-    """
-    cm = db.get_readonly_connection()
-    try:
-        conn = cm.__enter__()
-    except OperationalError as exc:
-        logger.warning("Primary database is unreachable: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "message": "The database is currently unavailable. Ensure Postgres is running and reachable.",
-                "reason": "db_unavailable",
-            },
-        ) from exc
-
-    try:
-        yield conn
-    finally:
-        cm.__exit__(None, None, None)
-
-
 # ---------------------------------------------------------------------------
 # Control DB (auth/multi-user feature)
 # ---------------------------------------------------------------------------
@@ -84,12 +36,11 @@ def get_control_db() -> Generator[Connection, None, None]:
     """
     Yield a read-write pooled connection to the control DB for one request, then return it to the pool.
 
-    No read-only variant here, unlike get_db() above - see control_db/connection.py's module
-    docstring for why the control DB has no reader/writer split to enforce in the first place.
+    No read-only variant here - see control_db/connection.py's module docstring for why the control DB has no reader/writer split to enforce in the first place.
 
-    Raises HTTPException 503 on the same "database unreachable" condition get_db() guards against, for the same reason (e.g. Postgres isn't running yet).
-    Same structured-detail reasoning as get_db() above; reason code is "control_db_unavailable" instead,
-    since the frontend may eventually want to tell the two apart (this one affects every account, not just accounts sharing a particular archive).
+    Raises HTTPException 503 when the database is unreachable (e.g. Postgres isn't running yet).
+    `detail` is a {"message", "reason"} dict rather than a bare string - see get_archive_connection()'s docstring for why;
+    the reason is "control_db_unavailable" (it affects every account, not just one archive).
     """
     try:
         conn = control_db.get_connection()
@@ -144,12 +95,8 @@ def get_archive_connection(
 ) -> Generator[Connection, None, None]:
     """
     Resolve the CALLING user's own archive (control_db.schema.users.archive_db_ref) and yield a read-only connection to it.
-    Used by chats/messages/deleted/stats in place of a fixed get_db() call - each user sees their own archive, not a single instance-wide one.
-
-    Replaces the earlier require_owner design (a single settings.owner_user_id gate on one static archive):
-    that assumed exactly one archive per running instance,
-    which isn't the actual model - every user is meant to get their own archive_db_ref once they finish linking Telegram
-    (see the confirmed design note reproduced in db/connection.py's per-tenant-connections docstring).
+    Used by chats/messages/deleted/stats/backfill-history - each user sees their own archive, never a shared one.
+    Every user gets their own archive_db_ref once they finish setup (POST /archive/provision) - there is no instance-wide archive.
     is_admin plays NO role in this check, on purpose - admin status governs account management, never archive access
     (see scripts/manage_admin.py's own docstring for why an admin promoted later must never gain another user's messages just by being an admin).
 
@@ -226,8 +173,7 @@ def require_admin(current: DecodedAccessToken = Depends(get_current_user)) -> De
     (e.g. delete_user_completely() looking the user up fresh),
     so nothing downstream trusts this token claim alone for anything destructive beyond "may this caller reach this endpoint at all".
 
-    Raises HTTPException 403 - deliberately the same status a non-admin gets from require_instance_owner()'s "not_instance_owner" case,
-    for the same reason: this is an ordinary, permanent fact about most accounts, not a transient error to recover from.
+    Raises HTTPException 403: being a non-admin is an ordinary, permanent fact about most accounts, not a transient error to recover from.
     """
     if not current["is_admin"]:
         raise HTTPException(
@@ -237,49 +183,48 @@ def require_admin(current: DecodedAccessToken = Depends(get_current_user)) -> De
     return current
 
 
-def require_instance_owner(
+def require_archiving_ready(
     current: DecodedAccessToken = Depends(get_current_user),
     control_conn: Connection = Depends(get_control_db),
 ) -> DecodedAccessToken:
     """
-    Gate for telethon.py/backfill.py: controlling THIS running process's one live userbot
-    (main.py - a single Telethon session against a single database_url) is inherently a single-owner action today,
-    since there is only one physical userbot for this instance to control, regardless of how many control_db accounts exist.
-    Only the account whose own archive_db_ref matches this instance's actual database_url may start/stop/backfill it.
+    Gate for STARTING an archiver or a backfill (api/routes/telethon.py's start, api/routes/backfill.py's start):
+    the calling account must have finished setup - Telegram linked (credentials AND a signed-in session) and an archive database provisioned.
 
-    This is NOT the same question get_archive_connection() answers (which archive should I read FROM),
-    even though today, for the one account this is true of, both happen to resolve to the same database -
-    they're independent checks that will diverge the moment real per-user provisioning exists and a second physical userbot process serves a second user:
-    that second user's get_archive_connection() would resolve to their own database,
-    but they would never pass require_instance_owner() on THIS process, because this process's userbot was never theirs to control in the first place.
+    This replaced require_instance_owner(), which only let through the one account whose archive happened to match a single instance-wide DATABASE_URL.
+    That was a leftover of the single-user design.
+    Now every account runs its own workers (see utils/account.py), so the only question is "can THIS account's worker actually run?" -
+    answered here with an explicit reason instead of a late crash in a subprocess nobody is watching.
 
-    Raises HTTPException 403 - with a `detail` that distinguishes WHY,
-    since they're different situations for the person seeing them (see web/js/lib/errors.js's describeError()):
-        - archive_unattached: this account has no archive_db_ref at all yet - same reason code get_archive_connection() uses for the identical underlying fact,
-          so the two surfaces show the same message rather than two different-sounding explanations of one situation.
-        - not_instance_owner: this account DOES have an archive, it's just not the one this running process's userbot serves.
-          This is the ordinary, permanent, expected state for every account except the one instance owner - not an error to fix, just not this account's feature.
-    There's deliberately no third "archive_ref matches but that database is unreachable" case here:
-    this function only compares archive_db_ref to database_url as strings - it never opens a connection, so it cannot observe that failure mode.
-    If the instance owner's own database goes down, that surfaces wherever the route handler itself actually connects, not here.
+    Raises HTTPException 409 (not 403: nothing is forbidden, something just isn't set up yet - same stance as get_archive_connection()),
+    with a `detail` the frontend can translate (web/js/lib/errors.js):
+        - telegram_not_linked: no saved API credentials or no signed-in session yet.
+        - archive_unattached:  Telegram is linked but there is no archive database yet (same code get_archive_connection() uses for the identical fact).
+        - account_locked (403): an admin locked this account.
+          Only reachable within one access-token lifetime of the lock (see get_current_user()'s note) -
+          sign-in and refresh already refuse locked accounts - but a worker must never start for a locked account, so it is checked here too.
+    Never opens a connection to the archive itself, so it cannot observe an unreachable archive database - that surfaces in the worker's own log.
     """
     user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
-    instance_db_name = db.get_primary_database_name()
-
-    if user is None or user["archive_db_ref"] is None:
+    if user is None or user["is_locked"]:
         raise HTTPException(
             status_code=403,
+            detail={"message": "This account is locked.", "reason": "account_locked"},
+        )
+    if not (user["telegram_api_id"] and user["telegram_api_hash"] and user["telegram_session_string"]):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Link your Telegram account first (Settings -> Telegram setup).",
+                "reason": "telegram_not_linked",
+            },
+        )
+    if user["archive_db_ref"] is None:
+        raise HTTPException(
+            status_code=409,
             detail={
                 "message": "Your archive hasn't been set up yet. Finish linking your Telegram account to provision it.",
                 "reason": "archive_unattached",
-            },
-        )
-    if user["archive_db_ref"] != instance_db_name:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "message": "This account does not control this instance's Telegram connection.",
-                "reason": "not_instance_owner",
             },
         )
     return current

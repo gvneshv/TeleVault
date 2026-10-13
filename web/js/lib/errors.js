@@ -17,7 +17,7 @@ const ERROR_REASON_KEYS = {
   archive_unattached: "error.archiveUnattached",
   archive_unavailable: "error.archiveUnavailable",
   archive_misconfigured: "error.archiveMisconfigured",
-  not_instance_owner: "error.notInstanceOwner",
+  telegram_not_linked: "error.telegramNotLinked",
   not_admin: "error.notAdmin",
   db_unavailable: "error.dbUnavailable",
   control_db_unavailable: "error.dbUnavailable",
