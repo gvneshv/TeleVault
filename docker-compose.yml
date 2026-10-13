@@ -2,7 +2,8 @@
 #
 # This is a DEV convenience, not a production deployment - the VPS setup documented in README/docs will run Postgres separately (or a managed instance).
 # Credentials below are placeholders on purpose;
-# they only need to match config.py's DATABASE_URL default, both localhost-only.
+# they only need to match the CONTROL_DATABASE_URL default in config.py/.env.example, both localhost-only.
+# (The 'televault' database below is created by the image but TeleVault no longer uses it - per-account archives are created on demand.)
 #
 # Usage:
 #   docker compose up -d        # start Postgres in the background

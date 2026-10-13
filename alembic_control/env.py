@@ -5,7 +5,7 @@ This is a deliberately separate Alembic setup from alembic/env.py
 (which manages db/schema.py's archive-schema metadata) rather than one setup managing two MetaData objects in a single database:
 
   - The two schemas live in genuinely different databases
-    (settings.control_database_url vs settings.database_url - see control_db/schema.py's module docstring for why),
+    (the control database vs the per-account archive databases - see control_db/schema.py's module docstring for why),
     and a single Alembic "online" run only ever connects to one database at a time.
     Two databases means two independent revision histories,
     which is exactly what two Alembic setups (each with its own alembic_version table, in its own database) give for free.
@@ -46,8 +46,8 @@ if config.config_file_name is not None:
 # schema shape, same relationship db/schema.py has to alembic/env.py.
 target_metadata = metadata
 
-# settings.control_database_url (from .env's CONTROL_DATABASE_URL), NOT settings.database_url -
-# this is the one line that actually determines which database this Alembic setup ever touches.
+# settings.control_database_url (from .env's CONTROL_DATABASE_URL) - this is the one line that actually determines which database this Alembic setup ever touches
+# (unlike alembic/env.py, whose target is per-account and must be passed explicitly).
 config.set_main_option("sqlalchemy.url", settings.control_database_url)
 
 

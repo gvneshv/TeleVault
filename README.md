@@ -31,24 +31,11 @@ per-view chat filter, EN/UK language support, and light/dark themes.
 - Python 3.11 or newer
 - Docker + Docker Compose (for the local Postgres instance - see step 2)
 - A Telegram account
-- Telegram API credentials (free - takes two minutes to get)
+- Telegram API credentials (free - takes two minutes to get; step 6 walks through it)
 
 ---
 
-## 1. Get your Telegram API credentials
-
-1. Go to **https://my.telegram.org** and log in with your phone number.
-2. Click **"API development tools"**.
-3. Fill in any app name and short name (e.g. `televault` / `tvault`) - these
-   are just labels, they don't affect anything.
-4. Copy your **App api_id** (a number) and **App api_hash** (a hex string).
-
-> Keep these secret. Anyone with your api_id + api_hash can impersonate your
-> app (though not your account without the login code).
-
----
-
-## 2. Set up the project
+## 1. Set up the project
 
 ```bash
 # Clone the repo
@@ -63,25 +50,24 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Start Postgres
+---
+
+## 2. Start Postgres
 
 ```bash
 docker compose up -d
 ```
 
-This starts a local Postgres 16 instance in the background, matching the
-credentials `.env.example`'s `DATABASE_URL` default already expects - no
-extra configuration needed for local dev. Data persists in a Docker volume
-across restarts (`docker compose down` stops the container without touching
+This starts a local Postgres 16 instance in the background, matching the credentials
+`.env.example`'s `CONTROL_DATABASE_URL` default already expects - no extra configuration needed for local dev.
+Data persists in a Docker volume across restarts (`docker compose down` stops the container without touching
 your data; only `docker compose down -v` wipes it).
 
-**Note for local development:** Postgres is a client-server database, unlike
-SQLite - it needs to actually be running (this container up) any time you
-want to connect to it at all, whether that's TeleVault itself, `psql`, or a
-GUI client. `docker compose up -d` takes a couple of seconds and then just
-runs quietly in the background; most people start it once at the beginning
-of a dev session and leave it running. See `docker-compose.yml`'s comments
-for more.
+**Note for local development:** Postgres is a client-server database - it needs to actually be running
+(this container up) any time you want to connect to it at all, whether that's TeleVault itself, `psql`, or a
+GUI client. `docker compose up -d` takes a couple of seconds and then just runs quietly in the background;
+most people start it once at the beginning of a dev session and leave it running. See `docker-compose.yml`'s
+comments for more.
 
 ---
 
@@ -91,194 +77,102 @@ for more.
 cp .env.example .env
 ```
 
-Open `.env` and fill in your values:
+Fill in exactly these four values in `.env` - nothing else is required:
 
 ```
-TG_API_ID=12345678
-TG_API_HASH=0123456789abcdef0123456789abcdef
-TG_PHONE=+1234567890          # your number in international format
+CONTROL_DATABASE_URL=postgresql+psycopg://televault:televault@localhost:5432/televault_control
+FERNET_KEY=            # python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+JWT_SECRET=            # openssl rand -hex 32
+TELEVAULT_BOOTSTRAP_ADMIN_TOKEN=   # any random phrase, e.g. openssl rand -hex 16
 ```
 
-The other settings have sensible defaults - you can leave them as-is for
-now. `DATABASE_URL` already matches the Postgres container started in step 2.
+- `CONTROL_DATABASE_URL` already matches the container from step 2. It also tells TeleVault which Postgres
+  server the per-account archive databases live on (same server and credentials, one database per account).
+- `FERNET_KEY` encrypts every account's Telegram credentials and session in the database. **Back it up somewhere
+  safe** - losing it makes those stored values permanently unreadable.
+- `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` is what lets the *first* person register through the web UI (see step 5).
+  It works exactly once, then is inert.
 
-`FERNET_KEY`, `JWT_SECRET`, and `CONTROL_DATABASE_URL` are for the
-auth/multi-user control database - see the next section for setting up
-accounts once these are filled in.
+**There are no Telegram settings in `.env`.** Every account - yours included - enters its own Telegram API
+credentials and signs in through the web UI (step 6), and they are stored encrypted in the control database.
 
 ---
 
-## 4. Set up the database
-
-With Postgres running (step 2), apply the archive schema:
-
-```bash
-alembic upgrade head
-```
-
-This creates all tables, indexes, and the `pg_trgm` extension used for
-search. Safe to run again later after pulling new schema changes - Alembic
-only applies migrations that haven't run yet.
-
-Then apply the separate control-database schema (accounts/invites/refresh
-tokens/audit log - kept apart from the archive above, see
-`control_db/schema.py` for why):
+## 4. Create the control database schema
 
 ```bash
 alembic -c alembic_control.ini upgrade head
 ```
 
-### Bootstrapping your own account
-
-There's no self-registration yet - every account needs an invite, and every
-invite needs an existing admin to have created it, so the very first account
-(yours) has to be created directly:
-
-```bash
-python scripts/manage_admin.py create --username youruser
-```
-
-This prompts for a password (never pass one as a CLI argument - see the
-script's own module docstring for why), creates an admin account bypassing
-the invite requirement entirely, and prints the new account's id, e.g.
-`Created admin user 'youruser' (id=1).` - no API server or login needed to
-get this value, since the script talks to the control database directly.
-It's the only supported way to create the first account; see
-`control_db/schema.py`'s `invites` table for why that's a hard requirement
-rather than an oversight. This account starts with no Telegram credentials
-and no archive - both are separate steps below, same as for anyone else who
-registers through an invite afterward.
-
-### Inviting other people
-
-Once at least one admin exists, generate invites from the command line
-instead of writing SQL by hand:
-
-```bash
-python scripts/manage_admin.py create-invite --created-by youruser
-```
-
-Prints a single-use token (default 24h expiry, `--expires-hours` to change
-it) - hand it to the invitee directly. They register with it at
-`POST /auth/register`; the web UI's `register.html` calls this for you once
-you have someone to send the link to.
-
-### Linking a Telegram account
-
-Registering (or being created via `manage_admin.py create`) only makes a
-TeleVault account - it doesn't connect to Telegram yet. That's a separate,
-per-account step, currently only reachable directly against the API (there's
-no settings-page UI for this yet):
-
-1. **Get your own Telegram API credentials** - the same `api_id`/`api_hash`
-   pair from [my.telegram.org](https://my.telegram.org) as step 1 above,
-   but this time it's *this account's own* pair, saved encrypted on its own
-   row (not the `.env` values, which are still only used by `main.py`, the
-   one instance-owner's live archiver - see `api/routes/telegram.py`'s
-   module docstring for how the two relate):
-
-   ```bash
-   curl -X POST http://localhost:8000/api/telegram/credentials \
-     -H "Authorization: Bearer <your access_token>" \
-     -H "Content-Type: application/json" \
-     -d '{"api_id": "12345", "api_hash": "your_api_hash"}'
-   ```
-
-2. **Request a login code**, sent by Telegram to the phone number itself
-   (not stored anywhere - see `TelegramSendCodeIn`'s own docstring):
-
-   ```bash
-   curl -X POST http://localhost:8000/api/telegram/link/send-code \
-     -H "Authorization: Bearer <your access_token>" \
-     -H "Content-Type: application/json" \
-     -d '{"phone": "+15551234567"}'
-   ```
-
-3. **Confirm the code** Telegram sent:
-
-   ```bash
-   curl -X POST http://localhost:8000/api/telegram/link/confirm \
-     -H "Authorization: Bearer <your access_token>" \
-     -H "Content-Type: application/json" \
-     -d '{"code": "12345"}'
-   ```
-
-   If the account has Telegram's own two-factor password enabled, this
-   comes back `{"linked": false, "needs_password": true}` instead of an
-   error - call `/telegram/link/confirm` again with `{"password": "..."}`
-   (not the code again) to finish.
-
-Afterward, this account has an encrypted Telegram session saved, but still
-no archive database to write to - that's the next, separate step below.
-
-### Pointing an account at an archive database
-
-Whether or not it's linked Telegram yet, an account needs `archive_db_ref`
-set before it can use `/api/chats`, `/messages`, `/deleted`, or `/stats`
-(they 409 with "hasn't been set up yet" otherwise). The normal way to get
-one now is automatic - a single self-service call, requiring the Postgres
-role behind `DATABASE_URL` to have `CREATEDB` (most local/dev setups already
-do; a deliberately least-privileged production role likely won't, on
-purpose - see below for what happens then):
-
-```bash
-curl -X POST http://localhost:8000/api/archive/provision \
-  -H "Authorization: Bearer <access_token>"
-```
-
-This creates a real Postgres database (named `televault_archive_<user_id>`),
-runs the exact same migrations `alembic upgrade head` would, and records it
-as `archive_db_ref` - all in one call. Refuses (409) if the account already
-has one.
-
-If the `CREATEDB` privilege isn't there, this comes back 503 with reason
-`provisioning_permission_denied` instead of silently failing - either grant
-it (`ALTER ROLE <role> CREATEDB;`, on whatever role `DATABASE_URL` connects
-as) and retry, or fall back to the fully manual path that predates this
-endpoint: create and migrate a database yourself the same way you did for
-`DATABASE_URL` in step 4 above, then:
-
-```bash
-python scripts/manage_admin.py set-archive --username youruser --db-name youruser_archive
-```
-
-### Migrating an existing SQLite archive
-
-If you have an archive from a previous SQLite-based install
-(`v1.2.0` or earlier) that you want to keep, migrate it now, before running
-TeleVault against the new Postgres database for the first time:
-
-```bash
-python scripts/migrate_sqlite_to_postgres.py --dry-run   # preview counts, writes nothing
-python scripts/migrate_sqlite_to_postgres.py             # the real migration
-```
-
-It reads from `DB_PATH` (read-only - your old file is never modified) and
-writes into `DATABASE_URL`. Safe to interrupt and re-run if needed - see the
-script's own module docstring for exactly how that safety works. It
-verifies its own results (row counts, source vs. target) at the end and
-exits with an error if anything doesn't match.
-
-Starting fresh with no prior archive? Skip this - there's nothing to migrate.
+This creates the accounts / invites / sessions / audit-log tables. Safe to run again after pulling updates -
+Alembic only applies migrations that haven't run yet. (There is no equivalent step for archives: each account's
+archive database is created *and* migrated automatically when you finish setup in step 6.)
 
 ---
 
-## 5. First run
+## 5. Start the web UI and create your account
 
 ```bash
-python main.py
+uvicorn api.server:app --host 127.0.0.1 --port 8000
 ```
 
-**First-time only:** Telethon will prompt you for the verification code that
-Telegram sends to your account (just like logging into a new device). Enter
-it and press Enter. A `televault.session` file is created - this stores your
-login so you won't be asked again.
+Open **http://localhost:8000**, go to **Register**, and use the value of `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` as the
+invite token. That account becomes TeleVault's one and only admin. Everyone after you registers with an invite
+you create in the admin panel.
+
+> Prefer a shell? `python scripts/manage_admin.py create --username youruser` creates the admin account directly
+> (no bootstrap token needed), and `python scripts/manage_admin.py create-invite --created-by youruser` prints an
+> invite token - handy as a recovery path if the web UI is ever unusable.
+
+`--host 0.0.0.0` (instead of `127.0.0.1`) makes it reachable from other devices on your network too (e.g. testing
+from a phone). For raw API exploration set `ENABLE_API_DOCS=true` in `.env`, restart, and open
+**http://localhost:8000/api/docs** (off by default - see `.env.example` for why).
+
+---
+
+## 6. Link Telegram and create your archive
+
+In the web UI open **Settings -> Telegram setup**:
+
+1. **Get your Telegram API credentials** - go to **https://my.telegram.org**, log in with your phone number, open
+   **"API development tools"**, and create an app (any name and short name - they're just labels). Copy the
+   **api_id** (a number) and **api_hash** (a hex string) into the form. They are tied to *your* Telegram account;
+   treat them like passwords.
+2. **Enter your phone number** - Telegram sends a login code to your Telegram app.
+3. **Enter the code** (and your two-step-verification password, if you have one).
+4. **Create archive database** - provisions your own Postgres database and applies the schema. This needs the
+   Postgres role behind `CONTROL_DATABASE_URL` to have `CREATEDB` (the Docker setup already does; a deliberately
+   least-privileged production role may not - you then get a clear `provisioning_permission_denied` error. Either
+   grant it with `ALTER ROLE <role> CREATEDB;`, or create and migrate a database yourself with
+   `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head` and point your account at it with
+   `python scripts/manage_admin.py set-archive --username youruser --db-name DBNAME`).
+
+The same steps exist as plain API calls (`POST /api/telegram/credentials`, `/telegram/link/send-code`,
+`/telegram/link/confirm`, `POST /api/archive/provision`) if you'd rather script them.
+
+---
+
+## 7. Start archiving
+
+Use the archiver toggle in the nav rail (or the **Backfill** tab for history). That starts a worker process for
+*your account* - `python main.py --user-id <your id>` under the hood - which logs in with the session you saved in
+step 6. Every account runs its own worker, so several accounts can archive at the same time.
+
+You can also run a worker by hand (useful for debugging); your account id is shown in the admin panel:
+
+```bash
+python main.py --user-id 1
+python backfill.py --user-id 1 --chat @someusername --limit 500
+```
+
+If a worker can't start it says why and exits - e.g. the account hasn't linked Telegram yet, or the saved session
+was revoked from Telegram's **Devices** list (just sign in again in step 6). Workers never ask for a login code.
 
 You should see output like:
 
 ```
 2026-05-12 18:00:00  INFO      utils.logging_setup    Logging initialised - level=INFO
-2026-05-12 18:00:01  INFO      __main__               Starting TeleVault.
+2026-05-12 18:00:01  INFO      __main__               Starting TeleVault archiver for account id=1...
 2026-05-12 18:00:02  INFO      __main__               Authenticated as: Alice (id=123456789)
 2026-05-12 18:00:02  INFO      __main__               Event handlers registered.
 2026-05-12 18:00:02  INFO      __main__               TeleVault is running. Press Ctrl-C to stop.
@@ -288,100 +182,75 @@ From this point, TeleVault is archiving every text message in real time.
 
 ---
 
-## 6. Smoke test
+## 8. Smoke test
 
-With TeleVault running, open Telegram on your phone or desktop and:
+With the archiver running, open Telegram on your phone or desktop and:
 
-1. **Send yourself a message** (open Saved Messages and type anything).
-   You should see a log line:
+1. **Send yourself a message** (open Saved Messages and type anything). You should see a log line:
    ```
    INFO  db.queries  Inserted message 1 from chat 123456789 -> internal id 1
    ```
 
-2. **Delete that message.**
-   You should see:
+2. **Delete that message.** You should see:
    ```
    INFO  db.queries  Flagged message 1 in chat 123456789 as deleted at ...
    ```
 
-3. **Query the database directly** to confirm:
+3. **Check the web UI** - the message appears under *Messages*, and under *Deleted* once flagged. Or query your
+   archive database directly (its name is `televault_archive_<your id>`):
    ```bash
-   docker compose exec postgres psql -U televault -d televault -c "
+   docker compose exec postgres psql -U televault -d televault_archive_1 -c "
      SELECT text, is_deleted, deleted_at
      FROM messages
      ORDER BY archived_at DESC
      LIMIT 5;
    "
    ```
-   (Or use any Postgres GUI client - DBeaver, pgAdmin, TablePlus, or a
-   VSCode Postgres extension - pointed at `localhost:5432` with the
-   credentials from `.env`.)
+   (Or use any Postgres GUI client - DBeaver, pgAdmin, TablePlus, or a VSCode Postgres extension - pointed at
+   `localhost:5432` with the credentials from `.env`.)
 
 ---
 
-## 7. Stopping TeleVault
+## 9. Stopping
 
-Press **Ctrl-C**. The shutdown is graceful - the database connection is
-flushed and closed cleanly before the process exits.
+Use the archiver toggle in the web UI, or press **Ctrl-C** in the terminal of a worker you started by hand. The
+shutdown is graceful - the database connection is flushed and closed cleanly before the process exits.
 
 ---
 
-## 8. Launch the web UI
+## Migrating an existing SQLite archive
 
-The web UI is a separate process from the userbot - both can run at the same
-time, reading/writing the same Postgres database (the API only ever reads,
-via a read-only connection - see `api/dependencies.py`).
+If you have an archive from a previous SQLite-based install (`v1.2.0` or earlier) that you want to keep, migrate
+it into an account's archive database (created in step 6) *before* that account's archiver first runs:
 
 ```bash
-uvicorn api.server:app --host 0.0.0.0 --port 8000
+python scripts/migrate_sqlite_to_postgres.py --sqlite-path data/televault.db --target-db televault_archive_1 --dry-run   # preview, writes nothing
+python scripts/migrate_sqlite_to_postgres.py --sqlite-path data/televault.db --target-db televault_archive_1             # the real migration
 ```
 
-`--host 0.0.0.0` (rather than the default `127.0.0.1`) makes it reachable
-from other devices on your network too (e.g. testing from a phone) - drop
-it back to `127.0.0.1` if you only ever want this reachable from the
-machine it's running on.
+It reads the SQLite file read-only (your old file is never modified). Safe to interrupt and re-run - see the
+script's own module docstring for how. It verifies its results (row counts, source vs. target) at the end and
+exits with an error if anything doesn't match. Starting fresh? Skip this.
 
-Then open **http://localhost:8000** in a browser - you'll land on the login
-page. Register (you'll need an invite token - see "Inviting other people"
-above) or log in with an account you already bootstrapped, and you should
-see the Chats view load, with Messages, Deleted, Stats, Backfill, and
-Health in the nav rail.
+---
 
-> **A freshly-registered account will show "hasn't been set up yet" on
-> most tabs, and that's expected**, not a bug: those views need
-> `archive_db_ref` set (see "Pointing an account at an archive database"
-> above) before there's anything to show. Backfill and Telethon specifically
-> only ever work for the one account that controls this instance's live
-> userbot (see this README's Notes section on `require_instance_owner`) -
-> every other account will see "This account does not control this
-> instance's Telegram connection" there, which is expected too, not an
-> error to fix.
->
-> For exercising raw endpoints directly (without the web UI), set
-> `ENABLE_API_DOCS=true` in your local `.env`, restart the API, and open
-> **http://localhost:8000/api/docs** - click "Authorize" and paste the
-> `access_token` from `POST /auth/login`. The docs are off by default (see
-> `.env.example` for why).
+## About the web UI
 
 A few things worth knowing:
 
-- **Installable as an app:** most browsers will offer to install it (via the
-  address bar or browser menu) since it ships a PWA manifest and service
-  worker. Installed or not, it works the same.
-- **Offline behaviour:** the app shell (HTML/CSS/JS) is cached for offline
-  loading, but data always requires a live connection - `/api/*` is
-  deliberately excluded from the cache, since this is private data and a
-  stale cached result would be misleading, not just old.
-- **Theme and language:** toggle at the bottom of the nav rail (☀/☾ for
-  theme, EN/UK for language) - on narrow/mobile screens, where the nav
-  collapses to a top bar, they move to the right end of that bar instead.
+- **Installable as an app:** most browsers will offer to install it (via the address bar or browser menu) since it
+  ships a PWA manifest and service worker. Installed or not, it works the same.
+- **Offline behaviour:** the app shell (HTML/CSS/JS) is cached for offline loading, but data always requires a live
+  connection - `/api/*` is deliberately excluded from the cache, since this is private data and a stale cached
+  result would be misleading, not just old.
+- **Theme and language:** toggle at the bottom of the nav rail (☀/☾ for theme, EN/UK for language) - on
+  narrow/mobile screens, where the nav collapses to a top bar, they move to the right end of that bar instead.
   Both persist across visits via `localStorage`.
-- **Interactive API docs:** off by default; with `ENABLE_API_DOCS=true` in
-  `.env` they're available at `http://localhost:8000/api/docs` (Swagger UI)
-  and `/api/redoc` if you want to explore the endpoints directly.
-- **Deployment note:** for always-on use, run this the same way as the
-  userbot (systemd, etc.), with Nginx proxying `/api/*` to this process and
-  serving `/` - see `api/server.py`'s docstring for the exact setup.
+- **A freshly-registered account shows "hasn't been set up yet" on most tabs - that's expected**, not a bug: those
+  views need an archive (step 6) before there's anything to show.
+- **Deployment note:** for always-on use, run the API under systemd (or similar), with Nginx proxying `/api/*` to
+  it and serving `/` - see `api/server.py`'s docstring for the exact setup. Workers are started and stopped by the
+  API, so there is nothing else to supervise.
 
 ---
 
@@ -409,11 +278,11 @@ televault/
 │   │   ├── message.py
 │   │   ├── stats.py
 │   │   └── common.py          # PaginatedResponse, HealthOut
-│   ├── dependencies.py        # get_db() - read-only Postgres connection per request
-│   ├── process_utils.py       # single-instance guard + heartbeat-file reading, shared by main.py and the telethon status route
+│   ├── dependencies.py        # get_archive_connection() - the CALLING account's read-only archive connection; require_archiving_ready, require_admin
+│   ├── process_utils.py       # per-account single-instance guard + heartbeat-file reading, shared by the workers and the telethon status route
 │   └── server.py              # FastAPI app + static file mount
-├── backfill.py                # Historical-message import - separate entry point from main.py; can't run at the same time as the live archiver (same Telegram session)
-├── main.py                    # Userbot entry point
+├── backfill.py                # Historical-message import for one account (--user-id N); can't run at the same time as that account's live archiver (same Telegram session)
+├── main.py                    # Live archiver for one account (--user-id N)
 ├── config.py                  # Settings loader (.env -> Settings dataclass)
 ├── db/
 │   ├── connection.py          # Postgres connection pool (SQLAlchemy Engine + psycopg)
@@ -422,7 +291,8 @@ televault/
 │   └── read_queries.py          # All read operations (used by the API)
 ├── scripts/
 │   ├── migrate_sqlite_to_postgres.py  # One-time SQLite -> Postgres data migration
-│   └── toggle_archiver.ps1 / .bat     # Windows shortcut to start/stop the live archiver
+│   ├── manage_admin.py                # Admin/invite management from a shell (recovery path)
+│   └── toggle_archiver.ps1 / .bat     # Windows shortcut to start/stop one account's live archiver (-UserId N)
 ├── handlers/
 │   ├── helpers.py       # Shared Telethon entity utilities
 │   ├── on_message.py    # NewMessage handler
@@ -465,6 +335,8 @@ televault/
 │   └── 01-extensions.sql   # Runs once, first time the Postgres container starts (enables pg_trgm)
 ├── utils/
 │   ├── atomic_write.py    # Crash-safe JSON writes (used for the heartbeat + backfill-status files)
+│   ├── account.py         # Loads ONE account's decrypted Telegram credentials + archive db name from the control DB (used by the workers)
+│   ├── worker_paths.py    # Per-account heartbeat / backfill-status file locations (data/users/<id>/)
 │   └── logging_setup.py   # Console + rotating file logging
 ├── .env.example        # Environment variable template
 ├── .gitattributes      # Enforces LF line endings on Windows checkouts
@@ -487,9 +359,11 @@ A few things worth checking on periodically once this is deployed and running lo
   never removes volumes unless you explicitly pass `--volumes` - avoid that
   flag). Check disk usage first with `docker system df` if you want to see
   what's actually being reclaimed before running it.
-- **Database backups** - `docker compose exec postgres pg_dump -U televault televault > backup.sql`
-  gives you a plain-text SQL dump you can restore from later. Worth
-  automating (a cron job) once this is deployed somewhere that matters.
+- **Database backups** - the control database holds every account's (encrypted) Telegram session:
+  `docker compose exec postgres pg_dump -U televault televault_control > backup.sql` gives you a plain-text SQL dump.
+  Back up your `FERNET_KEY` separately - the dump is useless without it. Archive databases
+  (`televault_archive_<id>`) can be dumped the same way. Worth automating (a cron job) once this is deployed somewhere
+  that matters.
 - **Disk usage on the VPS generally** - the archive only grows; check
   available disk space periodically (`df -h`), especially once media
   archiving lands (Phase 4 - see CHANGELOG).
@@ -513,8 +387,10 @@ A few things worth checking on periodically once this is deployed and running lo
   materially, update its "Last updated" line and bump `CURRENT_TERMS_VERSION`
   in `api/routes/auth.py`. Acceptance (time + version) is recorded per account;
   run `alembic -c alembic_control.ini upgrade head` once to add those columns.
-- **`.session` file:** treat it like a password. It lets anyone run requests
-  as your Telegram account. It's excluded from git via `.gitignore`.
+- **Telegram sessions:** an account's saved login is stored encrypted in the control database (there is no `.session`
+  file any more). Treat the database dump, `FERNET_KEY` and the database credentials like passwords - together they let
+  anyone act as your Telegram account. A legacy `televault.session` file from an older install is no longer used:
+  delete it, and terminate that session under Telegram -> Settings -> Devices if you no longer need it.
 - **Telegram ToS:** TeleVault archives only messages from chats you're already
   part of, for personal use. It doesn't automate sending, scrape public
   content, or interact with other accounts - it stays well within the
@@ -522,22 +398,14 @@ A few things worth checking on periodically once this is deployed and running lo
 - **Media messages** (photos, stickers, voice notes) are silently skipped in
   Phase 1. The log will show a `DEBUG` line for each skipped message if you
   set `LOG_LEVEL=DEBUG` in `.env`.
-- **Archive access is per-account, not instance-wide.** `/api/chats`,
-  `/api/messages`, `/api/deleted`, `/api/stats`, and `/api/health` each
-  resolve the calling account's own `archive_db_ref` (see
-  `api/dependencies.py`'s `get_archive_connection()`) - there's no single
-  "the" archive anymore, and no `OWNER_USER_ID` setting (removed; if you
-  still have it in an old `.env`, it's ignored). `/api/telethon/*` and
-  `/api/backfill/*` are different: exactly one account controls this
-  running instance's one live userbot (`require_instance_owner()`), because
-  that part of the architecture is still single-instance - see "Linking a
-  Telegram account" above for the plan there. `POST /auth/register`,
-  `/login`, `/refresh`, `/logout`, and `GET /auth/me` stay open to anyone
-  with an invite, since those are what let an account prove who it is in
-  the first place. Admin status (`is_admin`) governs account management
-  only (currently just: creating other admins and invites via
-  `scripts/manage_admin.py` - see "Inviting other people" above), never
-  archive or Telegram access.
+- **Everything is per-account.** `/api/chats`, `/messages`, `/deleted`, `/stats`, `/health` and the
+  `/api/telethon/*` and `/api/backfill/*` controls each act on the calling account's own archive (see
+  `api/dependencies.py`'s `get_archive_connection()`), Telegram session, worker processes, heartbeat and status
+  files - there is no "instance owner" and no instance-wide archive. Starting a worker additionally requires finished
+  setup (Telegram linked + archive created; otherwise 409 `telegram_not_linked` / `archive_unattached`).
+  `POST /auth/register`, `/login`, `/refresh`, `/logout`, and `GET /auth/me` stay open to anyone with an invite, since
+  those are what let an account prove who it is in the first place. Admin status (`is_admin`) governs account
+  management only (the admin panel and `scripts/manage_admin.py`), never archive or Telegram access.
 - **Local development needs Postgres running.** Unlike SQLite, there's no
   "just open the file" - the Postgres container (or however you're running
   Postgres) needs to be up any time you want to connect to the database,

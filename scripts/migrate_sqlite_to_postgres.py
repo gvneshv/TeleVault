@@ -1,17 +1,20 @@
 """
 One-time data migration: copies an existing SQLite TeleVault archive into the new PostgreSQL database.
 
-Run this ONCE, after `alembic upgrade head` has created the (empty) Postgres schema,
-and BEFORE main.py or backfill.py are run against Postgres for the first time.
+Run this ONCE, after the target archive database exists and has the archive schema applied
+(a database created by the web UI's setup wizard / POST /api/archive/provision already does),
+and BEFORE that account's archiver or a backfill writes to it for the first time.
 Safe to interrupt and re-run - see "Resumability" below.
 
 Usage:
-    python scripts/migrate_sqlite_to_postgres.py            # migrate
-    python scripts/migrate_sqlite_to_postgres.py --dry-run  # preview only, writes nothing
-    python scripts/migrate_sqlite_to_postgres.py --verify   # compare row counts only, migrates nothing
+    python scripts/migrate_sqlite_to_postgres.py --sqlite-path data/televault.db --target-db televault_archive_1            # migrate
+    python scripts/migrate_sqlite_to_postgres.py --sqlite-path data/televault.db --target-db televault_archive_1 --dry-run  # preview only, writes nothing
+    python scripts/migrate_sqlite_to_postgres.py --sqlite-path data/televault.db --target-db televault_archive_1 --verify   # compare row counts only, migrates nothing
 
-Source: settings.db_path (the old SQLite file, opened read-only - this script never writes to it).
-Target: settings.database_url (must already have the Alembic baseline migration applied - this script does not create tables).
+Source: --sqlite-path (the old SQLite file, opened read-only - this script never writes to it).
+Target: --target-db, the NAME of an archive database on the same Postgres server as CONTROL_DATABASE_URL
+        (an account's archive_db_ref, e.g. televault_archive_1 - see the admin panel / `users.archive_db_ref`).
+        It must already have the archive schema applied - this script does not create tables.
 
 What gets migrated, and in what order:
     1. chat_migrations - standalone, no FK dependencies either direction.
@@ -96,11 +99,11 @@ def _parse_datetime(s: str | None) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 
-def _open_source() -> sqlite3.Connection:
+def _open_source(sqlite_path: str) -> sqlite3.Connection:
     """
     Open the source SQLite database read-only - this script must never write to it, however things go on the Postgres side.
     """
-    conn = sqlite3.connect(f"file:{settings.db_path}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -470,6 +473,12 @@ def verify(source: sqlite3.Connection, target) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sqlite-path", required=True, help="Path to the old SQLite database file (opened read-only).")
+    parser.add_argument(
+        "--target-db",
+        required=True,
+        help="Name of the (already migrated) archive database to copy into, on the same server as CONTROL_DATABASE_URL.",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -482,8 +491,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    db.init_db(settings.database_url)
-    source = _open_source()
+    db.init_server(settings.control_database_url)
+    db.init_db(db.server_database_url(args.target_db).render_as_string(hide_password=False))
+    source = _open_source(args.sqlite_path)
     target = db.get_connection()
 
     if args.verify:

@@ -9,6 +9,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed - per-account workers (breaking: `.env` and command lines)
+
+- **Telegram credentials no longer live in `.env`.** `TG_API_ID`, `TG_API_HASH`, `TG_PHONE`, `SESSION_NAME`,
+  `DATABASE_URL` and `DB_PATH` are gone. A fresh clone now needs only `CONTROL_DATABASE_URL`, `FERNET_KEY`,
+  `JWT_SECRET` (+ optionally `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN`); `alembic -c alembic_control.ini upgrade head`
+  works with exactly those. Every account links its own Telegram in the web UI, stored encrypted in the control DB.
+  Previously `config.py` demanded the Telegram values at import time, so even `alembic` refused to run.
+- **`main.py` and `backfill.py` are per-account workers:** `python main.py --user-id N` /
+  `python backfill.py --user-id N`. They read that account's decrypted credentials + archive database from the control
+  DB (`utils/account.py`), connect with a `StringSession` and **never prompt** - a revoked/invalid session exits with a
+  clear message (a backfill also records an `error` run) instead of hanging on a login prompt. Only the id is passed on
+  the command line, never the session.
+- **Heartbeat and backfill-status files are per account** (`data/users/<id>/`, new `DATA_DIR` setting, `utils/worker_paths.py`),
+  so several accounts can archive at once and every "is something running?" check (start, unlink, delete account) answers
+  for the right account only.
+- `/api/telethon/*` and `/api/backfill/*` act on the calling account; **starting** requires finished setup
+  (`require_archiving_ready`: 409 `telegram_not_linked` / `archive_unattached`). `session_exists` on `/api/health` now
+  reflects the account's own saved Telegram session.
+- The API process has no "primary" archive: `db.init_server()` + `db.server_database_url()` derive each account's
+  database from `CONTROL_DATABASE_URL`; the server also derives its CREATE/DROP DATABASE connection from it.
+- The archive Alembic env no longer imports `config.py`; target a database explicitly:
+  `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head` (provisioning does this itself).
+- `scripts/migrate_sqlite_to_postgres.py` takes `--sqlite-path` and `--target-db`.
+- `scripts/toggle_archiver.ps1/.bat` take `-UserId` (not exercised in CI - Windows only).
+- Subprocesses are launched with absolute script paths and `cwd` = repo root, so the API can be started from any directory.
+
+### Removed
+
+- The "instance owner" concept: `require_instance_owner`, `db.get_primary_database_name`, `HealthOut.is_instance_owner`,
+  the `not_instance_owner` error and the "session not applicable" health text. Service worker cache bumped to `v29`.
+
+### Fixed
+
+- Invites created through the web UI were audited as `invite_created_via_script`; they are now `invite_created`
+  (the script still logs the `_via_script` variant). Existing audit rows are not rewritten.
+
 ### Added
 
 - **Multi-user authentication (backend)** - `POST /auth/register` (invite-token based),

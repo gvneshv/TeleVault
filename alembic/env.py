@@ -13,8 +13,7 @@ from alembic import context
 # Add the repo root to sys.path explicitly so `import config` / `import db.schema` resolve regardless.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import settings  # noqa: E402  (see sys.path insert above)
-from db.schema import metadata  # noqa: E402
+from db.schema import metadata  # noqa: E402  (see sys.path insert above)
 
 # this is the Alembic Config object, which provides access to the values within the .ini file in use.
 config = context.config
@@ -28,21 +27,23 @@ if config.config_file_name is not None:
 # - db/schema.py is the single source of truth for the schema shape (see its own module docstring).
 target_metadata = metadata
 
-# The DB URL comes from TeleVault's own config (settings.database_url, itself sourced from .env's DATABASE_URL) rather than being duplicated into alembic.ini.
-# This does mean `alembic` commands require a fully-populated .env
-# (including the Telegram credentials config.py requires at import time)
-# even though they have nothing to do with Telegram - an accepted coupling, not an oversight;
-# see this migration's commit notes for why.
-#
-# TELEVAULT_ALEMBIC_URL_OVERRIDE: the one exception, checked FIRST.
-# Set (and cleared) only by db/provisioning.py, for the one case where a migration needs to target a database that isn't settings.database_url -
-# a brand-new per-user archive being created and migrated from inside the already-running API process, which has no other way to hand env.py a different target
-# (env.py runs as Alembic's own entry point, invoked fresh via alembic.command.upgrade() - it can't just receive a Python argument the way a normal function call would).
-# Not meant to be set by a human; running `alembic upgrade head` from a shell should never have this set, so it falls through to settings.database_url exactly as before.
-config.set_main_option(
-    "sqlalchemy.url",
-    os.environ.get("TELEVAULT_ALEMBIC_URL_OVERRIDE") or settings.database_url,
-)
+# Which database to migrate - there is NO default, on purpose.
+# Archive databases are per-account and normally created AND migrated automatically (db/provisioning.py, via POST /api/archive/provision),
+# so a bare `alembic upgrade head` has no single "the archive" to target any more (and this file no longer imports config.py or needs a .env at all).
+# The target comes from, in order:
+#   1. TELEVAULT_ALEMBIC_URL_OVERRIDE - set (and cleared) only by db/provisioning.py,
+#      which runs migrations from inside the already-running API process and has no other way to hand this file a target
+#      (env.py runs as Alembic's own entry point, it can't receive a Python argument).
+#   2. `-x url=...` on the command line, for the rare manual run, e.g.:
+#          alembic -x url=postgresql+psycopg://user:pass@localhost:5432/televault_archive_1 upgrade head
+#      (Needed e.g. to bring an archive created by an older version up to date by hand. Quote the URL if it contains special characters.)
+_target_url = os.environ.get("TELEVAULT_ALEMBIC_URL_OVERRIDE") or context.get_x_argument(as_dictionary=True).get("url")
+if not _target_url:
+    raise SystemExit(
+        "No target database given. Archive databases are per-account; pass one explicitly:\n"
+        "  alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head"
+    )
+config.set_main_option("sqlalchemy.url", _target_url)
 
 
 def run_migrations_offline() -> None:

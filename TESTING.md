@@ -12,19 +12,19 @@ a real local Postgres during development, not just written. Section D (browser b
 
 ## A. Prerequisites
 
-1. Postgres running, both schemas migrated:
+1. Postgres running, control schema migrated (archive databases are created per account later, by the app itself):
    ```bash
-   alembic upgrade head
    alembic -c alembic_control.ini upgrade head
    ```
-2. `.env` has `FERNET_KEY`, `JWT_SECRET`, `DATABASE_URL`, `CONTROL_DATABASE_URL` set.
-   `OWNER_USER_ID` no longer exists - remove it if it's still in your `.env` from an earlier version.
-3. Bootstrap your own account and point it at your real archive:
-   ```bash
-   python scripts/manage_admin.py create --username youruser
-   python scripts/manage_admin.py set-archive --username youruser --db-name <your DATABASE_URL's db name>
-   ```
-4. Start the API: `uvicorn api.server:app --host 127.0.0.1 --port 8000`
+2. `.env` has `CONTROL_DATABASE_URL`, `FERNET_KEY`, `JWT_SECRET` (and, for the first-account flow, `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN`).
+   There are no `TG_*`, `DATABASE_URL`, `DB_PATH`, `SESSION_NAME` or `OWNER_USER_ID` settings any more - remove them if they're still in your `.env` from an earlier version.
+3. Start the API: `uvicorn api.server:app --host 127.0.0.1 --port 8000`
+4. Create the first (admin) account in the web UI by registering with the bootstrap token as the invite code -
+   or from a shell: `python scripts/manage_admin.py create --username youruser`.
+   Then follow Settings -> Telegram setup (credentials, login code, "Create archive database").
+   Manual alternative for the archive: create a database yourself, migrate it with
+   `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head`, then
+   `python scripts/manage_admin.py set-archive --username youruser --db-name DBNAME`.
 
 ---
 
@@ -103,12 +103,19 @@ INSERT INTO invites (token, created_by, expires_at) VALUES ('test-invite', 1, no
 | Account with `archive_db_ref = NULL` | Same endpoints → **409** `"Your archive hasn't been set up yet..."` - **not** 403. |
 | `archive_db_ref` pointing at a database that doesn't actually exist | **503** `"...currently unavailable..."` |
 
-### C7. Instance control (`require_instance_owner`) - `telethon.py`/`backfill.py`
+### C7. Per-account workers - `telethon.py`/`backfill.py`
 
 | Test | Expected outcome |
 |---|---|
-| The one account whose `archive_db_ref` matches this instance's own `DATABASE_URL` | `GET /api/telethon/status`, `/api/backfill/status` → **200**. |
-| Any other account - **including an admin** | **403** `"This account does not control this instance's Telegram connection."` This is the key check: promoting someone to admin must never grant them this. |
+| Fresh account, Telegram not linked: `POST /api/telethon/start`, `POST /api/backfill/start` | **409** reason `telegram_not_linked` (not 403, and nothing is spawned). |
+| Telegram linked, no archive yet | **409** reason `archive_unattached`. |
+| `GET /api/telethon/status`, `/api/backfill/status` for any logged-in account | **200**, and each account sees only its **own** state (start an archiver for account A; account B still reports `running: false`). |
+| Fully set up account: `POST /api/telethon/start` | **200** `{"started": true}`; a worker runs as `main.py --user-id <id>` - the Telegram session is **not** on its command line (check `ps`). Heartbeat appears in `data/users/<id>/`. |
+| Same account: start again / start a backfill while the archiver runs | **409** `already_running` / `archiver_connected`. |
+| Account A's archiver running, account B starts theirs | **Both** run - one account's worker never blocks another's. |
+| Saved Telegram session revoked (Telegram -> Devices) then start | Worker exits within seconds with a clear log line; status never becomes `running`. A backfill in the same situation leaves a `backfill_runs` row with status `error`. |
+| Admin deletes or unlinks account B while only account A's archiver runs | Allowed - only the **target's** own processes block it. |
+| Wrong `FERNET_KEY` / unknown id: `python main.py --user-id N` | One-line error (`Could not decrypt...` / `No account with id=N.`), exit code 1, no traceback. |
 
 ---
 
