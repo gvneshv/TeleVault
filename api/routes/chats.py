@@ -9,7 +9,7 @@ Chat-related endpoints:
 
 from sqlalchemy.engine import Connection
 from math import ceil
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -20,7 +20,7 @@ from db.read_queries import get_chat, get_chats, get_chat_options, get_chat_mess
 router = APIRouter(tags=["chats"])
 
 
-def _build_page(result: dict, page: int, per_page: int) -> dict:
+def _build_page(result: dict[str, Any], page: int, per_page: int) -> dict[str, Any]:
     """Attach pagination metadata to a raw _paginate() result."""
     total = result["total"]
     return {
@@ -45,7 +45,7 @@ def list_chats(
         description="Sort by most recent activity descending (default) or ascending (least recently active first).",
     ),
     db: Connection = Depends(get_archive_connection),
-) -> PaginatedResponse[ChatOut]:
+) -> dict[str, Any]:
     """
     Return all chats TeleVault has seen, sorted by most recent message (same ordering as the Telegram sidebar) by default.
 
@@ -60,7 +60,7 @@ def list_chats(
     response_model=list[ChatOption],
     summary="List every chat's id and name, unpaginated",
 )
-def list_chat_options(db: Connection = Depends(get_archive_connection)) -> list[ChatOption]:
+def list_chat_options(db: Connection = Depends(get_archive_connection)) -> list[dict[str, Any]]:
     """
     Return {chat_id, name} for every chat TeleVault has seen, with no pagination.
 
@@ -79,7 +79,7 @@ def list_chat_options(db: Connection = Depends(get_archive_connection)) -> list[
 def get_chat_by_id(
     chat_id: int,
     db: Connection = Depends(get_archive_connection),
-) -> ChatOut:
+) -> dict[str, Any]:
     """
     Return a single chat record with aggregate counts.
     Raises 404 if the chat_id is not in the archive.
@@ -116,7 +116,7 @@ def list_chat_messages(
         description="Sort by date ascending (oldest first) or descending (newest first, default).",
     ),
     db: Connection = Depends(get_archive_connection),
-) -> PaginatedResponse[MessageOut]:
+) -> dict[str, Any]:
     """
     Return messages within a single chat, newest first by default.
 

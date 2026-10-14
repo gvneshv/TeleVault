@@ -10,7 +10,7 @@ It exists as its own endpoint because:
 
 from sqlalchemy.engine import Connection
 from math import ceil
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 
@@ -45,7 +45,7 @@ def list_deleted(
         description="Sort by original message date ascending (oldest first) or descending (newest first, default).",
     ),
     db: Connection = Depends(get_archive_connection),
-) -> PaginatedResponse[MessageOut]:
+) -> dict[str, Any]:
     """
     Return all messages that have been flagged as deleted, newest first by default.
 

@@ -120,7 +120,8 @@ def _paginate(
     Note the "AS count_sub" alias below - unlike SQLite, Postgres requires every subquery in a FROM clause to be aliased.
     """
     count_sql = f"SELECT COUNT(*) FROM ({query}) AS count_sub"
-    total: int = conn.execute(sql_text(count_sql), params).scalar()
+    # COUNT(*) always yields exactly one row, so `or 0` never changes a real result - it only narrows scalar()'s `Any | None`.
+    total = int(conn.execute(sql_text(count_sql), params).scalar() or 0)
 
     offset = (page - 1) * per_page
     paged_sql = f"{query} LIMIT :_limit OFFSET :_offset"
@@ -549,7 +550,8 @@ def get_stats(conn: Connection) -> dict[str, Any]:
                 COALESCE(SUM(deleted_count), 0) AS total_deleted,
                 COALESCE(SUM(edited_count), 0)  AS total_edited
             FROM chats
-            """)).first()
+            """)).first() or (0, 0, 0)
+    # ^ An aggregate with no GROUP BY always returns exactly one row; the (0, 0, 0) fallback is defensive and satisfies the type checker.
 
     archiving_since = conn.execute(
         sql_text("SELECT archived_at FROM messages ORDER BY id ASC LIMIT 1")
@@ -589,7 +591,7 @@ def get_message_count(conn: Connection) -> int:
     Quick sanity check used by the health endpoint.
     Returns total row count from the messages table.
     """
-    return conn.execute(sql_text("SELECT COUNT(*) FROM messages")).scalar()
+    return int(conn.execute(sql_text("SELECT COUNT(*) FROM messages")).scalar() or 0)
 
 
 # ---------------------------------------------------------------------------

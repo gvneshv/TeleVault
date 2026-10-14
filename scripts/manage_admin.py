@@ -92,6 +92,7 @@ import getpass
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 # This script lives in scripts/, one level below the repo root -
 # add the repo root to sys.path explicitly so these imports resolve regardless of the working directory it's invoked from
@@ -104,6 +105,7 @@ from api.process_utils import running_process_reason
 from config import settings
 from control_db import queries as cq
 from db.deprovisioning import drop_archive_database
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from utils.security import hash_password
 from utils.worker_paths import backfill_status_path, heartbeat_path
@@ -128,6 +130,28 @@ def _prompt_new_password() -> str:
     if password != confirm:
         sys.exit("Passwords did not match. Nothing was created.")
     return password
+
+
+def _find_user(conn: Connection, user_id: int | None, username: str | None) -> dict[str, Any]:
+    """
+    Resolve the --id / --username target of a subcommand to a user row, or exit with a clear message.
+
+    argparse enforces "exactly one of --id / --username" through a required mutually-exclusive group, but that guarantee lives in the parser,
+    not in the type system - so both parameters are Optional here and the "neither given" branch is handled explicitly instead of trusting the caller.
+    Replaces three copies of the same lookup-or-exit block that used to sit in the subcommands.
+    Exits (never returns None), so callers need no `if user is None` of their own.
+    """
+    if user_id is not None:
+        user = cq.get_user_by_id(conn, user_id)
+        identifier = f"id={user_id}"
+    elif username is not None:
+        user = cq.get_user_by_username(conn, username)
+        identifier = f"username='{username}'"
+    else:
+        sys.exit("Specify either --id or --username. Nothing was written.")
+    if user is None:
+        sys.exit(f"No user found with {identifier}. Nothing was written.")
+    return user
 
 
 def cmd_create(username: str) -> None:
@@ -185,10 +209,7 @@ def cmd_delete_admin(user_id: int | None, username: str | None) -> None:
     """
     conn = control_db.get_connection()
     try:
-        user = cq.get_user_by_id(conn, user_id) if user_id is not None else cq.get_user_by_username(conn, username)
-        if user is None:
-            identifier = f"id={user_id}" if user_id is not None else f"username='{username}'"
-            sys.exit(f"No user found with {identifier}. Nothing was written.")
+        user = _find_user(conn, user_id, username)
         if not user["is_admin"]:
             sys.exit(f"'{user['username']}' (id={user['id']}) isn't an admin - this subcommand is for the admin account only.")
 
@@ -229,10 +250,7 @@ def cmd_delete_admin(user_id: int | None, username: str | None) -> None:
 def cmd_set_archive(user_id: int | None, username: str | None, db_name: str) -> None:
     conn = control_db.get_connection()
     try:
-        user = cq.get_user_by_id(conn, user_id) if user_id is not None else cq.get_user_by_username(conn, username)
-        if user is None:
-            identifier = f"id={user_id}" if user_id is not None else f"username='{username}'"
-            sys.exit(f"No user found with {identifier}. Nothing was written.")
+        user = _find_user(conn, user_id, username)
 
         print(f"\nAbout to set archive_db_ref for '{user['username']}' (id={user['id']}) to '{db_name}'.")
         if user["archive_db_ref"] is not None:
@@ -252,10 +270,7 @@ def cmd_set_archive(user_id: int | None, username: str | None, db_name: str) -> 
 def cmd_create_invite(user_id: int | None, username: str | None, expires_hours: int) -> None:
     conn = control_db.get_connection()
     try:
-        creator = cq.get_user_by_id(conn, user_id) if user_id is not None else cq.get_user_by_username(conn, username)
-        if creator is None:
-            identifier = f"id={user_id}" if user_id is not None else f"username='{username}'"
-            sys.exit(f"No user found with {identifier}. Nothing was written.")
+        creator = _find_user(conn, user_id, username)
 
         if not creator["is_admin"]:
             sys.exit(f"'{creator['username']}' (id={creator['id']}) isn't an admin. Invite creation is an admin-only action.")
