@@ -47,6 +47,7 @@ import sys
 import time
 
 from pathlib import Path
+from typing import Any
 
 from datetime import datetime, timezone
 
@@ -63,6 +64,7 @@ from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
+from utils.telethon_compat import disconnect_client, get_authenticated_user
 from utils.worker_paths import backfill_status_path, heartbeat_path
 
 logger = logging.getLogger(__name__)
@@ -145,7 +147,9 @@ async def backfill_chat(
     if chat_type in ("supergroup", "channel"):
         try:
             full = await client(functions.channels.GetFullChannelRequest(chat))
-            migrated_from = getattr(full.full_chat, "migrated_from_chat_id", None)
+            # client(request) is typed as `result | list[result]` (the list form is for batched requests, which this is not),
+            # so reach the attribute defensively instead of via `full.full_chat`.
+            migrated_from = getattr(getattr(full, "full_chat", None), "migrated_from_chat_id", None)
             if migrated_from:
                 old_chat_id = utils.get_peer_id(PeerChat(migrated_from))
                 db.queries.record_chat_migration(
@@ -173,7 +177,11 @@ async def backfill_chat(
     # just makes archived_at ordering read naturally if you ever look at the raw table.
     # min_id=0 (Telethon's own default) means "no lower bound" - a brand-new chat with nothing archived yet passes min_id=None here, which becomes 0.
     async for message in client.iter_messages(
-        chat, reverse=True, limit=limit, min_id=min_id or 0
+        chat,
+        reverse=True,
+        # Telethon documents limit=None as "no cap" but annotates the parameter `float`, hence the targeted ignore.
+        limit=limit,  # pyright: ignore[reportArgumentType]
+        min_id=min_id or 0,
     ):
         if _cancelled:
             logger.info(f"Cancelled mid-chat at '{chat_name}' ({processed} processed).")
@@ -316,20 +324,25 @@ async def run(
         run_conn.close()
         conn.close()
         if client is not None:
-            await client.disconnect()
+            await disconnect_client(client)
         db.close_db()
         sys.exit(1)
 
-    me = await client.get_me()
+    me = await get_authenticated_user(client)
     logger.info(f"Authenticated as: {me.first_name} (id={me.id})")
 
+    # list[Any]: Telethon's get_entity()/iter_dialogs() stubs are unions of entity classes (and even lists),
+    # but every element we keep here is a single User/Chat/Channel entity - the attributes used below (title, first_name, username, id) exist on all of them.
+    chats: list[Any]
     if chat_selector:
         # Numeric chat_id or @username/invite-style identifier - get_entity() resolves either.
         try:
             target = int(chat_selector)
         except ValueError:
             target = chat_selector
-        chats = [await client.get_entity(target)]
+        entity = await client.get_entity(target)
+        # get_entity() is typed as possibly returning a list (it does for list input); we pass one identifier, so it is one entity.
+        chats = [entity[0] if isinstance(entity, list) else entity]
     else:
         logger.warning(
             "No --chat given - backfilling EVERY chat you're in."
@@ -450,7 +463,7 @@ async def run(
     run_conn.commit()
     run_conn.close()
 
-    await client.disconnect()
+    await disconnect_client(client)
     conn.close()
     db.close_db()
 

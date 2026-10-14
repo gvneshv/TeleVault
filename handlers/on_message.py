@@ -116,46 +116,58 @@ def register(client) -> None:
         """
         message = event.message
 
+        # Telethon can return None for chat_id on certain service messages or protocol edge cases.
+        # Without a valid chat_id we can't satisfy the FK constraint in messages (and can't record a migration either), so skip rather than error.
+        # Checked FIRST - before migration detection - because both migration branches below use chat_id too, and binding it to a local narrows the type.
+        chat_id = event.chat_id
+        if chat_id is None:
+            logger.warning(
+                "Skipping message %s with no chat_id in event %s.",
+                message.id,
+                event,
+            )
+            return
+
         # --- Chat migration detection ---------------------------------------
         # Fires once in each chat at the moment a basic group is upgraded to a supergroup.
         # Neither message carries archivable text, so this must be handled before resolve_message_text()/the "not text" skip below.
         action = getattr(message, "action", None)
         if isinstance(action, MessageActionChatMigrateTo):
-            # Fires in the OLD chat. event.chat_id is the old id; action.channel_id
+            # Fires in the OLD chat. chat_id is the old id; action.channel_id
             # is the new supergroup's raw (unmarked) id.
             new_chat_id = utils.get_peer_id(PeerChannel(action.channel_id))
             try:
-                await asyncio.to_thread(_record_migration, event.chat_id, new_chat_id)
+                await asyncio.to_thread(_record_migration, chat_id, new_chat_id)
             except OperationalError:
                 logger.error(
                     "Could not record chat migration %s -> %s - database unreachable (Docker down?).",
-                    event.chat_id,
+                    chat_id,
                     new_chat_id,
                 )
             except Exception:
                 logger.exception(
                     "Failed to record chat migration %s -> %s.",
-                    event.chat_id,
+                    chat_id,
                     new_chat_id,
                 )
             return
         if isinstance(action, MessageActionChannelMigrateFrom):
-            # Fires in the NEW supergroup. event.chat_id is the new id; action.chat_id
-            # is the old basic group's raw (unmarked) id.
+            # Fires in the NEW supergroup.
+            # chat_id is the new id; action.chat_id is the old basic group's raw (unmarked) id.
             old_chat_id = utils.get_peer_id(PeerChat(action.chat_id))
             try:
-                await asyncio.to_thread(_record_migration, old_chat_id, event.chat_id)
+                await asyncio.to_thread(_record_migration, old_chat_id, chat_id)
             except OperationalError:
                 logger.error(
                     "Could not record chat migration %s -> %s - database unreachable (Docker down?).",
                     old_chat_id,
-                    event.chat_id,
+                    chat_id,
                 )
             except Exception:
                 logger.exception(
                     "Failed to record chat migration %s -> %s.",
                     old_chat_id,
-                    event.chat_id,
+                    chat_id,
                 )
             return
 
@@ -165,23 +177,13 @@ def register(client) -> None:
 
         # --- Pre-flight guards ---------------------------------------------
 
-        # Telethon can return None for chat_id on certain service messages or protocol edge cases.
-        # Without a valid chat_id we can't satisfy the FK constraint in messages, so skip rather than error.
-        if event.chat_id is None:
-            logger.warning(
-                "Skipping message %s with no chat_id in event %s.",
-                message.id,
-                event,
-            )
-            return
-
         # Skip anything we have no text for - media, stickers, unsupported service messages, etc.
         # Call labels produced above are truthy, so they pass this guard correctly.
         if not text:
             logger.debug(
                 "Skipping non-text message %s in chat %s.",
                 message.id,
-                event.chat_id,
+                chat_id,
             )
             return
 
@@ -200,7 +202,7 @@ def register(client) -> None:
 
             await asyncio.to_thread(
                 _persist_message,
-                event.chat_id,
+                chat_id,
                 chat_name,
                 chat_type,
                 chat_username,
@@ -219,7 +221,7 @@ def register(client) -> None:
             logger.error(
                 "Could not archive message %s in chat %s - database unreachable (Docker down?).",
                 message.id,
-                event.chat_id,
+                chat_id,
             )
         except Exception:
             # Log and swallow - a single failed insert should never crash the listener.
@@ -227,5 +229,5 @@ def register(client) -> None:
             logger.exception(
                 "Failed to archive message %s in chat %s.",
                 message.id,
-                event.chat_id,
+                chat_id,
             )

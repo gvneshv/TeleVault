@@ -5,6 +5,8 @@ Kept here rather than in utils/ because these are tightly coupled to Telethon ty
 """
 
 import logging
+from typing import Any
+
 from telethon import types
 from telethon.tl.types import (
     MessageActionPhoneCall,
@@ -57,7 +59,7 @@ def get_sender_fields(sender: object | None) -> tuple[str | None, str | None, st
     return username, first_name, last_name
 
 
-def resolve_message_text(message: object) -> str | None:
+def resolve_message_text(message: Any) -> str | None:
     """
     Resolve the text worth archiving for a message,
     or None/empty if there is nothing worth storing (media-only, stickers, unsupported service messages).

@@ -42,6 +42,7 @@ from utils.logging_setup import setup_logging
 from handlers import on_message, on_delete, on_edit
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
+from utils.telethon_compat import disconnect_client, get_authenticated_user, run_until_disconnected
 from utils.worker_paths import backfill_status_path, heartbeat_path
 
 logger = logging.getLogger(__name__)
@@ -187,11 +188,11 @@ async def main(user_id: int) -> None:
             "Sign in to Telegram again in the web UI (Settings -> Telegram setup)."
         )
         if client is not None:
-            await client.disconnect()
+            await disconnect_client(client)
         db.close_db()
         sys.exit(1)
 
-    me = await client.get_me()
+    me = await get_authenticated_user(client)
     logger.info(f"Authenticated as: {me.first_name} (id={me.id})")
 
     # ------------------------------------------------------------------ #
@@ -220,7 +221,7 @@ async def main(user_id: int) -> None:
         pass
 
     try:
-        await client.run_until_disconnected()
+        await run_until_disconnected(client)
     except (KeyboardInterrupt, asyncio.CancelledError):
         # KeyboardInterrupt : Ctrl-C on all platforms.
         # CancelledError    : Python 3.14 changed asyncio shutdown - the main task is now cancelled rather than allowed to return cleanly, so CancelledError surfaces here instead.
@@ -236,7 +237,7 @@ async def main(user_id: int) -> None:
         await heartbeat_task
     heartbeat_file.unlink(missing_ok=True)
 
-    await client.disconnect()
+    await disconnect_client(client)
     db.close_db()
     logger.info("Goodbye.")
 

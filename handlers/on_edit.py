@@ -108,16 +108,24 @@ def register(client) -> None:
         """
         message = event.message
 
+        # Telethon types event.chat_id as Optional (it can be None for odd service updates).
+        # The DB layer needs a real id for its FK upserts, so bail out early - same guard on_message.py applies.
+        # Binding it to a local also narrows the type for the whole handler.
+        chat_id = event.chat_id
+        if chat_id is None:
+            logger.warning("Skipping edit event for message %s - no chat_id in event.", message.id)
+            return
+
         if event.sender_id is None:
             logger.warning(
-                f"Edit event for message {message.id} in chat {event.chat_id} - no sender ID in event."
+                f"Edit event for message {message.id} in chat {chat_id} - no sender ID in event."
             )
             return
 
         # Same rationale as on_message - skip non-text edits for now.
         if not message.text:
             logger.debug(
-                f"Skipping non-text edit for message {message.id} in chat {event.chat_id}."
+                f"Skipping non-text edit for message {message.id} in chat {chat_id}."
             )
             return
 
@@ -138,7 +146,7 @@ def register(client) -> None:
 
             await asyncio.to_thread(
                 _persist_edit,
-                event.chat_id,
+                chat_id,
                 chat_name,
                 chat_type,
                 chat_username,
@@ -155,9 +163,9 @@ def register(client) -> None:
             logger.error(
                 "Could not record edit for message %s in chat %s - database unreachable (Docker down?).",
                 message.id,
-                event.chat_id,
+                chat_id,
             )
         except Exception:
             logger.exception(
-                f"Failed to record edit for message {message.id} in chat {event.chat_id}."
+                f"Failed to record edit for message {message.id} in chat {chat_id}."
             )
