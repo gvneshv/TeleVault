@@ -19,12 +19,14 @@ def atomic_write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data))
-    last_error = None
-    for attempt in range(5):
+    attempts = 5
+    for attempt in range(attempts):
         try:
             tmp.replace(path)
             return
-        except PermissionError as e:
-            last_error = e
+        except PermissionError:
+            if attempt == attempts - 1:
+                # Out of retries: let the last PermissionError propagate as-is (original traceback intact)
+                # rather than stashing it in a variable and re-raising after the loop.
+                raise
             time.sleep(0.05 * (attempt + 1))
-    raise last_error
