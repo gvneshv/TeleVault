@@ -31,6 +31,7 @@ import control_db
 import db
 from api.dependencies import require_admin
 from config import settings
+from control_db import queries as cq
 
 from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, archive, admin
 
@@ -40,6 +41,57 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
+
+
+def _ensure_first_admin_is_possible() -> None:
+    """
+    Refuse to start an instance on which nobody could ever become the admin.
+
+    The dead end this guards against:
+        every account is created from an invite, only the admin can create invites, and the admin account itself can only come into existence through one of two doors -
+        TELEVAULT_BOOTSTRAP_ADMIN_TOKEN (register through the web UI with that phrase) or `scripts/manage_admin.py create` (a shell on the server).
+        With NO admin yet and NEITHER door available, the registration page would simply reject every invite token forever, and nothing in the UI would say why.
+        Failing at startup, with both remedies spelled out, turns that silent dead end into a one-line fix.
+
+    What this deliberately does NOT do:
+        - It does not require the token on every start.
+          Once an admin exists the token is inert (see api/routes/auth.py's _is_bootstrap_admin_token),
+          so demanding it forever would force a pointless secret into .env and into every process that imports config.py (Alembic, the workers).
+          The check is satisfied by EITHER an existing admin OR a configured token.
+        - It does not block startup when the question can't be answered (control database unreachable, or its schema not migrated yet).
+          Those problems already surface with their own, more specific errors on the first real request,
+          and refusing to boot here would hide them behind a misleading "no admin" message.
+          We log a warning and carry on.
+
+    Raises:
+        RuntimeError: no admin exists and no bootstrap token is configured. uvicorn reports it as "Application startup failed" and exits.
+    """
+    try:
+        conn = control_db.get_connection()
+        try:
+            has_admin = cq.admin_exists(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        # One line, no traceback: "database not up yet" is an ordinary condition here, and the real error will surface on the first request.
+        logger.warning(
+            "Could not check whether an admin account exists (%s) - is the control database up and migrated "
+            "(`alembic -c alembic_control.ini upgrade head`)? Skipping the first-admin check.",
+            type(exc).__name__,
+        )
+        return
+
+    if has_admin or settings.bootstrap_admin_token is not None:
+        return
+
+    raise RuntimeError(
+        "No admin account exists yet and TELEVAULT_BOOTSTRAP_ADMIN_TOKEN is not set, so nobody would be able to register.\n"
+        "Fix it in one of two ways, then start the server again:\n"
+        "  1. Put a random phrase in .env (e.g. TELEVAULT_BOOTSTRAP_ADMIN_TOKEN=<output of `openssl rand -hex 16`>),\n"
+        "     then register in the web UI using that phrase as the invite token - you become the admin.\n"
+        "  2. Or create the admin from a shell: python scripts/manage_admin.py create --username YOURNAME"
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +103,7 @@ async def lifespan(app: FastAPI):
       - db.init_server(): tells db/connection.py which Postgres server the per-account archives live on (the control URL is the template -
         same server/credentials, different database name).
         Per-account archive engines are then created lazily, on each account's first request.
+      - _ensure_first_admin_is_possible(): aborts startup if no admin exists and no bootstrap token is configured (see that function).
     There is no single "primary" archive to open here any more: this process serves every account, and each request resolves the caller's own archive.
     Without init_server(), the first request touching an archive (or provisioning one) would fail with "Database server not configured".
 
@@ -60,6 +113,13 @@ async def lifespan(app: FastAPI):
     logger.info("TeleVault API starting up.")
     control_db.init_control_db(settings.control_database_url)
     db.init_server(settings.control_database_url)
+    try:
+        _ensure_first_admin_is_possible()
+    except RuntimeError:
+        # Startup is being aborted, so the shutdown code below never runs - release the pools we just opened before propagating.
+        control_db.close_db()
+        db.close_server()
+        raise
     yield
     control_db.close_db()
     db.close_tenant_engines()

@@ -14,7 +14,9 @@ Why a dataclass rather than reading os.environ inline?
  
 Required .env keys:       FERNET_KEY, JWT_SECRET
 Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS
-Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN (see Settings.bootstrap_admin_token below)
+Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN
+                  (see Settings.bootstrap_admin_token below;
+                  the API server refuses to start if it is unset AND no admin account exists yet - see api/server.py's _ensure_first_admin_is_possible)
 
 What is deliberately NOT here any more: Telegram credentials (api_id / api_hash / phone / a .session file).
 TeleVault is multi-account - every account supplies its OWN api_id/api_hash and signs in to Telegram through the web UI,
@@ -122,7 +124,9 @@ class Settings:
     # the very first account could never come into existence through the normal POST /auth/register flow at all
     # (scripts/manage_admin.py's `create` subcommand is the existing outside-the-loop answer, run by hand on the server;
     # this is a second one, reachable through the ordinary web UI instead of a shell).
-    # Optional and unset by default (None): whoever stands up a fresh instance picks their own phrase and puts it in .env;
+    # Optional and unset by default (None) - but api/server.py refuses to start while it is unset AND no admin exists yet,
+    # so a fresh instance can't end up with no way to ever create one.
+    # Whoever stands up a fresh instance picks their own phrase and puts it in .env;
     # it works exactly once - see api/routes/auth.py's register() for how a matching invite_token is told apart from an ordinary invite
     # and turned into the one-and-only admin account (control_db.schema.ix_users_single_admin enforces there's never a second one) -
     # and does nothing at all once an admin already exists, regardless of whether the .env value is still set.

@@ -91,7 +91,8 @@ TELEVAULT_BOOTSTRAP_ADMIN_TOKEN=   # any random phrase, e.g. openssl rand -hex 1
 - `FERNET_KEY` encrypts every account's Telegram credentials and session in the database. **Back it up somewhere
   safe** - losing it makes those stored values permanently unreadable.
 - `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` is what lets the *first* person register through the web UI (see step 5).
-  It works exactly once, then is inert.
+  It works exactly once, then is inert. A fresh instance needs it (or the shell alternative in step 5): the API server
+  refuses to start, with a message saying so, while there is no admin account and no token.
 
 **There are no Telegram settings in `.env`.** Every account - yours included - enters its own Telegram API
 credentials and signs in through the web UI (step 6), and they are stored encrypted in the control database.
