@@ -1,0 +1,15 @@
+# TeleVault - development / test dependencies.
+# Install on top of the runtime requirements:   pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8
+
+# Starlette's TestClient (used by tests/api/ and tests/integration/) needs an HTTP client package.
+# Current Starlette releases ask for `httpx2`; older ones ask for `httpx`. Both are listed so the suite runs
+# whichever FastAPI/Starlette version the (unpinned) runtime requirements resolved to.
+httpx2
+httpx
+
+# Static type checking (optional). The "0 errors" claim in the changelog is for the application code; `tests/` is not type-clean (fakes, deliberate bad arguments).
+pyright
