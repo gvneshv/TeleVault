@@ -40,7 +40,10 @@ config = context.config
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False is essential, not cosmetic: db/provisioning.py (and anything else that calls alembic's command API)
+    # runs this file INSIDE the already-running API process, and fileConfig()'s default (True) would silently disable every logger that exists at that moment -
+    # api.*, db.*, even uvicorn's - so the server would stop logging errors after the first account was provisioned, until it was restarted.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Point autogenerate at control_db/schema.py's Table objects - the control DB's single source of truth for
 # schema shape, same relationship db/schema.py has to alembic/env.py.
