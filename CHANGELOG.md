@@ -9,6 +9,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - automated test suite
+
+- `tests/` with 556 tests (`pip install -r requirements-dev.txt && python -m pytest`), documented in `tests/README.md`.
+  Covers auth and throttling, refresh-token rotation and reuse detection, the gate chain on every endpoint, tenant isolation
+  between accounts, secret leakage (credentials, sessions, hashes and tokens in responses, logs and storage), admin and
+  provisioning flows, the event handlers and the worker coordination files.
+- The suite is hermetic: fresh secrets, a temporary `DATA_DIR`, uniquely named throwaway databases (the drop helper refuses
+  any other name), and real Telegram connections / worker launches are blocked.
+- One known bug is recorded as a strict `xfail`: a password over 4096 characters makes registration and login return a 500
+  instead of a 4xx (no `max_length` on the request models).
+- `TESTING.md` rewritten as the manual checklist only; it still described a removed `promote` command and hand-inserted invites.
+
+### Fixed - Alembic silenced application logging
+
+- `alembic/env.py` and `alembic_control/env.py` called `fileConfig(...)` with its default `disable_existing_loggers=True`,
+  so running a migration in-process (as archive provisioning does) disabled every logger created before it. Now passes
+  `disable_existing_loggers=False`. Covered by a regression test.
+
+### Changed - type checking
+
+- Pyright reports 0 errors in the application code (was 33 across 12 files; the test files, which pass fakes and deliberately wrong types, are not type-clean). Telethon's loose annotations are bridged in the new
+  `utils/telethon_compat.py`; behaviour is unchanged.
+
+### Changed - first-run admin guard
+
+- **The API server now refuses to start on an instance where nobody could ever become the admin:** no admin account exists
+  *and* `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` is unset. Previously that combination started fine and then rejected every
+  registration with no hint why. The error names both fixes (set the token, or run `scripts/manage_admin.py create`).
+  The token is still not needed once an admin exists. If the control database can't be reached (or isn't migrated), the
+  check is skipped with a warning instead of blocking startup.
+
 ### Changed - per-account workers (breaking: `.env` and command lines)
 
 - **Telegram credentials no longer live in `.env`.** `TG_API_ID`, `TG_API_HASH`, `TG_PHONE`, `SESSION_NAME`,

@@ -23,8 +23,9 @@ All settings come from `.env` (copy `.env.example`). Nothing Telegram-related li
 | `LOG_LEVEL` | no | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
 | `LOG_FILE` | no | console only | e.g. `logs/televault.log` for rotating file logs. |
 
-Note on the bootstrap token: if it is unset **and** you never run `python scripts/manage_admin.py create`, nobody can
-ever register (every account comes from an invite, and only the admin makes invites). Set one of the two before first use.
+Note on the bootstrap token: every account comes from an invite and only the admin makes invites, so a fresh instance needs
+either this token or `python scripts/manage_admin.py create`. If neither is in place the API server refuses to start and
+says so. Once an admin exists the token is inert and may be removed.
 
 Keep `.env` out of git. Back up `FERNET_KEY` separately from any database dump: a dump without it is useless, and
 a dump together with the key and the DB credentials lets someone act as your Telegram account.

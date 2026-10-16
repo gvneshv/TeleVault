@@ -1,12 +1,15 @@
-# TESTING.md - Auth / multi-user feature
+# TESTING.md - manual test plan
 
-Manual test plan for everything built so far: cookie-based auth, per-account login throttling,
-refresh-token rotation/reuse-detection, per-user archive routing, and the standalone
-login/register pages.
+This file is the **manual** checklist: the things that need a real browser, a real Telegram account or a real
+process on a real machine. Everything that can be checked by a program lives in the automated suite instead -
+see [`tests/README.md`](tests/README.md) (`pip install -r requirements-dev.txt && python -m pytest`).
 
-**What's actually been run already:** every backend case below (sections A–C) was executed against
-a real local Postgres during development, not just written. Section D (browser behavior) has
- been run and tested in a real browser.
+Automated and manual coverage overlap on purpose in sections B and C (the HTTP cases below are all asserted by
+`tests/api/`), so you can skip them after a normal change and keep them as a smoke test against a deployed instance.
+
+**Not covered by anything automated, so do these by hand after a relevant change:**
+the real Telegram login (code / 2FA), a live archiver actually seeing a deletion, section D (the browser UI),
+and the Windows toggle scripts.
 
 ---
 
@@ -30,15 +33,18 @@ a real local Postgres during development, not just written. Section D (browser b
 
 ## B. `scripts/manage_admin.py`
 
+Subcommands: `create`, `create-invite`, `set-archive`, `delete-admin` (there is no `promote`: the database allows exactly one admin).
+Argument and confirmation behaviour is unit-tested; the interactive prompts are not.
+
 | Test | Command | Expected outcome |
 |---|---|---|
-| Create | `create --username alice` | Prompts for password (hidden input) twice; on match, creates the user, prints `Created admin user 'alice' (id=N).` Confirm in DB: `is_admin=true`, `archive_db_ref`/`telegram_*` columns still NULL. |
-| Duplicate create | `create --username alice` again | Clean error before any prompt: `A user named 'alice' already exists...`, exit code 1, nothing written. |
-| Promote | `promote --username alice` (or `--id N`) | Shows target account, asks `Proceed? [y/N]`; `y` flips `is_admin=true` and logs an `admin_promoted_via_script` audit row. |
-| Promote idempotency | `promote --username alice` again | `'alice' (id=N) is already an admin. Nothing to do.` - **no** new audit row written (check `auth_audit_log`). |
-| Promote missing user | `promote --id 9999` | `No user found with id=9999. Nothing was written.`, exit code 1. |
+| Create | `create --username alice` | Prompts for password (hidden input) twice; on match, creates the admin, prints `Created admin user 'alice' (id=N).` Confirm in DB: `is_admin=true`, `archive_db_ref`/`telegram_*` columns still NULL. |
+| Second admin | `create --username bob` | Refused: an admin already exists. Nothing written. |
+| Duplicate username | `create --username alice` again | Clean error before any prompt, exit code 1, nothing written. |
+| Invite | `create-invite --created-by alice --expires-hours 48` | Prints a single-use token once. Registering with it works; reusing it gives the generic "invalid, expired, or already used" error. |
 | Set archive | `set-archive --username alice --db-name alice_db` | Shows the target account and a reminder that this doesn't create/migrate the database; `y` sets `archive_db_ref='alice_db'`. |
-| Set archive overwrite | `set-archive --username alice --db-name other_db` | Explicitly warns `This OVERWRITES the existing value: 'alice_db'.` before asking to confirm. |
+| Set archive overwrite | `set-archive --username alice --db-name other_db` | Explicitly warns `This OVERWRITES the existing value` before asking to confirm. |
+| Delete admin | `delete-admin --username alice` | Irreversible; you must retype the username. Removes the account, its archive database and its Telegram credentials. |
 | Cancel | Any of the above, answer anything but `y` | `Cancelled. Nothing was written.` - confirm no DB row actually changed. |
 
 ---
@@ -47,10 +53,8 @@ a real local Postgres during development, not just written. Section D (browser b
 
 ### C1. Registration
 
-Requires an invite row (no admin UI for this yet - insert by hand):
-```sql
-INSERT INTO invites (token, created_by, expires_at) VALUES ('test-invite', 1, now() + interval '1 day');
-```
+Needs an invite: create one in the web UI (admin -> Invites), with `scripts/manage_admin.py create-invite`, or use
+`TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` on a fresh instance with no admin.
 
 | Test | Expected outcome |
 |---|---|
@@ -129,6 +133,6 @@ INSERT INTO invites (token, created_by, expires_at) VALUES ('test-invite', 1, no
 | Visit `/index.html` fresh, no prior session (incognito) | Brief loading state, then redirect to `/login.html` - the app shell itself should never flash visible first. |
 | DevTools → Application → Cookies | `televault_refresh` shows `HttpOnly` ✓, `Path=/api/auth`, `SameSite=Strict`. Typing `document.cookie` in the console must **not** show it. |
 | Click "Log out" | Redirects to `/login.html`; pressing Back afterward bounces straight back to `/login.html` (doesn't show stale app content). |
-| Register with a hand-inserted invite token | Auto-redirects to `/index.html` on success (no separate login step needed). |
+| Register with an invite token | Auto-redirects to `/index.html` on success (no separate login step needed). |
 | Register with mismatched password/confirm fields | Inline "Passwords don't match" - no request sent. |
 | Open two tabs, log in on one, then load `/index.html` in the other | Second tab silently refreshes using the shared cookie and loads normally - expected, not a bug (access token is per-tab in memory; the cookie is shared). |
