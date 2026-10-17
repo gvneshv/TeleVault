@@ -29,6 +29,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Existing volumes keep the old empty database; see RUNBOOK section 2 for how to drop it.
 - **Chat renames were never recorded:** `upsert_chat` now updates a chat's name and @handle when they change (and never blanks them when a lookup fails).
 
+### Changed - health panel wording, localized username hint, login-code diagnostics
+
+- The health panel marks a failed check with a red **No** badge and a passed check with nothing, instead of an identical-looking ✓ / ✗ pair
+  (an ✗ next to "Telegram session found" read like "found" to someone who had never connected Telegram).
+- The username format hint shown by the browser on a rejected registration now follows the app language (`data-i18n-title`); before, the browser's own
+  half of the message was localized and ours was always English. Service worker cache bumped to v31.
+- `POST /api/telegram/link/send-code` logs how Telegram chose to deliver the code (`delivery=SentCodeTypeApp` = an in-app message from the
+  official "Telegram" chat, `...Sms`/`...Call` = phone network, `...SetUpEmailRequired` = Telegram wants an e-mail step this flow cannot do).
+  The phone number and anything code-related are never logged. This is how to diagnose "the request succeeded but no code arrived".
+
 ### Added - dependency pinning and CI
 
 - `constraints.txt`: exact tested versions of every dependency (install with `pip install -r requirements.txt -c constraints.txt`).

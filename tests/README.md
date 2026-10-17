@@ -41,6 +41,7 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `api/test_secret_leakage.py` | no credential, session, hash or token appears in any GET response, the audit log or the token table; secrets are encrypted at rest |
 | `api/test_admin_api.py` | invites, lock / unlock, deletion rules (including dropping the archive database) |
 | `api/test_archive_provision.py` | per-account archive creation |
+| `api/test_telegram_send_code.py` | send-code with a fake Telegram client: the delivery type is logged, the phone number never is |
 | `api/test_input_limits.py` | every client-supplied value is bounded; login stays lenient about format |
 | `unit/test_static_mount_paths.py` | unknown `/api/` paths give a JSON 404 with either path separator (Windows regression) |
 | `unit/test_docker_setup.py` | the compose file and init scripts agree with the app's default config |
