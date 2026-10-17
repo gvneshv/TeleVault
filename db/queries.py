@@ -107,12 +107,19 @@ def upsert_chat(
     commit: bool = True,
 ) -> None:
     """
-    Insert a chat record if it doesn't exist yet.
+    Insert a chat record, or refresh the name/@handle of one we already have.
 
     The ``username`` is the @handle - present for public groups and channels, None for private chats and legacy groups without a public link.
     Stored as-is without the leading '@' for cleaner querying.
 
-    Existing rows are left untouched (ON CONFLICT DO NOTHING). Name/username changes over time are not tracked yet - that's a future feature.
+    Renames: when the chat already exists, ``name`` and ``username`` are updated to the values passed in,
+    so a chat renamed in Telegram shows its current name in the archive (old messages included - there is one name per chat, not one per message).
+    Two guards keep this from corrupting good data:
+      - ``name=None`` means "the caller could not resolve the chat entity" (e.g. a transient lookup failure), NOT "the chat has no name".
+        In that case nothing is changed, so a hiccup can never blank out a known name or handle.
+      - When ``name`` IS given, ``username`` is taken as-is, including None: a public group turning private really does lose its @handle.
+    The update only fires when something actually differs, so repeated events for an unchanged chat cause no writes.
+    ``chat_type`` and ``first_seen`` are never changed here (a chat's type is fixed by the schema's CHECK constraint; see merge_chat for supergroup upgrades).
 
     commit=False
         Skip the commit, leaving the INSERT as part of the caller's ongoing transaction.
@@ -134,7 +141,9 @@ def upsert_chat(
             sql_text(
                 "INSERT INTO chats (chat_id, name, username, chat_type) "
                 "VALUES (:chat_id, :name, :username, :chat_type) "
-                "ON CONFLICT (chat_id) DO NOTHING"
+                "ON CONFLICT (chat_id) DO UPDATE SET name = EXCLUDED.name, username = EXCLUDED.username "
+                "WHERE EXCLUDED.name IS NOT NULL "
+                "AND (chats.name IS DISTINCT FROM EXCLUDED.name OR chats.username IS DISTINCT FROM EXCLUDED.username)"
             ),
             {
                 "chat_id": chat_id,

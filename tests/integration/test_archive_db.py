@@ -38,12 +38,32 @@ class TestWriteQueries:
             q.upsert_chat(archive.conn, chat_id=1, name="x", chat_type="not-a-type")
         assert scalar(archive.conn, "SELECT COUNT(*) FROM chats") == 0  # and the connection is still usable
 
-    def test_upsert_chat_keeps_the_first_seen_identity(self, archive):
-        """Documented limitation (db/queries.py): renames are not tracked yet, so a chat keeps the name it was first archived under."""
-        q.upsert_chat(archive.conn, chat_id=1, name="Old", chat_type="group")
-        q.upsert_chat(archive.conn, chat_id=1, name="New", chat_type="group")
-        assert chat_row(archive.conn, 1)["name"] == "Old"
+    def test_upsert_chat_follows_a_rename_without_creating_a_second_row(self, archive):
+        q.upsert_chat(archive.conn, chat_id=1, name="Old", chat_type="group", username="old_handle")
+        q.upsert_chat(archive.conn, chat_id=1, name="New", chat_type="group", username="new_handle")
+        row = chat_row(archive.conn, 1)
+        assert (row["name"], row["username"]) == ("New", "new_handle")
         assert scalar(archive.conn, "SELECT COUNT(*) FROM chats") == 1
+
+    def test_a_group_going_private_loses_its_handle(self, archive):
+        q.upsert_chat(archive.conn, chat_id=1, name="G", chat_type="supergroup", username="public_group")
+        q.upsert_chat(archive.conn, chat_id=1, name="G", chat_type="supergroup", username=None)
+        assert chat_row(archive.conn, 1)["username"] is None
+
+    def test_an_unresolved_chat_never_blanks_a_known_name_or_handle(self, archive):
+        """name=None means 'lookup failed', not 'has no name' - it must change nothing."""
+        q.upsert_chat(archive.conn, chat_id=1, name="Known", chat_type="group", username="handle")
+        q.upsert_chat(archive.conn, chat_id=1, name=None, chat_type="group", username=None)
+        row = chat_row(archive.conn, 1)
+        assert (row["name"], row["username"]) == ("Known", "handle")
+
+    def test_a_rename_keeps_type_first_seen_and_counters(self, archive):
+        seed_chat(archive.conn, 1, "Old", chat_type="group", messages=[(1, None, "a")])
+        before = chat_row(archive.conn, 1)
+        q.upsert_chat(archive.conn, chat_id=1, name="New", chat_type="supergroup")
+        after = chat_row(archive.conn, 1)
+        assert after["name"] == "New"
+        assert (after["chat_type"], after["first_seen"], after["message_count"]) == (before["chat_type"], before["first_seen"], 1)
 
     def test_insert_message_is_idempotent(self, archive):
         q.upsert_chat(archive.conn, chat_id=1, name="c", chat_type="private")
