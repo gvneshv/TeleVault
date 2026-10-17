@@ -117,11 +117,11 @@ function renderCredentialsStep() {
     <form id="settings-credentials-form">
       <label class="settings-field">
         <span>${t("tgSetup.apiIdLabel")}</span>
-        <input id="settings-api-id" name="api_id" type="text" inputmode="numeric" autocomplete="off" required />
+        <input id="settings-api-id" name="api_id" type="text" inputmode="numeric" autocomplete="off" maxlength="20" required />
       </label>
       <label class="settings-field">
         <span>${t("tgSetup.apiHashLabel")}</span>
-        <input id="settings-api-hash" name="api_hash" type="password" autocomplete="off" required />
+        <input id="settings-api-hash" name="api_hash" type="password" autocomplete="off" maxlength="64" required />
       </label>
       <p class="settings-help">${t("tgSetup.credentialsStoredNote")}</p>
       ${renderTelegramError()}
@@ -254,13 +254,18 @@ function attachTelegramHandlers(root) {
   const credentialsForm = document.getElementById("settings-credentials-form");
   credentialsForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    // Read the inputs BEFORE renderRoot(): that call rebuilds the form (to show the busy state), which replaces these inputs with fresh, EMPTY ones.
+    // Reading afterwards sent empty strings, which the server rejected with 422 ("Something went wrong").
+    // The phone and code handlers below already read first; this one used to be the odd one out.
+    const apiId = document.getElementById("settings-api-id").value.trim();
+    const apiHash = document.getElementById("settings-api-hash").value.trim();
     setupState.telegramBusy = true;
     setupState.telegramError = null;
     renderRoot(root);
     try {
       await postTelegramStep("/api/telegram/credentials", {
-        api_id: document.getElementById("settings-api-id").value.trim(),
-        api_hash: document.getElementById("settings-api-hash").value.trim(),
+        api_id: apiId,
+        api_hash: apiHash,
       });
       goToTelegramStep(root, "phone");
     } catch (err) {

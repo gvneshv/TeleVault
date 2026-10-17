@@ -46,6 +46,13 @@ function toggleTheme() {
 applyTheme(getPreferredTheme());
 
 document.addEventListener("DOMContentLoaded", () => {
+  // The applyTheme() call above runs from <head>, before <body> is parsed, so #theme-toggle does not exist yet and its icon could not be set -
+  // the button kept the "☀" hard-coded in the HTML even when the theme was dark, until the first click re-ran applyTheme().
+  // Re-apply once the button exists.
+  // Reading data-theme (rather than recomputing) keeps this identical to what was applied before first paint.
+  const current = document.documentElement.getAttribute("data-theme");
+  applyTheme(current === "dark" ? "dark" : "light");
+
   const toggle = document.getElementById("theme-toggle");
   if (toggle) {
     toggle.addEventListener("click", toggleTheme);

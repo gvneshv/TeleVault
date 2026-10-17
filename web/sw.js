@@ -36,10 +36,12 @@
  * v27 bumps for the new palette + self-hosted fonts: variables.css, base.css, new css/fonts.css, every .html (Google Fonts links removed), privacy.html.
  * v28 bumps for the footer-to-bottom layout (base.css, app.js),
  * the removed in-app disclaimer (index/login/register.html, i18n) and localized sign-in errors (lib/auth.js, lib/errors.js, i18n).
+ * v30 bumps for the theme-icon fix (theme.js), the credentials-form fix (views/telegram-setup.js),
+ * the 422 message (lib/errors.js, i18n/{en,uk}.js) and the input length limits (login.html, register.html).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v29";
+const CACHE_NAME = "televault-shell-v30";
 const SHELL_FILES = [
   "/",
   "/index.html",
