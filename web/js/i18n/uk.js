@@ -78,6 +78,7 @@ export const uk = {
   "health.statusDegraded": "Є проблеми",
   "health.dbReadable": "База даних доступна",
   "health.dbNotSetUp": "Базу даних архіву ще не налаштовано",
+  "health.no": "Ні",
   "health.sessionExists": "Сесію Telegram знайдено",
   "health.messageCount": "Заархівовано повідомлень",
   "health.unattached":
@@ -190,6 +191,7 @@ export const uk = {
 
   "register.subtitle": "Створення акаунта",
   "register.inviteLabel": "Токен запрошення",
+  "register.usernameHint": "3-32 символи: літери, цифри, . _ -",
   "register.usernameLabel": "Ім'я користувача",
   "register.passwordLabel": "Пароль",
   "register.confirmLabel": "Підтвердіть пароль",

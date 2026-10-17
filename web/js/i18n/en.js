@@ -82,6 +82,7 @@ export const en = {
   "health.statusDegraded": "Degraded",
   "health.dbReadable": "Database readable",
   "health.dbNotSetUp": "Archive database not set up yet",
+  "health.no": "No",
   "health.sessionExists": "Telegram session found",
   "health.messageCount": "Archived messages",
   "health.unattached":
@@ -195,6 +196,7 @@ export const en = {
   "register.subtitle": "Create your account",
   "register.inviteLabel": "Invite token",
   "register.usernameLabel": "Username",
+  "register.usernameHint": "3-32 characters: letters, digits, . _ -",
   "register.passwordLabel": "Password",
   "register.confirmLabel": "Confirm password",
   "register.submit": "Create account",

@@ -31,9 +31,13 @@ function renderHealthReport(data) {
   const statusLabel =
     data.status === "ok" ? t("health.statusOk") : t("health.statusDegraded");
 
+  // A failed check is marked with the plain word "No" in a red badge; a passed check carries no mark at all,
+  // so the row simply reads as the statement it is ("Telegram session found").
+  // This replaced a ✓/✗ pair that looked identical in colour and, for "...found", an ✗ that read like "found: yes" to people who had never connected anything.
+  // The word is real text (not aria-hidden), so screen readers say it too, and the red is never the only signal.
   const checkRow = (label, passed) => `
     <li class="health-check">
-      <span class="health-check__mark" aria-hidden="true">${passed ? "✓" : "✗"}</span>
+      <span class="health-check__mark">${passed ? "" : `<span class="health-check__no">${t("health.no")}</span>`}</span>
       <span>${label}</span>
     </li>
   `;

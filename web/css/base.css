@@ -1176,11 +1176,21 @@ input:focus-visible {
   font-size: 13.5px;
 }
 
+/* Fixed-width column so labels line up whether or not a row carries the "No" badge. */
 .health-check__mark {
   font-family: var(--font-mono);
-  width: 18px;
-  text-align: center;
-  color: var(--color-ink-muted);
+  min-width: 34px;
+}
+
+.health-check__no {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-seal-bg);
+  color: var(--color-seal);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .health-message-count {

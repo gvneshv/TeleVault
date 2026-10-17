@@ -54,6 +54,11 @@ function applyTranslations() {
   document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
     el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
   });
+  // `title` on a form field with a `pattern` is appended by the browser to its own (browser-language) validation message,
+  // so it must follow the APP language too, or the two halves of that message come out in different languages.
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
+  });
 }
 
 /**

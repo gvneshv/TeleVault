@@ -38,10 +38,11 @@
  * the removed in-app disclaimer (index/login/register.html, i18n) and localized sign-in errors (lib/auth.js, lib/errors.js, i18n).
  * v30 bumps for the theme-icon fix (theme.js), the credentials-form fix (views/telegram-setup.js),
  * the 422 message (lib/errors.js, i18n/{en,uk}.js) and the input length limits (login.html, register.html).
+ * v31 bumps for the health-row "No" badge (views/health.js, base.css), the localized username hint (i18n.js, register.html) and i18n/{en,uk}.js.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v30";
+const CACHE_NAME = "televault-shell-v31";
 const SHELL_FILES = [
   "/",
   "/index.html",
