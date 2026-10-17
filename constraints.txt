@@ -1,0 +1,68 @@
+# Exact versions TeleVault is tested against (runtime + dev tools, including indirect dependencies).
+#
+# requirements.txt says what we NEED ("fastapi", "sqlalchemy>=2.0"); this file says what we have actually RUN.
+# Install with:
+#     pip install -r requirements-dev.txt -c constraints.txt
+# A constraints file never adds packages, it only limits which versions pip may pick for packages that are installed anyway,
+# so entries that do not apply to your platform (uvloop, httptools and watchfiles are skipped on Windows) are simply ignored.
+#
+# Why it exists: with unpinned requirements, `pip install` today and in six months can give different FastAPI/Starlette/SQLAlchemy versions.
+# An upstream release can then break the app or the tests with no change in this repo.
+# Pinning makes installs reproducible and makes every dependency upgrade a deliberate, reviewable commit that has to pass the test suite first.
+#
+# Updating (do it now and then, and after security advisories):
+#     python -m venv /tmp/fresh && /tmp/fresh/bin/pip install -r requirements-dev.txt     # latest allowed by requirements*.txt
+#     /tmp/fresh/bin/python -m pytest                                                      # must pass
+#     /tmp/fresh/bin/pip freeze > constraints.txt                                          # then re-add this comment block, review the diff
+# Generated with Python 3.13 on Linux. Packages Windows does not need will appear here too, which is harmless.
+#
+alembic==1.20.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
+certifi==2026.7.22
+cffi==2.1.1
+click==8.5.0
+cryptography==50.0.2
+fastapi==0.143.3
+h11==0.16.0
+httpcore==1.0.9
+httpcore2==2.13.1
+httptools==0.9.0
+httpx==0.28.1
+httpx2==2.13.1
+idna==3.20
+iniconfig==2.3.1
+Mako==1.4.3
+MarkupSafe==3.0.4
+nodeenv==1.11.0
+opentelemetry-api==1.45.1
+packaging==26.3
+passlib==1.7.4
+pluggy==1.7.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
+pyaes==1.6.1
+pyasn1==0.6.4
+pycparser==3.11
+pydantic==2.14.1
+pydantic_core==2.50.1
+Pygments==2.21.0
+PyJWT==2.15.1
+pyright==1.1.414
+pytest==9.1.1
+python-dotenv==1.2.4
+PyYAML==6.0.3
+rsa==4.9.1
+SQLAlchemy==2.1.5
+starlette==1.8.0
+Telethon==1.45.0
+truststore==0.10.5
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0
+uvloop==0.23.0
+watchfiles==1.3.0
+websockets==17.2
