@@ -29,6 +29,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Existing volumes keep the old empty database; see RUNBOOK section 2 for how to drop it.
 - **Chat renames were never recorded:** `upsert_chat` now updates a chat's name and @handle when they change (and never blanks them when a lookup fails).
 
+### Fixed - the API server never logged anything below WARNING
+
+- `api/server.py` now calls `setup_logging()` at startup, like `main.py` and `backfill.py` always did. uvicorn configures only its own loggers, so every
+  INFO line from `api.*`, `db.*` and `control_db.*` (including the send-code delivery line below) was silently dropped. `LOG_LEVEL` and `LOG_FILE` now apply
+  to the API server too. Verified against a real uvicorn: no SQL statements or parameters appear at INFO.
+- Archive provisioning (alembic run inside the API process) no longer replaces the root logger's handlers and level with `alembic.ini`'s
+  (`WARNING` + its own handler); it passes `configure_logger=False`. The standalone `alembic` command still configures logging as before.
+
 ### Changed - health panel wording, localized username hint, login-code diagnostics
 
 - The health panel marks a failed check with a red **No** badge and a passed check with nothing, instead of an identical-looking ✓ / ✗ pair

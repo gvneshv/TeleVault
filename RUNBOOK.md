@@ -20,7 +20,7 @@ All settings come from `.env` (copy `.env.example`). Nothing Telegram-related li
 | `TELEVAULT_BOOTSTRAP_ADMIN_TOKEN` | see note | unset | `openssl rand -hex 16`. Lets the first person register as admin through the web UI. Works once, inert afterwards. |
 | `ENABLE_API_DOCS` | no | `false` | `true` serves `/api/docs`, `/api/redoc`, `/api/openapi.json`. Keep `false` on anything other people can reach. |
 | `DATA_DIR` | no | `data` | Runtime-file root (section 3). A relative path is resolved against the repo root, not the working directory. |
-| `LOG_LEVEL` | no | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
+| `LOG_LEVEL` | no | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. Applies to the API server and to every worker. |
 | `LOG_FILE` | no | console only | e.g. `logs/televault.log` for rotating file logs. |
 
 Note on the bootstrap token: every account comes from an invite and only the admin makes invites, so a fresh instance needs
