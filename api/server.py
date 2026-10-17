@@ -238,11 +238,16 @@ class _WebStaticFiles(StaticFiles):
     The frontend's apiFetch() and any script calling the API expect a JSON body there, not an HTML page -
     so for that namespace we skip the HTML fallback and raise the ordinary 404, which FastAPI renders as {"detail": "Not Found"} like before.
 
-    `path` is relative to the mount point ("/"), so "/api/foo" arrives as "api/foo".
+    `path` is relative to the mount point ("/"), so "/api/foo" arrives as "api/foo" - on POSIX.
+    Starlette builds it with os.path.normpath(), so on WINDOWS the same request arrives as "api\\foo".
+    Comparing against "api/" alone silently never matched there, and every unknown /api/ path got the HTML 404 page
+    (found by tests/api/test_gate_chain.py when the suite was first run on Windows).
+    Normalise the separator before comparing.
     """
 
     async def get_response(self, path, scope):
-        if path == "api" or path.startswith("api/"):
+        url_style = path.replace("\\", "/")  # compare on a copy; the original goes to StaticFiles untouched
+        if url_style == "api" or url_style.startswith("api/"):
             raise StarletteHTTPException(status_code=404)
         return await super().get_response(path, scope)
 
