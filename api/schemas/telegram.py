@@ -9,6 +9,14 @@ Three steps, three request bodies (see that module's own docstring for the full 
 
 from pydantic import BaseModel, Field
 
+from utils.validation import (
+    TELEGRAM_2FA_PASSWORD_MAX_LENGTH,
+    TELEGRAM_API_HASH_MAX_LENGTH,
+    TELEGRAM_API_ID_MAX_LENGTH,
+    TELEGRAM_CODE_MAX_LENGTH,
+    TELEGRAM_PHONE_MAX_LENGTH,
+)
+
 
 class TelegramCredentialsIn(BaseModel):
     """
@@ -16,13 +24,13 @@ class TelegramCredentialsIn(BaseModel):
 
     api_id is accepted as a string even though Telegram's API wants an int, because it arrives from an HTML form field same as everything else here -
     the route converts and validates it's actually numeric before doing anything with it.
-    Neither field is validated further than "non-empty" here;
+    Neither field is validated further than "non-empty, and not absurdly long" here (limits in utils/validation.py);
     Telegram itself is the real validator (an invalid pair fails on the next step, send-code, as ApiIdInvalidError -
     see that route's own docstring for why this schema doesn't try to guess Telegram's own validation rules).
     """
 
-    api_id: str = Field(..., min_length=1, description="From my.telegram.org - a numeric string.")
-    api_hash: str = Field(..., min_length=1, description="From my.telegram.org, alongside api_id.")
+    api_id: str = Field(..., min_length=1, max_length=TELEGRAM_API_ID_MAX_LENGTH, description="From my.telegram.org - a numeric string.")
+    api_hash: str = Field(..., min_length=1, max_length=TELEGRAM_API_HASH_MAX_LENGTH, description="From my.telegram.org, alongside api_id.")
 
 
 class TelegramCredentialsOut(BaseModel):
@@ -40,7 +48,7 @@ class TelegramSendCodeIn(BaseModel):
     See api/routes/telegram.py's module docstring for that lifetime.
     """
 
-    phone: str = Field(..., min_length=1, description="Including country code, e.g. +15551234567.")
+    phone: str = Field(..., min_length=1, max_length=TELEGRAM_PHONE_MAX_LENGTH, description="Including country code, e.g. +15551234567.")
 
 
 class TelegramSendCodeOut(BaseModel):
@@ -60,8 +68,8 @@ class TelegramConfirmIn(BaseModel):
     not by a separate "step" field, and by what state the pending link is already in server-side (see that route's own docstring).
     """
 
-    code: str | None = Field(None, description="The login code Telegram sent, for the first call.")
-    password: str | None = Field(None, description="The account's 2FA password, only for the second call if needs_password came back True.")
+    code: str | None = Field(None, max_length=TELEGRAM_CODE_MAX_LENGTH, description="The login code Telegram sent, for the first call.")
+    password: str | None = Field(None, max_length=TELEGRAM_2FA_PASSWORD_MAX_LENGTH, description="The account's 2FA password, only for the second call if needs_password came back True.")
 
 
 class TelegramConfirmOut(BaseModel):

@@ -39,12 +39,12 @@
 
       <label class="auth-card__field">
         <span data-i18n="login.usernameLabel">Username</span>
-        <input id="login-username" name="username" type="text" autocomplete="username" required />
+        <input id="login-username" name="username" type="text" autocomplete="username" maxlength="32" required />
       </label>
 
       <label class="auth-card__field">
         <span data-i18n="login.passwordLabel">Password</span>
-        <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+        <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required />
       </label>
 
       <p id="login-error" class="auth-card__error" role="alert" hidden></p>

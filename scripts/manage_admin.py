@@ -108,9 +108,10 @@ from db.deprovisioning import drop_archive_database
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from utils.security import hash_password
+from utils.validation import PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, username_problem
 from utils.worker_paths import backfill_status_path, heartbeat_path
 
-MIN_PASSWORD_LENGTH = 8  # matches RegisterIn.password in api/schemas/auth.py
+MIN_PASSWORD_LENGTH = PASSWORD_MIN_LENGTH  # same rule as RegisterIn.password in api/schemas/auth.py - both come from utils/validation.py
 
 
 def _confirm(prompt: str) -> bool:
@@ -126,6 +127,8 @@ def _prompt_new_password() -> str:
     password = getpass.getpass("New password: ")
     if len(password) < MIN_PASSWORD_LENGTH:
         sys.exit(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+    if len(password) > PASSWORD_MAX_LENGTH:
+        sys.exit(f"Password must be at most {PASSWORD_MAX_LENGTH} characters.")
     confirm = getpass.getpass("Confirm password: ")
     if password != confirm:
         sys.exit("Passwords did not match. Nothing was created.")
@@ -155,6 +158,12 @@ def _find_user(conn: Connection, user_id: int | None, username: str | None) -> d
 
 
 def cmd_create(username: str) -> None:
+    # Same username rules as web registration (utils/validation.py), checked before touching the database.
+    # Only account CREATION is restricted: existing accounts with older, looser names keep working everywhere else.
+    problem = username_problem(username)
+    if problem is not None:
+        sys.exit(problem)
+
     conn = control_db.get_connection()
     try:
         # Checked BEFORE even asking for a username collision or a password - see this module's own docstring for the single-admin invariant this is upholding;

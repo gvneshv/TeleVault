@@ -39,22 +39,22 @@
 
       <label class="auth-card__field">
         <span data-i18n="register.inviteLabel">Invite token</span>
-        <input id="register-invite" name="invite_token" type="text" autocomplete="off" required />
+        <input id="register-invite" name="invite_token" type="text" autocomplete="off" maxlength="128" required />
       </label>
 
       <label class="auth-card__field">
         <span data-i18n="register.usernameLabel">Username</span>
-        <input id="register-username" name="username" type="text" autocomplete="username" required />
+        <input id="register-username" name="username" type="text" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9._\-]+" title="3-32 characters: letters, digits, . _ -" required />
       </label>
 
       <label class="auth-card__field">
         <span data-i18n="register.passwordLabel">Password</span>
-        <input id="register-password" name="password" type="password" autocomplete="new-password" minlength="8" required />
+        <input id="register-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
       </label>
 
       <label class="auth-card__field">
         <span data-i18n="register.confirmLabel">Confirm password</span>
-        <input id="register-confirm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required />
+        <input id="register-confirm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
       </label>
 
       <!-- Required consent.

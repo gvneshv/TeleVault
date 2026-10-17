@@ -276,6 +276,8 @@ export const uk = {
   "tgSetup.continueToChats": "Перейти до чатів",
   "tgSetup.skipForNow": "Пропустити - перейти до чатів",
 
+  "error.invalidInput":
+    "Деякі введені значення недійсні. Перевірте довжину та дозволені символи й спробуйте ще раз.",
   "error.invalidApiCredentials":
     "Пара api_id/api_hash недійсна. Перевірте значення на my.telegram.org.",
   "error.telegramCredentialsMissing":

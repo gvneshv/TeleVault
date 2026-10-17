@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.dependencies import get_archive_connection
 from api.schemas import ChatOut, ChatOption, MessageOut, PaginatedResponse
+from utils.validation import DATE_PARAM_MAX_LENGTH, SEARCH_QUERY_MAX_LENGTH
 from db.read_queries import get_chat, get_chats, get_chat_options, get_chat_messages
 
 router = APIRouter(tags=["chats"])
@@ -99,13 +100,13 @@ def list_chat_messages(
     chat_id: int,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
-    q: str | None = Query(None, description="Substring search within message text."),
+    q: str | None = Query(None, max_length=SEARCH_QUERY_MAX_LENGTH, description="Substring search within message text."),
     sender_id: int | None = Query(None, description="Filter by sender ID."),
     date_from: str | None = Query(
-        None, description="ISO 8601 lower bound on message date."
+        None, max_length=DATE_PARAM_MAX_LENGTH, description="ISO 8601 lower bound on message date."
     ),
     date_to: str | None = Query(
-        None, description="ISO 8601 upper bound on message date."
+        None, max_length=DATE_PARAM_MAX_LENGTH, description="ISO 8601 upper bound on message date."
     ),
     whole_word: bool = Query(
         False,

@@ -59,6 +59,9 @@ function describeError(detail) {
     return detail.message || t("common.error");
   }
   if (typeof detail === "string") return detail;
+  // FastAPI's own request-validation failures (HTTP 422) put a LIST of per-field problems under `detail`, not a {reason} object.
+  // Their text is English and technical, so show one generic localized hint rather than the raw list.
+  if (Array.isArray(detail)) return t("error.invalidInput");
   return t("common.error");
 }
 

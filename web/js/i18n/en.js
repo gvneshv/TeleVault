@@ -284,6 +284,8 @@ export const en = {
   "tgSetup.continueToChats": "Continue to Chats",
   "tgSetup.skipForNow": "Skip for now - go to Chats",
 
+  "error.invalidInput":
+    "Some of the values you entered are not valid. Check the lengths and allowed characters and try again.",
   "error.invalidApiCredentials":
     "That api_id/api_hash pair isn't valid. Double-check the values from my.telegram.org.",
   "error.telegramCredentialsMissing":

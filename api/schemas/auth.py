@@ -1,23 +1,46 @@
 """
 Request/response models for api/routes/auth.py.
 
-Password fields (RegisterIn.password, LoginIn.password) are deliberately unbounded plain str, not given a max_length here:
-passlib/argon2 hashes the raw bytes regardless of length, and rejecting "too long" passwords is a constraint some sites add for their own reasons,
-not one this app needs - "no error handling for impossible scenarios" guidance.
+Every client-supplied string is bounded (limits live in utils/validation.py - read its docstring for the reasoning).
+This replaces an earlier decision to leave passwords unbounded: passlib refuses anything over 4096 characters by RAISING,
+which reached the client as an unhandled 500, and even below that limit a huge password makes the server do argon2 work for an unauthenticated caller.
+
+Create vs. log in: the FORMAT rules (username pattern, minimum password length) are enforced at registration only.
+Login merely caps lengths, so tightening a rule later can never lock out an account created under the old one.
 """
 
 from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from utils.validation import (
+    INVITE_TOKEN_MAX_LENGTH,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    USERNAME_MAX_LENGTH,
+    USERNAME_MIN_LENGTH,
+    USERNAME_PATTERN,
+)
+
 
 class RegisterIn(BaseModel):
     """Body for POST /auth/register. invite_token is the single-use token an admin already issued out-of-band
     (invite creation itself is out of scope for now - see project brief)."""
 
-    invite_token: str
-    username: str = Field(..., min_length=1, max_length=255)
-    password: str = Field(..., min_length=8, description="Minimum 8 characters. No other complexity rules imposed.")
+    invite_token: str = Field(..., max_length=INVITE_TOKEN_MAX_LENGTH)
+    username: str = Field(
+        ...,
+        min_length=USERNAME_MIN_LENGTH,
+        max_length=USERNAME_MAX_LENGTH,
+        pattern=USERNAME_PATTERN,
+        description="3-32 characters: letters, digits, '.', '_' and '-'.",
+    )
+    password: str = Field(
+        ...,
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+        description="8-128 characters. No other complexity rules imposed.",
+    )
     accepted_terms: bool = Field(
         False,
         description=(
@@ -30,8 +53,9 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     """Body for POST /auth/login."""
 
-    username: str
-    password: str
+    # Length caps only - no pattern or minimum, so accounts created under any earlier, looser rule can still sign in.
+    username: str = Field(..., max_length=USERNAME_MAX_LENGTH)
+    password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 
 
 class AccessTokenOut(BaseModel):
