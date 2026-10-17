@@ -32,6 +32,7 @@ import db
 from api.dependencies import require_admin
 from config import settings
 from control_db import queries as cq
+from utils.logging_setup import setup_logging
 
 from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, archive, admin
 
@@ -110,6 +111,11 @@ async def lifespan(app: FastAPI):
     Shutdown: disposes the control pool, every cached per-account archive pool, and the provisioning (CREATE/DROP DATABASE) connection -
     closes every pooled connection cleanly rather than leaving them to the OS on process exit.
     """
+    # uvicorn configures only ITS OWN loggers ("uvicorn", "uvicorn.access");
+    # the root logger stays at Python's default, WARNING, so every INFO line from our modules (api.*, db.*, control_db.*) was silently dropped until this call.
+    # The userbot workers (main.py, backfill.py) always did this; the API server simply never had. Same LOG_LEVEL / LOG_FILE settings as the workers.
+    # basicConfig() inside is a no-op if the root logger already has handlers (e.g. under pytest), so calling it here can never double-print.
+    setup_logging(log_level=settings.log_level, log_file=settings.log_file)
     logger.info("TeleVault API starting up.")
     control_db.init_control_db(settings.control_database_url)
     db.init_server(settings.control_database_url)

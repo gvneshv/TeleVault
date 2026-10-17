@@ -110,6 +110,8 @@ def _migrate_database(db_name: str) -> None:
     # (a real bug this exact line had until real end-to-end testing against a live Postgres caught it - see this module's own commit notes).
     # render_as_string with hide_password=False is required to get a connection string that actually authenticates.
     cfg = Config(str(_ALEMBIC_INI_PATH))
+    # We are inside the running API server: keep ITS logging configuration instead of alembic.ini's (see alembic/env.py for what goes wrong otherwise).
+    cfg.attributes["configure_logger"] = False
 
     with _provision_lock:
         os.environ["TELEVAULT_ALEMBIC_URL_OVERRIDE"] = target_url.render_as_string(hide_password=False)

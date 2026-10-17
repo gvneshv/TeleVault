@@ -39,10 +39,13 @@ from control_db.schema import metadata  # noqa: E402
 config = context.config
 
 # Interpret the config file for Python logging.
-if config.config_file_name is not None:
-    # disable_existing_loggers=False is essential, not cosmetic: db/provisioning.py (and anything else that calls alembic's command API)
-    # runs this file INSIDE the already-running API process, and fileConfig()'s default (True) would silently disable every logger that exists at that moment -
-    # api.*, db.*, even uvicorn's - so the server would stop logging errors after the first account was provisioned, until it was restarted.
+# Only the standalone `alembic ...` CLI should (re)configure logging.
+# When db/provisioning.py runs a migration INSIDE the API process it sets config.attributes["configure_logger"] = False:
+# alembic.ini's [logger_root] would otherwise replace the root logger's handlers and drop its level to WARNING,
+# silently muting every INFO line the server logs from then on (latent until the server configured its own logging - see api/server.py's lifespan).
+# disable_existing_loggers=False is kept as a second safeguard for any other in-process caller:
+# fileConfig()'s default (True) would disable every logger that exists at that moment - api.*, db.*, even uvicorn's.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Point autogenerate at control_db/schema.py's Table objects - the control DB's single source of truth for
