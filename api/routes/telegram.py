@@ -41,6 +41,7 @@ it will silently misbehave otherwise (a send-code handled by worker A and the ma
 """
 
 import asyncio
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -73,6 +74,8 @@ from api.schemas import (
 )
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.security import DecodedAccessToken
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
@@ -233,6 +236,23 @@ async def send_code(
     except FloodWaitError:
         await client.disconnect()  # type: ignore[func-returns-value]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
         raise _reason(429, "Telegram is asking us to slow down. Wait a few minutes before trying again.", "telegram_flood_wait")
+
+    # Diagnostics for the most common support question - "the request succeeded but no code arrived":
+    # Telegram decides HOW to deliver the code, and the HTTP 200 only means Telegram accepted the request.
+    #   SentCodeTypeApp  -> a message from the official "Telegram" service chat inside an app where this account is already logged in (NOT an SMS);
+    #   SentCodeTypeSms / Call / FlashCall / MissedCall -> the phone network;
+    #   SentCodeTypeSetUpEmailRequired / EmailCode -> Telegram wants an e-mail step this flow cannot perform.
+    # Only the class names and the timeout are logged - never the phone number or anything code-related.
+    # getattr: `sent` can also be a SentCodeSuccess / SentCodePaymentRequired, which carry no delivery type.
+    delivery = getattr(sent, "type", None)
+    next_delivery = getattr(sent, "next_type", None)
+    logger.info(
+        "Telegram login code requested for account %s: delivery=%s, next_delivery=%s, timeout=%ss",
+        current["user_id"],
+        type(delivery).__name__ if delivery is not None else type(sent).__name__,
+        type(next_delivery).__name__ if next_delivery is not None else None,
+        getattr(sent, "timeout", None),
+    )
 
     async with _lock:
         _pending_links[current["user_id"]] = _PendingLink(client, body.phone, sent.phone_code_hash)
