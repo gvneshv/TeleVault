@@ -1,0 +1,93 @@
+# Continuous integration: GitHub runs this on its own servers for every push to main and every pull request,
+# so a broken change is noticed within minutes instead of whenever somebody next runs the tests by hand.
+# Results appear on the commit / pull request (green tick or red cross) and under the repository's "Actions" tab.
+#
+# What it does NOT do: deploy anything, touch your server, or see your .env - the tests create their own throwaway secrets and databases (see tests/conftest.py),
+# and the workflow can only read the repository (permissions below).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token: nothing in this workflow needs to write to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the older, still-running run pointless - cancel it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The full suite on Linux against a real PostgreSQL (the same major version as docker-compose.yml), plus the type check.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          # Matches the default TELEVAULT_TEST_SERVER_URL in tests/conftest.py. The tests create (and drop) their own `televault_test_*` databases.
+          POSTGRES_USER: televault
+          POSTGRES_PASSWORD: televault
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Do not start the steps until the database actually accepts connections.
+        options: >-
+          --health-cmd "pg_isready -U televault"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            constraints.txt
+
+      - name: Install dependencies (exact versions from constraints.txt)
+        run: pip install -r requirements-dev.txt -c constraints.txt
+
+      - name: Type check application code
+        run: pyright
+
+      - name: Run tests
+        env:
+          # Without this, a missing database would make the DB tests SKIP and the run would still look green.
+          TELEVAULT_TEST_REQUIRE_DB: "1"
+        run: python -m pytest -q
+
+  # Windows is where the app is developed and where one real bug (backslash paths in the static mount) only showed up.
+  # GitHub's Windows runners cannot host a PostgreSQL service container, so this job runs only the tests that need no database.
+  unit-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            constraints.txt
+
+      - name: Install dependencies (exact versions from constraints.txt)
+        run: pip install -r requirements-dev.txt -c constraints.txt
+
+      - name: Run database-free tests
+        run: python -m pytest tests/unit -q
