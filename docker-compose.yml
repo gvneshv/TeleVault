@@ -3,7 +3,8 @@
 # This is a DEV convenience, not a production deployment - the VPS setup documented in README/docs will run Postgres separately (or a managed instance).
 # Credentials below are placeholders on purpose;
 # they only need to match the CONTROL_DATABASE_URL default in config.py/.env.example, both localhost-only.
-# (The 'televault' database below is created by the image but TeleVault no longer uses it - per-account archives are created on demand.)
+# The only database this container creates is the control one (POSTGRES_DB below).
+# Per-account archive databases are created on demand by the app itself.
 #
 # Usage:
 #   docker compose up -d        # start Postgres in the background
@@ -23,7 +24,7 @@ services:
     environment:
       POSTGRES_USER: televault
       POSTGRES_PASSWORD: televault
-      POSTGRES_DB: televault
+      POSTGRES_DB: televault_control  # must match the database name in CONTROL_DATABASE_URL
     ports:
       - "5432:5432"
     volumes:
@@ -32,7 +33,7 @@ services:
       # but ONLY the very first time the container starts against an empty data volume - not on every restart.
       - ./docker/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U televault -d televault"]
+      test: ["CMD-SHELL", "pg_isready -U televault -d televault_control"]
       interval: 5s
       timeout: 3s
       retries: 5
