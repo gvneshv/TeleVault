@@ -134,5 +134,8 @@ Needs an invite: create one in the web UI (admin -> Invites), with `scripts/mana
 | DevTools → Application → Cookies | `televault_refresh` shows `HttpOnly` ✓, `Path=/api/auth`, `SameSite=Strict`. Typing `document.cookie` in the console must **not** show it. |
 | Click "Log out" | Redirects to `/login.html`; pressing Back afterward bounces straight back to `/login.html` (doesn't show stale app content). |
 | Register with an invite token | Auto-redirects to `/index.html` on success (no separate login step needed). |
+| Hard-reload (`Ctrl+Shift+R`) with the OS or saved theme set to dark, then to light | The theme icon matches the theme immediately (moon in dark, sun in light) - before any click. |
+| Settings -> Telegram setup, enter api_id + api_hash and submit | Moves on to the phone-number step. A wrong pair is only reported at the next step (send code), not here. |
+| Register with a username like `a b` or `ab`, or a 129-character password | The browser refuses the field before sending; if the request does go out, a generic "values are not valid" message appears (never a bare "Something went wrong"). |
 | Register with mismatched password/confirm fields | Inline "Passwords don't match" - no request sent. |
 | Open two tabs, log in on one, then load `/index.html` in the other | Second tab silently refreshes using the shared cookie and loads normally - expected, not a bug (access token is per-tab in memory; the cookie is shared). |

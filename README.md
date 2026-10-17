@@ -46,8 +46,8 @@ cd TeleVault
 python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (exact tested versions; see the header of constraints.txt for why and how to update them)
+pip install -r requirements.txt -c constraints.txt
 ```
 
 ---
@@ -342,7 +342,11 @@ televault/
 ├── .env.example        # Environment variable template
 ├── .gitattributes      # Enforces LF line endings on Windows checkouts
 ├── .gitignore
-├── requirements.txt    # Pinned dependencies
+├── requirements.txt    # What the app needs (loose version ranges)
+├── constraints.txt     # The exact versions it was tested with (pip install ... -c constraints.txt)
+├── requirements-dev.txt # Test and type-check tools
+├── tests/              # Automated test suite - see tests/README.md
+├── .github/workflows/  # CI: runs the tests and the type check on every push / pull request
 ├── CHANGELOG.md
 └── README.md
 ```

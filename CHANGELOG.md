@@ -9,16 +9,41 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - input limits (breaking for registration: stricter usernames)
+
+- New `utils/validation.py`: one place for every limit. Usernames are 3-32 characters of `A-Z a-z 0-9 . _ -`; passwords 8-128 characters;
+  invite tokens, Telegram api_id / api_hash / phone / code / 2FA password, search text, date filters and the chat-id filter list are all capped.
+  Violations are a 422, never a 500 (a password over 4096 characters used to crash registration and login with a 500).
+- Format rules apply to **new** accounts only (web registration and `manage_admin.py create`). Login only caps lengths, so existing accounts
+  with older names keep working. The HTML forms carry matching `maxlength` / `pattern` attributes.
+- A 422 from any form now shows a generic localized "values are not valid" message instead of "Something went wrong".
+
+### Fixed
+
+- **Telegram credentials form always failed with 422:** the handler read the input fields after re-rendering the form (which empties them), so it sent
+  empty strings. It now reads them first, like the phone and code forms already did.
+- **Unknown `/api/` paths returned the HTML 404 page on Windows** instead of the JSON 404: Starlette passes `api\foo` there and the guard only compared `api/`.
+- **Theme icon showed the sun after a hard reload in dark mode:** the icon was set before the button existed. It is now synced on `DOMContentLoaded`.
+  (Service worker cache bumped to v30 so browsers pick up the changed files.)
+- **Docker created a second, unused `televault` database.** The container now creates only `televault_control` (`POSTGRES_DB`), and the extra init script is gone.
+  Existing volumes keep the old empty database; see RUNBOOK section 2 for how to drop it.
+- **Chat renames were never recorded:** `upsert_chat` now updates a chat's name and @handle when they change (and never blanks them when a lookup fails).
+
+### Added - dependency pinning and CI
+
+- `constraints.txt`: exact tested versions of every dependency (install with `pip install -r requirements.txt -c constraints.txt`).
+- `.github/workflows/ci.yml`: full suite + pyright on Linux with a PostgreSQL service, database-free unit tests on Windows.
+- `pyrightconfig.json`: type-checks application code only (the tests pass fakes and deliberately wrong types).
+- Every fix above has a test that fails without it.
+
 ### Added - automated test suite
 
-- `tests/` with 556 tests (`pip install -r requirements-dev.txt && python -m pytest`), documented in `tests/README.md`.
+- `tests/` with 621 tests (`pip install -r requirements-dev.txt && python -m pytest`), documented in `tests/README.md`.
   Covers auth and throttling, refresh-token rotation and reuse detection, the gate chain on every endpoint, tenant isolation
   between accounts, secret leakage (credentials, sessions, hashes and tokens in responses, logs and storage), admin and
   provisioning flows, the event handlers and the worker coordination files.
 - The suite is hermetic: fresh secrets, a temporary `DATA_DIR`, uniquely named throwaway databases (the drop helper refuses
   any other name), and real Telegram connections / worker launches are blocked.
-- One known bug is recorded as a strict `xfail`: a password over 4096 characters makes registration and login return a 500
-  instead of a 4xx (no `max_length` on the request models).
 - `TESTING.md` rewritten as the manual checklist only; it still described a removed `promote` command and hand-inserted invites.
 
 ### Fixed - Alembic silenced application logging

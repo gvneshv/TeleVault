@@ -40,7 +40,9 @@ a dump together with the key and the DB credentials lets someone act as your Tel
 | One archive per account | `televault_archive_<user_id>` | the web UI's "Create archive database" (`POST /api/archive/provision`, `db/provisioning.py`) | the same step runs `alembic upgrade head` against it |
 
 The Postgres role behind `CONTROL_DATABASE_URL` needs `CREATEDB` for provisioning (the Docker one has it).
-The `televault` database the Docker image creates (`POSTGRES_DB`) is not used by the app.
+The Docker image creates only `televault_control` (`POSTGRES_DB`). A volume created by an older compose file also contains an unused empty `televault` database; remove it with
+`docker compose exec postgres psql -U televault -d televault_control -c "DROP DATABASE televault;"` (it cannot be dropped while connected to it, hence `-d televault_control`), or ignore it.
+Changing `POSTGRES_DB` has no effect on an existing volume - the image only reads it when it first initialises an empty one.
 
 Manual archive, if provisioning isn't possible:
 
@@ -119,5 +121,5 @@ A restore procedure has not been written or rehearsed; do that before relying on
 
 - Docker disk use: `docker system df`, then `docker system prune` occasionally. Never pass `--volumes`; that is what would delete the database volume.
 - Disk space (`df -h`): archives only grow.
-- After pulling updates: `alembic -c alembic_control.ini upgrade head`. Existing archive databases are migrated per account, not by that command.
+- After pulling updates: `pip install -r requirements.txt -c constraints.txt` (exact tested versions), then `alembic -c alembic_control.ini upgrade head`. Existing archive databases are migrated per account, not by that command.
 - Legal pages: while `instance/legal/` is missing, the server logs a warning at startup and serves the placeholder templates.

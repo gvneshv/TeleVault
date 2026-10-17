@@ -41,6 +41,9 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `api/test_secret_leakage.py` | no credential, session, hash or token appears in any GET response, the audit log or the token table; secrets are encrypted at rest |
 | `api/test_admin_api.py` | invites, lock / unlock, deletion rules (including dropping the archive database) |
 | `api/test_archive_provision.py` | per-account archive creation |
+| `api/test_input_limits.py` | every client-supplied value is bounded; login stays lenient about format |
+| `unit/test_static_mount_paths.py` | unknown `/api/` paths give a JSON 404 with either path separator (Windows regression) |
+| `unit/test_docker_setup.py` | the compose file and init scripts agree with the app's default config |
 
 ## Conventions
 
@@ -49,7 +52,15 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
   on purpose.
 * Read an archive's name from the API response (`archive_db_ref`); never recompute it - the tests give each one a unique suffix.
 * `xfail(strict)` marks a **known bug** with its explanation. When the bug is fixed the test starts passing and strict
-  mode fails the run until the marker is removed. Currently: oversized passwords return a 500 instead of a 4xx.
+  mode fails the run until the marker is removed. There are none at the moment.
+* A new bug fix should come with a test that fails when the fix is reverted. Do the revert once by hand to be sure.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: the full suite on Linux against a real
+PostgreSQL 16 service container (with `TELEVAULT_TEST_REQUIRE_DB=1`, so a missing database fails instead of skipping),
+`pyright` on the application code, and the database-free unit tests on Windows. Dependencies are installed with
+`-c constraints.txt`, so CI and your machine use the same versions.
 
 ## Not covered
 
