@@ -9,6 +9,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - link Telegram with a QR code
+
+- Settings -> Telegram setup has a second way to link an account: "Link with a QR code instead". No login code is involved, which matters because
+  Telegram decides whether and how a code is delivered (for some accounts it never arrives). Scan the picture in Telegram on your phone
+  (Settings -> Devices -> Link Desktop Device). Two-step verification is handled by the same password form as the code flow.
+- New endpoints `POST /api/telegram/qr/start`, `POST /api/telegram/qr/poll`, `DELETE /api/telegram/qr`. The server waits for the scan in a background task
+  (Telethon only notices a scan while a wait is running) and the page polls every 2 s; the picture refreshes itself as Telegram rotates the token (~30 s).
+  An attempt lasts at most 5 minutes. Session saving is shared with the code flow (`_save_session_and_discard`).
+- Privacy: the QR token is a login secret. It is rendered server-side to an SVG (no third-party QR script sees it), sent only to the account that asked,
+  with `Cache-Control: no-store`, and never logged. The page warns to scan only codes generated on that page.
+- New dependency `qrcode` (pure Python; SVG output needs no Pillow), pinned in `constraints.txt`. Run `pip install -r requirements.txt` after updating.
+- Web shell cache bumped to v33.
+
 ### Added - input limits (breaking for registration: stricter usernames)
 
 - New `utils/validation.py`: one place for every limit. Usernames are 3-32 characters of `A-Z a-z 0-9 . _ -`; passwords 8-128 characters;
