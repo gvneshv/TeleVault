@@ -18,6 +18,8 @@ from .telegram import (
     TelegramSendCodeOut,
     TelegramConfirmIn,
     TelegramConfirmOut,
+    TelegramQrStartOut,
+    TelegramQrPollOut,
     TelegramStatusOut,
     TelegramUnlinkOut,
 )
@@ -60,6 +62,8 @@ __all__ = [
     "TelegramCredentialsOut",
     "TelegramSendCodeIn",
     "TelegramSendCodeOut",
+    "TelegramQrStartOut",
+    "TelegramQrPollOut",
     "TelegramConfirmIn",
     "TelegramConfirmOut",
     "TelegramStatusOut",

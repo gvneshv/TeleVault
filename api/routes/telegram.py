@@ -1,6 +1,7 @@
 """
 Self-service Telegram linking:
-GET /telegram/status, POST /telegram/credentials, POST /telegram/link/send-code, POST /telegram/link/confirm.
+GET /telegram/status, POST /telegram/credentials, POST /telegram/link/send-code, POST /telegram/link/confirm, and the alternative to the last two:
+POST /telegram/qr/start, POST /telegram/qr/poll, DELETE /telegram/qr (log in by scanning a QR code).
 
 This is how EVERY account gets its Telegram login - there is no shared .env credential or .session file.
 Each user supplies their own api_id/api_hash (from my.telegram.org) and signs in; the result is stored encrypted on their own `users` row
@@ -19,6 +20,25 @@ The three-step shape:
        Requires step 1 to have already happened for this account.
     3. POST /telegram/link/confirm  - the code Telegram sent (and, only if the account has 2FA enabled, a second call with the account's password instead).
        On success, the resulting Telethon session string is encrypted and saved - the account is now linked.
+
+The QR alternative (step 2 and 3 replaced):
+    Telegram's documented login methods for third-party apps include QR codes, and they matter in practice:
+    a login CODE is delivered by Telegram's own rules (an in-app service message, SMS, a call),
+    and for some accounts/api_ids it simply never arrives - nothing in our code can fix that.
+    A QR login needs no code at all: the page shows a QR image, the person scans it in Telegram on their phone (Settings -> Devices -> Link Desktop Device),
+    and Telegram hands this server the session.
+        POST /telegram/qr/start  - needs step 1; connects a fresh client, asks Telegram for a login token, returns the QR picture,
+                                   and starts a background task that waits for the scan
+                                   (Telethon's QRLogin.wait() only catches the scan WHILE it is running,
+                                   so it must be running the whole time the QR is on screen - a request/response cycle cannot hold that, a task can).
+        POST /telegram/qr/poll   - the page calls this every couple of seconds; reports waiting / needs_password / linked / expired / error / none,
+                                   and returns the CURRENT picture because Telegram's token (and so the QR) rotates about every 30 seconds.
+        DELETE /telegram/qr      - the person pressed Back; stop waiting and drop the client.
+    If the account has two-step verification,
+    the poll answers needs_password and the SAME POST /telegram/link/confirm {"password": ...} call as the code flow finishes the login - the pending entry is shared,
+    so there is exactly one place that saves a session.
+    The token inside the QR is as sensitive as a password: it is returned only to the signed-in account that asked for it,
+    never logged, and sent with Cache-Control: no-store.
 
 What this deliberately does NOT do (see project roadmap for what's separate, later work):
     - Does not provision an archive database itself - that's POST /archive/provision (api/routes/archive.py, db/provisioning.py), a deliberately separate call:
@@ -44,7 +64,7 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.engine import Connection
 from telethon import TelegramClient
 from telethon.errors import (
@@ -57,6 +77,7 @@ from telethon.errors import (
     SessionPasswordNeededError,
 )
 from telethon.sessions import StringSession
+from telethon.tl.custom.qrlogin import QRLogin
 
 import control_db
 from api.dependencies import get_control_db, get_current_user
@@ -67,12 +88,15 @@ from api.schemas import (
     TelegramConfirmOut,
     TelegramCredentialsIn,
     TelegramCredentialsOut,
+    TelegramQrPollOut,
+    TelegramQrStartOut,
     TelegramSendCodeIn,
     TelegramSendCodeOut,
     TelegramStatusOut,
     TelegramUnlinkOut,
 )
 from utils.crypto import decrypt_secret, encrypt_secret
+from utils.qr import qr_data_uri
 from utils.security import DecodedAccessToken
 
 logger = logging.getLogger(__name__)
@@ -111,6 +135,11 @@ PENDING_LINK_TTL_SECONDS = 10 * 60
 # this counter only needs to stop casual retrying within a single still-open handshake.
 MAX_CONFIRM_ATTEMPTS = 5
 
+# How long one QR login attempt may stay open.
+# Telegram's own QR token lives only ~30 seconds (the background task asks for a fresh one when it lapses);
+# this is the cap on the whole attempt, so an abandoned browser tab cannot keep a Telegram connection and a task alive indefinitely.
+QR_LOGIN_TTL_SECONDS = 5 * 60
+
 
 class _PendingLink:
     """One in-progress send-code/confirm handshake for one user_id. See this module's own docstring for why this lives in memory rather than in control_db."""
@@ -130,7 +159,69 @@ class _PendingLink:
         return time.monotonic() - self.created_at > PENDING_LINK_TTL_SECONDS
 
 
-# user_id -> _PendingLink. _lock guards inserting/discarding entries (not the Telethon calls themselves)
+class _PendingQrLink(_PendingLink):
+    """
+    One in-progress QR login for one user_id.
+    Lives in the same `_pending_links` dict as a code handshake (a user has at most one pending login of either kind),
+    so the existing password step (POST /telegram/link/confirm) and _discard_pending_link() work on it unchanged.
+
+    qr_state is written by the background task (_qr_wait_loop) and read by POST /telegram/qr/poll:
+    "waiting" -> "scanned" (signed in, not yet saved) | "needs_password" | "expired" | "error".
+    """
+
+    __slots__ = ("qr", "task", "image", "qr_state")
+
+    def __init__(self, client: TelegramClient, qr: QRLogin) -> None:
+        # phone / phone_code_hash are meaningless for a QR login; the empty strings are never sent anywhere
+        # (confirm() refuses a QR entry until it is awaiting_password, so sign_in(phone, code=...) is unreachable for it).
+        super().__init__(client, phone="", phone_code_hash="")
+        self.qr = qr
+        self.task: asyncio.Task | None = None
+        self.image = qr_data_uri(qr.url)
+        self.qr_state = "waiting"
+
+    @property
+    def expired(self) -> bool:
+        return time.monotonic() - self.created_at > QR_LOGIN_TTL_SECONDS
+
+
+async def _qr_wait_loop(pending: _PendingQrLink) -> None:
+    """
+    Hold Telethon's QRLogin.wait() open for as long as the QR code is on screen, and record how it ended on `pending`.
+
+    wait() only notices a scan while it is running, so this must be one long-lived task rather than something each poll starts.
+    One wait() lasts until the current token expires (~30 s); on timeout we ask Telegram for a new token and swap the picture,
+    until the attempt as a whole passes QR_LOGIN_TTL_SECONDS.
+    No database access happens here: saving the session is done by the poll request that sees "scanned",
+    with that request's own connection (same as the code flow's confirm()).
+    """
+    try:
+        while True:
+            if pending.expired:
+                pending.qr_state = "expired"
+                return
+            try:
+                await pending.qr.wait()
+            except asyncio.TimeoutError:
+                await pending.qr.recreate()
+                pending.image = qr_data_uri(pending.qr.url)
+                continue
+            except SessionPasswordNeededError:
+                pending.awaiting_password = True
+                pending.qr_state = "needs_password"
+                return
+            pending.qr_state = "scanned"
+            return
+    except asyncio.CancelledError:
+        raise  # normal: the attempt was cancelled or replaced - _discard_pending_link() is already cleaning up
+    except Exception as exc:
+        # Never log the exception text for certain: it can echo request details. The type is enough to diagnose "network" vs "Telegram refused".
+        logger.warning("QR login wait failed: %s", type(exc).__name__)
+        pending.qr_state = "error"
+
+
+# user_id -> _PendingLink.
+# _lock guards inserting/discarding entries (not the Telethon calls themselves)
 # so two requests for the same account can't race each other into holding two live clients for one user_id at once.
 _pending_links: dict[int, _PendingLink] = {}
 _lock = asyncio.Lock()
@@ -141,6 +232,9 @@ async def _discard_pending_link(user_id: int) -> None:
     async with _lock:
         pending = _pending_links.pop(user_id, None)
     if pending is not None:
+        task = getattr(pending, "task", None)  # only a _PendingQrLink has one
+        if task is not None:
+            task.cancel()
         try:
             await pending.client.disconnect()  # type: ignore[func-returns-value]  # Telethon's own stubs mistype disconnect() as returning None;
             # it's awaitable at runtime regardless (telethon/client/telegrambaseclient.py).
@@ -152,6 +246,22 @@ def _reason(status_code: int, message: str, reason: str) -> HTTPException:
     """Same {"message", "reason"} shape as api/dependencies.py's HTTPExceptions -
     see web/js/lib/errors.js's describeError() for how the frontend turns `reason` into a translated string instead of showing `message` (always English) directly."""
     return HTTPException(status_code=status_code, detail={"message": message, "reason": reason})
+
+
+async def _save_session_and_discard(user_id: int, pending: _PendingLink, control_conn: Connection) -> None:
+    """
+    The one place a freshly signed-in client becomes a saved account session - shared by the code flow (confirm()) and the QR flow (qr_poll()).
+
+    Extract the session string, encrypt it, save it, then tear down the in-memory client.
+    The plaintext string exists only inside this function.
+    """
+    session_string = pending.client.session.save()  # type: ignore[union-attr]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
+    encrypted_session = encrypt_secret(session_string)
+    # encrypt_secret()'s signature is (str | None) -> (str | None) - session.save() above always returns a str at runtime, so the result is always str too;
+    # assert narrows that for the type checker (see set_credentials()'s own comment on this exact pattern, above).
+    assert encrypted_session is not None
+    control_db.queries.set_telegram_session(control_conn, user_id, encrypted_session)
+    await _discard_pending_link(user_id)
 
 
 @router.get("/status", response_model=TelegramStatusOut, summary="Check how far this account has gotten through Telegram linking")
@@ -311,6 +421,10 @@ async def confirm(
         await _discard_pending_link(current["user_id"])
         raise _reason(429, "Too many attempts. Start again with /telegram/link/send-code.", "telegram_too_many_attempts")
 
+    # A QR login only ever reaches confirm() for its password step; before the scan there is no code to confirm.
+    if isinstance(pending, _PendingQrLink) and not pending.awaiting_password:
+        raise _reason(409, "Scan the QR code with Telegram first.", "telegram_qr_not_scanned")
+
     try:
         if pending.awaiting_password:
             if not body.password:
@@ -334,15 +448,111 @@ async def confirm(
     except FloodWaitError:
         raise _reason(429, "Telegram is asking us to slow down. Wait a few minutes before trying again.", "telegram_flood_wait")
 
-    # Signed in - extract, encrypt, and save the session string, then tear down the in-memory client.
-    session_string = pending.client.session.save()  # type: ignore[union-attr]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
-    encrypted_session = encrypt_secret(session_string)
-    # encrypt_secret()'s signature is (str | None) -> (str | None) - session.save() above always returns a str at runtime, so the result is always str too;
-    # assert narrows that for the type checker (see set_credentials()'s own comment on this exact pattern, above).
-    assert encrypted_session is not None
-    control_db.queries.set_telegram_session(control_conn, current["user_id"], encrypted_session)
-    await _discard_pending_link(current["user_id"])
+    await _save_session_and_discard(current["user_id"], pending, control_conn)
     return TelegramConfirmOut(linked=True)
+
+
+def _load_credentials_or_409(control_conn: Connection, user_id: int) -> tuple[int, str]:
+    """This account's decrypted (api_id, api_hash), or the same 409 send-code gives when they have not been saved yet."""
+    user = control_db.queries.get_user_by_id(control_conn, user_id)
+    if user is None or user["telegram_api_id"] is None or user["telegram_api_hash"] is None:
+        raise _reason(
+            409,
+            "Save your Telegram api_id/api_hash first (POST /telegram/credentials) before requesting a QR code.",
+            "telegram_credentials_missing",
+        )
+    raw_api_id = decrypt_secret(user["telegram_api_id"])
+    raw_api_hash = decrypt_secret(user["telegram_api_hash"])
+    assert raw_api_id is not None and raw_api_hash is not None  # both ciphertexts were just checked non-None
+    return int(raw_api_id), raw_api_hash
+
+
+@router.post("/qr/start", response_model=TelegramQrStartOut, summary="Start linking Telegram by scanning a QR code")
+async def qr_start(
+    response: Response,
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> TelegramQrStartOut:
+    """
+    Alternative to send-code/confirm that needs no login code: connect, ask Telegram for a login token, return it as a QR picture,
+    and keep waiting for the scan in the background (see this module's docstring, "The QR alternative").
+
+    Discards any earlier pending login first (code or QR) - starting again is how you restart after any mistake.
+    Requires the api_id/api_hash from POST /telegram/credentials, like send-code.
+    """
+    api_id, api_hash = _load_credentials_or_409(control_conn, current["user_id"])
+    await _discard_pending_link(current["user_id"])
+
+    client = TelegramClient(StringSession(), api_id, api_hash)
+    try:
+        await client.connect()
+        qr = await client.qr_login()
+    except ApiIdInvalidError:
+        await client.disconnect()  # type: ignore[func-returns-value]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
+        raise _reason(400, "The saved api_id/api_hash pair isn't valid.", "invalid_api_credentials")
+    except FloodWaitError:
+        await client.disconnect()  # type: ignore[func-returns-value]  # Telethon stub gap - see _discard_pending_link()'s own comment on this exact pattern.
+        raise _reason(429, "Telegram is asking us to slow down. Wait a few minutes before trying again.", "telegram_flood_wait")
+
+    pending = _PendingQrLink(client, qr)
+    pending.task = asyncio.create_task(_qr_wait_loop(pending))
+    async with _lock:
+        _pending_links[current["user_id"]] = pending
+
+    logger.info("Telegram QR login started for account %s.", current["user_id"])  # never the token or the image
+    response.headers["Cache-Control"] = "no-store"
+    return TelegramQrStartOut(image=pending.image)
+
+
+@router.post("/qr/poll", response_model=TelegramQrPollOut, summary="Check whether the QR code has been scanned")
+async def qr_poll(
+    response: Response,
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> TelegramQrPollOut:
+    """
+    Report how this account's QR login is going (states: see TelegramQrPollOut).
+    Cheap and non-blocking - the waiting happens in the background task.
+
+    "scanned" is never returned as such: the poll that notices it saves the session and answers "linked".
+    The terminal states (linked, expired, error) also clear the pending entry, so the next call answers "none".
+    """
+    response.headers["Cache-Control"] = "no-store"
+    user_id = current["user_id"]
+    async with _lock:
+        pending = _pending_links.get(user_id)
+
+    if not isinstance(pending, _PendingQrLink):
+        return TelegramQrPollOut(state="none")
+
+    if pending.expired or pending.qr_state == "expired":
+        await _discard_pending_link(user_id)
+        return TelegramQrPollOut(state="expired")
+    if pending.qr_state == "error":
+        await _discard_pending_link(user_id)
+        return TelegramQrPollOut(state="error")
+    if pending.qr_state == "scanned":
+        await _save_session_and_discard(user_id, pending, control_conn)
+        return TelegramQrPollOut(state="linked")
+    if pending.qr_state == "needs_password":
+        return TelegramQrPollOut(state="needs_password")
+    return TelegramQrPollOut(state="waiting", image=pending.image)
+
+
+@router.delete("/qr", response_model=TelegramUnlinkOut, summary="Cancel a QR login in progress")
+async def qr_cancel(current: DecodedAccessToken = Depends(get_current_user)) -> TelegramUnlinkOut:
+    """
+    Stop waiting for the scan and drop the Telegram connection (the person pressed Back).
+
+    Only cancels a pending QR login - a pending login CODE belonging to the same account is left alone.
+    Idempotent: 200 whether or not one existed.
+    Reuses TelegramUnlinkOut, the empty "done" body DELETE /telegram/session also returns.
+    """
+    async with _lock:
+        pending = _pending_links.get(current["user_id"])
+    if isinstance(pending, _PendingQrLink):
+        await _discard_pending_link(current["user_id"])
+    return TelegramUnlinkOut()
 
 
 @router.delete("/session", response_model=TelegramUnlinkOut, summary="Unlink your Telegram account")

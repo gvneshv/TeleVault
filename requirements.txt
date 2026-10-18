@@ -19,3 +19,6 @@ alembic>=1.13       # schema migrations, replacing the old hand-rolled db/migrat
 cryptography>=42    # Fernet symmetric encryption for users' Telegram-credential columns
 passlib[argon2]>=1.7  # argon2 password hashing for users.password_hash
 pyjwt>=2.8           # JWT access/refresh token issuing and verification
+
+# --- Telegram QR-code login (see utils/qr.py) ---
+qrcode>=8.0          # pure-Python QR encoder; SVG output needs no Pillow

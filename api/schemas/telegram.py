@@ -70,6 +70,35 @@ class TelegramSendCodeOut(BaseModel):
     delivery: Literal["app", "sms", "call", "email", "other"] = "other"
 
 
+class TelegramQrStartOut(BaseModel):
+    """
+    Returned by POST /telegram/qr/start.
+
+    image is a `data:image/svg+xml;base64,...` URI ready for an <img src>.
+    It encodes a short-lived Telegram login token, so treat it like a password:
+    it is shown only to the signed-in account that asked for it and is replaced automatically every ~30 seconds (see TelegramQrPollOut.image).
+    """
+
+    image: str
+
+
+class TelegramQrPollOut(BaseModel):
+    """
+    Returned by POST /telegram/qr/poll (the page calls it every couple of seconds while the QR code is on screen).
+
+    state:
+      "waiting"        - not scanned yet; `image` is the QR code to display (it changes when Telegram's token rotates);
+      "needs_password" - scanned, but the account has two-step verification: finish with POST /telegram/link/confirm {"password": ...};
+      "linked"         - scanned and saved; the account is now linked (same end state as a confirmed login code);
+      "expired"        - nobody scanned it in time; start again;
+      "error"          - Telegram or the network failed mid-way; start again;
+      "none"           - no QR login is in progress for this account (never started, cancelled, or the server restarted).
+    """
+
+    state: Literal["waiting", "needs_password", "linked", "expired", "error", "none"]
+    image: str | None = None
+
+
 class TelegramConfirmIn(BaseModel):
     """
     Body for POST /telegram/link/confirm - called up to twice per linking attempt.
