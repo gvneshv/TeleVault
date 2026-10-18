@@ -29,6 +29,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Existing volumes keep the old empty database; see RUNBOOK section 2 for how to drop it.
 - **Chat renames were never recorded:** `upsert_chat` now updates a chat's name and @handle when they change (and never blanks them when a lookup fails).
 
+### Changed - the code step says where Telegram put the login code
+
+- `POST /api/telegram/link/send-code` now also returns `delivery` (`app`, `sms`, `call`, `email` or `other`; a coarse category only, nothing about the code).
+  The code step shows a matching explanation instead of the generic "Telegram sent a code to <number>": for `app` it says the code is a message in the
+  chat named "Telegram" inside an app where the account is logged in, and that it is not an SMS. Text in English and Ukrainian; service worker cache v32.
+
 ### Fixed - the API server never logged anything below WARNING
 
 - `api/server.py` now calls `setup_logging()` at startup, like `main.py` and `backfill.py` always did. uvicorn configures only its own loggers, so every

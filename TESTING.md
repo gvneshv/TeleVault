@@ -137,6 +137,7 @@ Needs an invite: create one in the web UI (admin -> Invites), with `scripts/mana
 | Hard-reload (`Ctrl+Shift+R`) with the OS or saved theme set to dark, then to light | The theme icon matches the theme immediately (moon in dark, sun in light) - before any click. |
 | Open the health panel on an account with nothing set up | A red **No** badge in front of "Telegram session found" (and of the database row, if that check fails); rows that pass have no badge. Switch the language to Ukrainian: the badge reads **Ні**. |
 | Register with a username like `a b`, browser language and app language both Ukrainian | The whole rejection message is Ukrainian, including the 3-32 characters hint. |
+| Settings -> Telegram setup, request a login code for your own number | The code step explains where Telegram put it (typically: a message in the chat named "Telegram" inside an app you are logged in to, not an SMS), in the app language. The server log has a matching `delivery=` line. |
 | Settings -> Telegram setup, enter api_id + api_hash and submit | Moves on to the phone-number step. A wrong pair is only reported at the next step (send code), not here. |
 | Register with a username like `a b` or `ab`, or a 129-character password | The browser refuses the field before sending; if the request does go out, a generic "values are not valid" message appears (never a bare "Something went wrong"). |
 | Register with mismatched password/confirm fields | Inline "Passwords don't match" - no request sent. |
