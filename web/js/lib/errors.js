@@ -45,6 +45,7 @@ const ERROR_REASON_KEYS = {
   telegram_invalid_password: "error.telegramInvalidPassword",
   telegram_invalid_code: "error.telegramInvalidCode",
   telegram_code_expired: "error.telegramCodeExpired",
+  telegram_qr_not_scanned: "error.telegramQrNotScanned",
 
   // Archive provisioning (api/routes/archive.py, db/provisioning.py)
   archive_already_provisioned: "error.archiveAlreadyProvisioned",

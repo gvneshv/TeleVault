@@ -265,6 +265,20 @@ export const en = {
     "This account has two-factor authentication enabled - enter your Telegram password to finish linking.",
   "tgSetup.passwordSubmit": "Finish linking",
   "tgSetup.startOver": "Start over",
+  "tgSetup.qrButton": "Link with a QR code instead",
+  "tgSetup.qrIntro":
+    "Scan this code with Telegram on your phone. No login code is needed.",
+  "tgSetup.qrStep1": "Open Telegram on your phone.",
+  "tgSetup.qrStep2": "Go to Settings → Devices → Link Desktop Device.",
+  "tgSetup.qrStep3":
+    "Point the camera at the code. It refreshes itself about every 30 seconds.",
+  "tgSetup.qrWarning":
+    "Only scan a QR code you generated yourself, on this page. Anyone who scans a code someone else made would hand them access to your account.",
+  "tgSetup.qrAlt": "Telegram login QR code",
+  "tgSetup.qrLoading": "Preparing the QR code…",
+  "tgSetup.qrCancel": "Back",
+  "tgSetup.qrExpired":
+    "The QR code expired or the attempt failed. Start again.",
   "tgSetup.linkedBadge": "Linked",
   "tgSetup.linkedBody":
     "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one.",
@@ -309,6 +323,7 @@ export const en = {
   "error.telegramCodeRequired": "The verification code is required.",
   "error.telegramInvalidPassword": "That password wasn't correct.",
   "error.telegramInvalidCode": "That code wasn't correct.",
+  "error.telegramQrNotScanned": "Scan the QR code with Telegram first.",
   "error.telegramCodeExpired": "That code expired. Sending a new one.",
   "error.archiveAlreadyProvisioned":
     "This account already has an archive database.",

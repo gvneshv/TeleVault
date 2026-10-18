@@ -59,14 +59,31 @@ const CODE_HELP_KEYS = {
   other: "tgSetup.codeHelp",
 };
 
+// How often the QR step asks the server whether the code has been scanned.
+// The server answers from memory (no Telegram round trip), so 2 s is cheap and feels instant to the person holding the phone.
+const QR_POLL_INTERVAL_MS = 2000;
+let qrPollTimer = null;
+
+/** Stop the QR poll loop.
+ * Safe to call any time - every way out of the QR step goes through here (see goToTelegramStep). */
+function stopQrPolling() {
+  if (qrPollTimer !== null) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+}
+
 const setupState = {
-  // "loading" | "credentials" | "phone" | "code" | "password" | "linked"
+  // "loading" | "credentials" | "phone" | "code" | "qr" | "password" | "linked"
   // Starts on "loading" until GET /telegram/status resolves (see loadTelegramStatus) rather than guessing "credentials" up front -
   // a guess would flash-then-correct for anyone already linked.
   telegramStep: "loading",
   // Held only in memory, only to display "we sent a code to +1555..." on the code step - never sent anywhere except as the send-code request body itself.
   // Mirrors the backend's own choice not to persist it (see TelegramSendCodeIn's docstring in api/schemas/telegram.py).
   phone: "",
+  // The current QR picture as a data: URI (from POST /telegram/qr/start, then refreshed by each poll - Telegram rotates the token about every 30 s).
+  // In memory only: it encodes a login secret, so it is never put in localStorage or the URL.
+  qrImage: "",
   // Where Telegram put the login code ("app" | "sms" | "call" | "email" | "other"), from POST /telegram/link/send-code - decides which explanation the code step shows.
   codeDelivery: "other",
   telegramError: null,
@@ -156,10 +173,34 @@ function renderPhoneStep() {
       <button type="submit" class="modal__btn modal__btn--primary" ${setupState.telegramBusy ? "disabled" : ""}>
         ${setupState.telegramBusy ? t("tgSetup.sendingCode") : t("tgSetup.sendCodeSubmit")}
       </button>
+      <button type="button" id="settings-qr-start" class="modal__btn" ${setupState.telegramBusy ? "disabled" : ""}>
+        ${t("tgSetup.qrButton")}
+      </button>
       <button type="button" id="settings-back-to-credentials" class="modal__btn">
         ${t("tgSetup.useDifferentCredentials")}
       </button>
     </form>
+  `;
+}
+
+function renderQrStep() {
+  // The white padding around the picture is part of the QR spec (the "quiet zone") - phone cameras fail on a dark theme without it, see .settings-qr.
+  const picture = setupState.qrImage
+    ? `<img id="settings-qr-image" class="settings-qr" src="${setupState.qrImage}" alt="${t("tgSetup.qrAlt")}" />`
+    : `<p class="settings-help">${t("tgSetup.qrLoading")}</p>`;
+  return `
+    <div id="settings-qr-step">
+      <p class="settings-help">${t("tgSetup.qrIntro")}</p>
+      ${picture}
+      <ol class="settings-help">
+        <li>${t("tgSetup.qrStep1")}</li>
+        <li>${t("tgSetup.qrStep2")}</li>
+        <li>${t("tgSetup.qrStep3")}</li>
+      </ol>
+      <p class="settings-help">${t("tgSetup.qrWarning")}</p>
+      ${renderTelegramError()}
+      <button type="button" id="settings-qr-cancel" class="modal__btn">${t("tgSetup.qrCancel")}</button>
+    </div>
   `;
 }
 
@@ -221,6 +262,7 @@ function renderTelegramCard() {
     credentials: renderCredentialsStep,
     phone: renderPhoneStep,
     code: renderCodeStep,
+    qr: renderQrStep,
     password: renderPasswordStep,
     linked: renderLinkedStep,
   };
@@ -238,6 +280,8 @@ function renderTelegramCard() {
 
 /** Reset to a clean, error-free step and re-render - shared by every "go back / start over" button. */
 function goToTelegramStep(root, step, { error = null } = {}) {
+  stopQrPolling(); // leaving (or re-entering) any step ends the poll loop; the QR step starts its own after rendering
+  if (step !== "qr") setupState.qrImage = "";
   setupState.telegramStep = step;
   setupState.telegramError = error;
   setupState.telegramBusy = false;
@@ -359,6 +403,34 @@ function attachTelegramHandlers(root) {
     }
   });
 
+  // --- QR login: an alternative to the login code (see api/routes/telegram.py, "The QR alternative") ---
+  document
+    .getElementById("settings-qr-start")
+    ?.addEventListener("click", async () => {
+      setupState.telegramBusy = true;
+      setupState.telegramError = null;
+      renderRoot(root);
+      try {
+        const started = await postTelegramStep("/api/telegram/qr/start", {});
+        goToTelegramStep(root, "qr");
+        setupState.qrImage = started.image;
+        renderRoot(root);
+        startQrPolling(root);
+      } catch (err) {
+        goToTelegramStep(root, "phone", {
+          error: err.message || t("common.error"),
+        });
+      }
+    });
+  document
+    .getElementById("settings-qr-cancel")
+    ?.addEventListener("click", async () => {
+      goToTelegramStep(root, "phone");
+      // Tell the server to stop waiting and drop its Telegram connection.
+      // Best effort: if this fails, the server's own QR time limit cleans up.
+      await apiFetch("/api/telegram/qr", { method: "DELETE" }).catch(() => {});
+    });
+
   // Shared by the code and password steps - both mean "abandon this handshake, restart from the phone".
   // Only one of the two steps (and so only one #settings-start-over button) is ever in the DOM at once.
   document
@@ -396,6 +468,55 @@ function attachTelegramHandlers(root) {
         renderRoot(root);
       }
     });
+}
+
+/**
+ * Poll POST /telegram/qr/poll until the QR login finishes one way or another.
+ *
+ * Why polling and not a long request: the server-side wait runs in a background task (it has to - Telegram only reports a scan to a wait that is already running),
+ * and a plain short request every 2 s is simple, survives proxies/timeouts, and needs no WebSocket machinery.
+ * Guards: one request in flight at a time (a slow response must not stack up calls), and the loop ends itself when the QR step is no longer on screen.
+ */
+function startQrPolling(root) {
+  stopQrPolling();
+  let inFlight = false;
+  qrPollTimer = setInterval(async () => {
+    if (inFlight) return;
+    if (!document.getElementById("settings-qr-image")) {
+      stopQrPolling(); // the page changed under us - nothing left to update
+      return;
+    }
+    inFlight = true;
+    try {
+      const result = await postTelegramStep("/api/telegram/qr/poll", {});
+      if (setupState.telegramStep !== "qr") return; // user pressed Back while this request was in flight
+      switch (result.state) {
+        case "waiting": {
+          // Telegram rotated the token: swap the picture in place (no full re-render, so nothing flickers).
+          if (result.image && result.image !== setupState.qrImage) {
+            setupState.qrImage = result.image;
+            const img = document.getElementById("settings-qr-image");
+            if (img) img.src = result.image;
+          }
+          break;
+        }
+        case "linked":
+          goToTelegramStep(root, "linked");
+          break;
+        case "needs_password":
+          // Two-step verification: the same password form as the code flow finishes the login (POST /telegram/link/confirm).
+          goToTelegramStep(root, "password");
+          break;
+        default:
+          // "expired" | "error" | "none": the attempt is over server-side - back to the start with an explanation.
+          goToTelegramStep(root, "phone", { error: t("tgSetup.qrExpired") });
+      }
+    } catch (err) {
+      // A transient network/server hiccup should not kill the attempt - the next tick retries. A 401 is handled globally by apiFetch.
+    } finally {
+      inFlight = false;
+    }
+  }, QR_POLL_INTERVAL_MS);
 }
 
 /**

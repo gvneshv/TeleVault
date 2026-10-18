@@ -257,6 +257,20 @@ export const uk = {
     "Цей акаунт має увімкнену двофакторну автентифікацію - введіть пароль Telegram, щоб завершити підключення.",
   "tgSetup.passwordSubmit": "Завершити підключення",
   "tgSetup.startOver": "Почати спочатку",
+  "tgSetup.qrButton": "Увійти за QR-кодом",
+  "tgSetup.qrIntro":
+    "Скануйте цей код у Telegram на телефоні. Код входу не потрібен.",
+  "tgSetup.qrStep1": "Відкрийте Telegram на телефоні.",
+  "tgSetup.qrStep2":
+    "Перейдіть у Налаштування → Пристрої → Під’єднати пристрій.",
+  "tgSetup.qrStep3":
+    "Наведіть камеру на код. Він оновлюється сам приблизно кожні 30 секунд.",
+  "tgSetup.qrWarning":
+    "Скануйте лише той QR-код, який ви самі створили на цій сторінці. Той, хто відскануює чужий код, віддає доступ до свого акаунта.",
+  "tgSetup.qrAlt": "QR-код для входу в Telegram",
+  "tgSetup.qrLoading": "Готуємо QR-код…",
+  "tgSetup.qrCancel": "Назад",
+  "tgSetup.qrExpired": "QR-код застарів або спроба не вдалася. Почніть знову.",
   "tgSetup.linkedBadge": "Підключено",
   "tgSetup.linkedBody":
     "Ваш акаунт Telegram підключено для цієї сесії. Повторне підключення замінить збережену сесію на нову.",
@@ -301,6 +315,7 @@ export const uk = {
   "error.telegramCodeRequired": "Потрібен код підтвердження.",
   "error.telegramInvalidPassword": "Пароль неправильний.",
   "error.telegramInvalidCode": "Код неправильний.",
+  "error.telegramQrNotScanned": "Спочатку відскануйте QR-код у Telegram.",
   "error.telegramCodeExpired": "Термін дії коду минув. Надсилаємо новий.",
   "error.archiveAlreadyProvisioned": "У цього акаунта вже є база даних архіву.",
   "error.provisioningPermissionDenied":

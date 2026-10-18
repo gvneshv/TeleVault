@@ -40,10 +40,11 @@
  * the 422 message (lib/errors.js, i18n/{en,uk}.js) and the input length limits (login.html, register.html).
  * v31 bumps for the health-row "No" badge (views/health.js, base.css), the localized username hint (i18n.js, register.html) and i18n/{en,uk}.js.
  * v32 bumps for the code-step explanation of where Telegram delivered the code (views/telegram-setup.js, i18n/{en,uk}.js).
+ * v33 bumps for QR-code login (views/telegram-setup.js, lib/errors.js, base.css, i18n/{en,uk}.js).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v32";
+const CACHE_NAME = "televault-shell-v33";
 const SHELL_FILES = [
   "/",
   "/index.html",
