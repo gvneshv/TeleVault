@@ -243,7 +243,13 @@ export const uk = {
   "tgSetup.sendingCode": "Надсилання…",
   "tgSetup.useDifferentCredentials": "Використати інші дані",
   "tgSetup.codeLabel": "Код підтвердження",
-  "tgSetup.codeHelp": "Telegram надіслав код на {phone}.",
+  "tgSetup.codeHelp": "Telegram прийняв запит для {phone}.",
+  "tgSetup.codeHelpApp":
+    'Telegram надіслав код повідомленням у застосунку Telegram, у чаті з назвою "Telegram" (це не SMS). Відкрийте його на телефоні чи комп\'ютері.',
+  "tgSetup.codeHelpSms": "Telegram надіслав код у SMS на {phone}.",
+  "tgSetup.codeHelpCall": "Telegram зателефонує на {phone} і продиктує код.",
+  "tgSetup.codeHelpEmail":
+    "Telegram вимагає підтвердження через e-mail, якого TeleVault виконати не може, тому цей номер зараз неможливо підключити.",
   "tgSetup.codeSubmit": "Підтвердити",
   "tgSetup.verifying": "Перевірка…",
   "tgSetup.passwordLabel": "Пароль Telegram (2FA)",

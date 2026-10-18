@@ -77,6 +77,28 @@ from utils.security import DecodedAccessToken
 
 logger = logging.getLogger(__name__)
 
+# Telegram's SentCodeType* class names -> the coarse category the UI explains to the person (TelegramSendCodeOut.delivery).
+# Matched by class NAME, not isinstance, so a Telethon release that adds or renames a type degrades to "other" instead of raising.
+_DELIVERY_CATEGORIES = {
+    "SentCodeTypeApp": "app",
+    "SentCodeTypeSms": "sms",
+    "SentCodeTypeSmsWord": "sms",
+    "SentCodeTypeSmsPhrase": "sms",
+    "SentCodeTypeFirebaseSms": "sms",
+    "SentCodeTypeFragmentSms": "sms",
+    "SentCodeTypeCall": "call",
+    "SentCodeTypeFlashCall": "call",
+    "SentCodeTypeMissedCall": "call",
+    "SentCodeTypeEmailCode": "email",
+    "SentCodeTypeSetUpEmailRequired": "email",
+}
+
+
+def _delivery_category(sent: object) -> str:
+    """Map Telegram's reply to one of TelegramSendCodeOut's categories ("other" when it carries no delivery type, e.g. SentCodeSuccess)."""
+    delivery = getattr(sent, "type", None)
+    return _DELIVERY_CATEGORIES.get(type(delivery).__name__, "other") if delivery is not None else "other"
+
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 # How long a send-code/confirm handshake can sit half-finished before it's treated as abandoned and discarded on next access.
@@ -256,7 +278,7 @@ async def send_code(
 
     async with _lock:
         _pending_links[current["user_id"]] = _PendingLink(client, body.phone, sent.phone_code_hash)
-    return TelegramSendCodeOut()
+    return TelegramSendCodeOut(delivery=_delivery_category(sent))  # type: ignore[arg-type]  # str from a closed mapping; pydantic validates it against the Literal
 
 
 @router.post("/link/confirm", response_model=TelegramConfirmOut, summary="Confirm the Telegram code (and password, if asked for)")

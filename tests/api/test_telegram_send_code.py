@@ -49,7 +49,7 @@ def test_the_delivery_type_is_logged_without_the_phone_number(client, linked_acc
     FakeClient.reply = SimpleNamespace(type=SentCodeTypeApp(length=5), next_type=SentCodeTypeSms(length=5), timeout=60, phone_code_hash="hash")
     with caplog.at_level(logging.INFO, logger="api.routes.telegram"):
         resp = client.post("/api/telegram/link/send-code", headers=auth(token), json={"phone": PHONE})
-    assert resp.status_code == 200 and resp.json() == {"sent": True}
+    assert resp.status_code == 200 and resp.json() == {"sent": True, "delivery": "app"}
     assert "delivery=SentCodeTypeApp" in caplog.text and "next_delivery=SentCodeTypeSms" in caplog.text and "timeout=60s" in caplog.text
     assert f"account {user_id}" in caplog.text
     assert PHONE not in caplog.text and PHONE.lstrip("+") not in caplog.text and "hash" not in caplog.text
@@ -72,3 +72,39 @@ def test_asking_again_replaces_the_pending_handshake(client, linked_account):
     FakeClient.reply = SimpleNamespace(type=SentCodeTypeApp(length=5), next_type=None, timeout=None, phone_code_hash="second")
     client.post("/api/telegram/link/send-code", headers=auth(token), json={"phone": PHONE})
     assert route._pending_links[user_id].phone_code_hash == "second" and len(route._pending_links) == 1
+
+
+@pytest.mark.parametrize(
+    "sent_type, expected",
+    [
+        ("SentCodeTypeApp", "app"),
+        ("SentCodeTypeSms", "sms"),
+        ("SentCodeTypeFirebaseSms", "sms"),
+        ("SentCodeTypeCall", "call"),
+        ("SentCodeTypeFlashCall", "call"),
+        ("SentCodeTypeMissedCall", "call"),
+        ("SentCodeTypeEmailCode", "email"),
+        ("SentCodeTypeSetUpEmailRequired", "email"),
+        ("SomethingTelegramInventsNextYear", "other"),
+    ],
+)
+def test_every_delivery_type_maps_to_a_category_the_ui_can_explain(client, linked_account, sent_type, expected):
+    token, _ = linked_account
+    FakeClient.reply = SimpleNamespace(type=type(sent_type, (), {})(), next_type=None, timeout=None, phone_code_hash="hash")
+    resp = client.post("/api/telegram/link/send-code", headers=auth(token), json={"phone": PHONE})
+    assert resp.status_code == 200 and resp.json()["delivery"] == expected
+
+
+def test_a_reply_without_a_type_is_reported_as_other(client, linked_account):
+    token, _ = linked_account
+    FakeClient.reply = SimpleNamespace(phone_code_hash="hash")
+    assert client.post("/api/telegram/link/send-code", headers=auth(token), json={"phone": PHONE}).json()["delivery"] == "other"
+
+
+def test_the_real_telethon_type_names_are_all_in_the_mapping():
+    """Guards the name-based mapping against a typo: every SentCodeType* class in the installed Telethon must be known (or knowingly 'other')."""
+    import telethon.tl.types.auth as telethon_auth
+
+    names = {n for n in dir(telethon_auth) if n.startswith("SentCodeType")}
+    unknown = sorted(n for n in names if n not in route._DELIVERY_CATEGORIES)
+    assert unknown == [], f"Telethon has delivery types the UI has no explanation for: {unknown} - add them to _DELIVERY_CATEGORIES"

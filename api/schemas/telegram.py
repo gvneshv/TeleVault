@@ -7,6 +7,8 @@ Three steps, three request bodies (see that module's own docstring for the full 
   3. TelegramConfirmIn      -> POST /telegram/link/confirm    (the code, and later the 2FA password if asked for)
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from utils.validation import (
@@ -52,9 +54,20 @@ class TelegramSendCodeIn(BaseModel):
 
 
 class TelegramSendCodeOut(BaseModel):
-    """Returned by POST /telegram/link/send-code on success."""
+    """
+    Returned by POST /telegram/link/send-code on success.
+
+    delivery says WHERE Telegram put the code, because "request accepted" alone leaves people staring at an SMS inbox for a message that went to the Telegram app:
+      "app"   - a message in the official "Telegram" chat inside an app where this account is already logged in (not an SMS);
+      "sms"   - a text message to the phone number;
+      "call"  - a phone call (voice or missed-call);
+      "email" - Telegram wants an e-mail verification step this flow cannot perform;
+      "other" - anything else, or a Telegram reply that does not say.
+    Only this coarse category is exposed - nothing about the code itself.
+    """
 
     sent: bool = True
+    delivery: Literal["app", "sms", "call", "email", "other"] = "other"
 
 
 class TelegramConfirmIn(BaseModel):

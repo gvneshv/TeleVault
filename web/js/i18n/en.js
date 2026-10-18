@@ -251,7 +251,13 @@ export const en = {
   "tgSetup.sendingCode": "Sending…",
   "tgSetup.useDifferentCredentials": "Use different credentials",
   "tgSetup.codeLabel": "Verification code",
-  "tgSetup.codeHelp": "Telegram sent a code to {phone}.",
+  "tgSetup.codeHelp": "Telegram accepted the request for {phone}.",
+  "tgSetup.codeHelpApp":
+    'Telegram sent the code as a message inside the Telegram app, in the chat named "Telegram" (not as an SMS). Open it on a phone or computer where this account is already logged in.',
+  "tgSetup.codeHelpSms": "Telegram sent the code by SMS to {phone}.",
+  "tgSetup.codeHelpCall": "Telegram will call {phone} and read the code out.",
+  "tgSetup.codeHelpEmail":
+    "Telegram wants an e-mail verification step that TeleVault cannot perform, so this number cannot be linked right now.",
   "tgSetup.codeSubmit": "Verify",
   "tgSetup.verifying": "Verifying…",
   "tgSetup.passwordLabel": "Telegram password (2FA)",

@@ -49,6 +49,16 @@ const HANDSHAKE_DEAD_REASONS = new Set([
   "telegram_code_expired",
 ]);
 
+// Which explanation the code step shows for each way Telegram can deliver the code (see TelegramSendCodeOut.delivery in api/schemas/telegram.py).
+// "app" matters most: it is NOT an SMS, and people otherwise wait on the wrong device.
+const CODE_HELP_KEYS = {
+  app: "tgSetup.codeHelpApp",
+  sms: "tgSetup.codeHelpSms",
+  call: "tgSetup.codeHelpCall",
+  email: "tgSetup.codeHelpEmail",
+  other: "tgSetup.codeHelp",
+};
+
 const setupState = {
   // "loading" | "credentials" | "phone" | "code" | "password" | "linked"
   // Starts on "loading" until GET /telegram/status resolves (see loadTelegramStatus) rather than guessing "credentials" up front -
@@ -57,6 +67,8 @@ const setupState = {
   // Held only in memory, only to display "we sent a code to +1555..." on the code step - never sent anywhere except as the send-code request body itself.
   // Mirrors the backend's own choice not to persist it (see TelegramSendCodeIn's docstring in api/schemas/telegram.py).
   phone: "",
+  // Where Telegram put the login code ("app" | "sms" | "call" | "email" | "other"), from POST /telegram/link/send-code - decides which explanation the code step shows.
+  codeDelivery: "other",
   telegramError: null,
   telegramBusy: false,
 
@@ -154,7 +166,7 @@ function renderPhoneStep() {
 function renderCodeStep() {
   return `
     <form id="settings-code-form">
-      <p class="settings-help">${t("tgSetup.codeHelp").replace("{phone}", escapeHtml(setupState.phone))}</p>
+      <p class="settings-help">${t(CODE_HELP_KEYS[setupState.codeDelivery] || CODE_HELP_KEYS.other).replace("{phone}", escapeHtml(setupState.phone))}</p>
       <label class="settings-field">
         <span>${t("tgSetup.codeLabel")}</span>
         <input id="settings-code" name="code" type="text" inputmode="numeric" autocomplete="off" required />
@@ -283,8 +295,11 @@ function attachTelegramHandlers(root) {
     setupState.telegramError = null;
     renderRoot(root);
     try {
-      await postTelegramStep("/api/telegram/link/send-code", { phone });
+      const sentInfo = await postTelegramStep("/api/telegram/link/send-code", {
+        phone,
+      });
       setupState.phone = phone;
+      setupState.codeDelivery = sentInfo?.delivery || "other";
       goToTelegramStep(root, "code");
     } catch (err) {
       goToTelegramStep(root, "phone", {
