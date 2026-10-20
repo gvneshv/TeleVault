@@ -19,6 +19,7 @@ import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
 import { renderArchiveErrorState } from "../lib/archive-error.js";
+import { isUnchanged } from "../lib/refresh.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import {
   render as renderPagination,
@@ -43,6 +44,9 @@ const chatsViewState = {
    *   null                        - nothing loaded yet (before the very first loadChats() call resolves)
    */
   lastRender: null,
+  // Bumped by every loadChats() call; a response is only drawn if it belongs to the newest call,
+  // so a slow older request (or a silent tab-switch refresh) can never overwrite what a newer one already drew.
+  loadSeq: 0,
 };
 
 /**
@@ -190,9 +194,18 @@ function redraw(root) {
   }
 }
 
-/** Fetch one page of chats, cache it, and render it. */
-async function loadChats(root) {
-  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+/**
+ * Fetch one page of chats, cache it, and render it.
+ *
+ * @param {HTMLElement} root
+ * @param {{ silent?: boolean }} [options] silent=true is the tab-switch refresh (see lib/refresh.js): the current list stays on screen while fetching,
+ *   nothing is redrawn if the answer is identical, and a failed request keeps what is already shown instead of replacing it with an error.
+ */
+async function loadChats(root, { silent = false } = {}) {
+  const seq = ++chatsViewState.loadSeq;
+  if (!silent) {
+    root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+  }
 
   try {
     const res = await apiFetch(
@@ -200,19 +213,37 @@ async function loadChats(root) {
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      if (seq !== chatsViewState.loadSeq) return;
       chatsViewState.lastRender = { type: "error", detail: body.detail };
       redraw(root);
       return;
     }
     const data = await res.json();
+    if (seq !== chatsViewState.loadSeq) return;
+    if (silent && isUnchanged(chatsViewState.lastRender, data)) return;
     chatsViewState.lastRender = { type: "data", data };
     redraw(root);
   } catch {
+    if (seq !== chatsViewState.loadSeq) return;
+    // A blip during a silent refresh must not wipe a list that is perfectly good.
+    if (silent && chatsViewState.lastRender?.type === "data") return;
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     chatsViewState.lastRender = { type: "networkError" };
     redraw(root);
   }
 }
+
+/**
+ * Called by app.js every time the Chats tab is switched back to (not on first load - this view loads itself on DOMContentLoaded).
+ * Re-fetches the page the person is on, quietly, so new messages and chats show up without a page reload.
+ * Skipped while the very first load is still in flight (lastRender is null until it lands).
+ */
+function refreshChatsView() {
+  const root = document.getElementById("chats-root");
+  if (root && chatsViewState.lastRender) loadChats(root, { silent: true });
+}
+
+export { refreshChatsView };
 
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("chats-root");

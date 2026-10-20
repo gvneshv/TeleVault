@@ -21,6 +21,7 @@ import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
 import { renderArchiveErrorState } from "../lib/archive-error.js";
+import { isUnchanged } from "../lib/refresh.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -47,6 +48,9 @@ const messagesViewState = {
   // Tagged union of the last thing loadMessages() actually rendered -
   // see chatsViewState.lastRender's own comment (chats.js) for the three shapes and why this replaced a lastData-only flag.
   lastRender: null,
+  // Bumped by every loadMessages() call; a response is only drawn if it belongs to the newest call,
+  // so a slow older request (or a silent tab-switch refresh) can never overwrite what a newer one already drew - e.g. results for an old search term.
+  loadSeq: 0,
   // True once initMessagesView() has run - guards against re-initializing (and re-registering event listeners) if the Messages tab is opened more than once.
   initialized: false,
 };
@@ -152,9 +156,18 @@ function redraw(root) {
   }
 }
 
-/** Fetch one page of messages (with current filters applied), cache it, and render it. */
-async function loadMessages(root) {
-  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+/**
+ * Fetch one page of messages (with current filters applied), cache it, and render it.
+ *
+ * @param {HTMLElement} root
+ * @param {{ silent?: boolean }} [options] silent=true is the tab-switch refresh (see lib/refresh.js): the current list stays on screen while fetching,
+ *   nothing is redrawn if the answer is identical, and a failed request keeps what is already shown instead of replacing it with an error.
+ */
+async function loadMessages(root, { silent = false } = {}) {
+  const seq = ++messagesViewState.loadSeq;
+  if (!silent) {
+    root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+  }
 
   const params = new URLSearchParams({
     page: String(messagesViewState.page),
@@ -171,14 +184,20 @@ async function loadMessages(root) {
     const res = await apiFetch(`/api/messages?${params.toString()}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      if (seq !== messagesViewState.loadSeq) return;
       messagesViewState.lastRender = { type: "error", detail: body.detail };
       redraw(root);
       return;
     }
     const data = await res.json();
+    if (seq !== messagesViewState.loadSeq) return;
+    if (silent && isUnchanged(messagesViewState.lastRender, data)) return;
     messagesViewState.lastRender = { type: "data", data };
     redraw(root);
   } catch {
+    if (seq !== messagesViewState.loadSeq) return;
+    // A blip during a silent refresh must not wipe a list that is perfectly good.
+    if (silent && messagesViewState.lastRender?.type === "data") return;
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     messagesViewState.lastRender = { type: "networkError" };
     redraw(root);
@@ -273,7 +292,17 @@ function initMessagesView() {
   loadMessages(listRoot);
 }
 
-export { initMessagesView };
+/**
+ * Called by app.js every time the Messages tab is switched back to after its first open.
+ * Re-fetches the current page with the current filters, quietly, so messages archived in the meantime show up without a page reload.
+ */
+function refreshMessagesView() {
+  if (!messagesViewState.initialized) return;
+  const listRoot = document.getElementById("messages-root");
+  if (listRoot) loadMessages(listRoot, { silent: true });
+}
+
+export { initMessagesView, refreshMessagesView };
 
 // Re-render whatever's currently shown (data, error, or network error - see messagesViewState.lastRender's own comment) in the new language -
 // no re-fetch needed for the list, but the filter bar's static labels (placeholder, checkbox text) need rebuilding since they aren't data-i18n elements either.

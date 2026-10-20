@@ -16,12 +16,15 @@ import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
 import { renderArchiveErrorState } from "../lib/archive-error.js";
+import { isUnchanged } from "../lib/refresh.js";
 
 const statsViewState = {
   initialized: false,
   // Tagged union of the last thing loadStats() actually rendered -
   // see chatsViewState.lastRender's own comment (chats.js) for the three shapes and why this replaced a lastData-only flag.
   lastRender: null,
+  // Bumped by every loadStats() call; a response is only drawn if it belongs to the newest call - see chatsViewState.loadSeq (chats.js).
+  loadSeq: 0,
   // Client-side sort of per_chat - the API always returns it sorted by message_count descending (see StatsOut's docstring);
   // this tracks whatever the user last clicked, defaulting to that same order so the initial render matches what the API already gives us.
   sortKey: "message_count",
@@ -233,22 +236,37 @@ function redraw(root) {
   }
 }
 
-/** Fetch stats once, cache, and render. */
-async function loadStats(root) {
-  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+/**
+ * Fetch stats, cache, and render. Runs on first open and again (silently) each time the tab is switched back to.
+ *
+ * @param {HTMLElement} root
+ * @param {{ silent?: boolean }} [options] silent=true is the tab-switch refresh (see lib/refresh.js): the current numbers stay on screen while fetching,
+ *   nothing is redrawn if the answer is identical, and a failed request keeps what is already shown instead of replacing it with an error.
+ */
+async function loadStats(root, { silent = false } = {}) {
+  const seq = ++statsViewState.loadSeq;
+  if (!silent) {
+    root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+  }
 
   try {
     const res = await apiFetch("/api/stats");
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      if (seq !== statsViewState.loadSeq) return;
       statsViewState.lastRender = { type: "error", detail: body.detail };
       redraw(root);
       return;
     }
     const data = await res.json();
+    if (seq !== statsViewState.loadSeq) return;
+    if (silent && isUnchanged(statsViewState.lastRender, data)) return;
     statsViewState.lastRender = { type: "data", data };
     redraw(root);
   } catch {
+    if (seq !== statsViewState.loadSeq) return;
+    // A blip during a silent refresh must not wipe numbers that are perfectly good.
+    if (silent && statsViewState.lastRender?.type === "data") return;
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     statsViewState.lastRender = { type: "networkError" };
     redraw(root);
@@ -264,7 +282,14 @@ function initStatsView() {
   if (root) loadStats(root);
 }
 
-export { initStatsView };
+/** Called by app.js every time the Stats tab is switched back to after its first open - re-fetches quietly so the totals are current. */
+function refreshStatsView() {
+  if (!statsViewState.initialized) return;
+  const root = document.getElementById("stats-root");
+  if (root) loadStats(root, { silent: true });
+}
+
+export { initStatsView, refreshStatsView };
 
 document.addEventListener("televault:langchange", () => {
   if (!statsViewState.initialized) return;

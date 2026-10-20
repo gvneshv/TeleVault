@@ -8,8 +8,12 @@
  * This is the single ES module entry point for the app (see index.html's one <script type="module" src="/js/app.js">).
  * It imports every view module, which is what actually causes their code to run at all - an unimported ES module's top-level code
  * (e.g. chats.js's own DOMContentLoaded listener) never executes, unlike a classic <script> tag which always runs once loaded.
- * chats.js is imported for that side effect only (it self-initializes as the landing view);
+ * chats.js self-initializes as the landing view (it only exports a refresh function, see below);
  * the other five export an init() called lazily below, the first time their tab is opened.
+ *
+ * Switching BACK to a data tab (chats, messages, deleted, stats, health) re-fetches it quietly (each view's refresh*View(), see lib/refresh.js),
+ * so what the live archiver stored in the meantime shows up without a page reload.
+ * There is deliberately no timer: a list that rewrites itself while someone is reading it is worse than one that updates when they come back to it.
  * The Admin tab is the exception to both:
  * its nav button, its section, AND its module (views/admin.js, loaded via dynamic import()) only come into existence for the admin account - see mountAdminTab() below.
  *
@@ -18,21 +22,34 @@
  * - not needed for the nav-only shell.
  */
 
-import "./views/chats.js";
+import { refreshChatsView } from "./views/chats.js";
 import "./archiver-toggle.js";
-import { initMessagesView } from "./views/messages.js";
-import { initDeletedView } from "./views/deleted.js";
-import { initStatsView } from "./views/stats.js";
-import { initHealthView } from "./views/health.js";
+import { initMessagesView, refreshMessagesView } from "./views/messages.js";
+import { initDeletedView, refreshDeletedView } from "./views/deleted.js";
+import { initStatsView, refreshStatsView } from "./views/stats.js";
+import { initHealthView, refreshHealthView } from "./views/health.js";
 import { initBackfillView } from "./views/backfill.js";
 import { initSettingsView } from "./views/settings.js";
 import { t } from "./i18n.js";
 import { logout, isAdmin, fetchCurrentUser } from "./lib/auth.js";
 
+// Tabs that re-fetch their data on every visit after the first (the first visit is each view's own init/self-load).
+const VIEW_REFRESHERS = {
+  chats: refreshChatsView,
+  messages: refreshMessagesView,
+  deleted: refreshDeletedView,
+  stats: refreshStatsView,
+  health: refreshHealthView,
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   const navList = document.querySelector(".app-nav__list");
+  const visitedViews = new Set();
 
   function showView(viewName) {
+    const isRevisit = visitedViews.has(viewName);
+    visitedViews.add(viewName);
+
     // Queried on every call (not once up front) because the Admin tab's elements are added/removed after load.
     const links = document.querySelectorAll(".app-nav__link[data-view]");
     const views = document.querySelectorAll(".app-view");
@@ -54,6 +71,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (viewName === "stats") initStatsView();
     if (viewName === "health") initHealthView();
     if (viewName === "backfill") initBackfillView();
+    // After the init calls above, and only on a revisit: on a first open init() has just started the first fetch and a second one would be wasted.
+    // Clicking the tab you are already on counts as a revisit too, which doubles as a cheap manual refresh.
+    if (isRevisit) VIEW_REFRESHERS[viewName]?.();
     if (viewName === "settings") initSettingsView();
     if (viewName === "admin") {
       // Dynamic import: a non-admin's browser never even requests this file through the app.

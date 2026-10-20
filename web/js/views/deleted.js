@@ -23,6 +23,7 @@ import { escapeHtml, highlightMatches } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
 import { renderArchiveErrorState } from "../lib/archive-error.js";
+import { isUnchanged } from "../lib/refresh.js";
 import { renderOrderToggle, wireOrderToggle } from "../lib/order-toggle.js";
 import { createChatFilter } from "../lib/chat-filter.js";
 import {
@@ -45,6 +46,8 @@ const deletedViewState = {
   // Empty array means "All chats" - no chat_ids param is sent in that case.
   chatIds: [],
   lastRender: null,
+  // Bumped by every loadDeleted() call; a response is only drawn if it belongs to the newest call - see messagesViewState.loadSeq (messages.js).
+  loadSeq: 0,
   initialized: false,
   /** message_id -> DeletionOut-shaped detail object, or "error".
    *  Populated lazily on first expand; avoids re-fetching a record that can't change.
@@ -295,9 +298,18 @@ function redraw(root) {
   }
 }
 
-/** Fetch one page of deleted messages (with current search applied), cache it, and render it. */
-async function loadDeleted(root) {
-  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+/**
+ * Fetch one page of deleted messages (with current search applied), cache it, and render it.
+ *
+ * @param {HTMLElement} root
+ * @param {{ silent?: boolean }} [options] silent=true is the tab-switch refresh (see lib/refresh.js): the current list stays on screen while fetching,
+ *   nothing is redrawn if the answer is identical (so rows the person expanded stay open), and a failed request keeps what is already shown.
+ */
+async function loadDeleted(root, { silent = false } = {}) {
+  const seq = ++deletedViewState.loadSeq;
+  if (!silent) {
+    root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+  }
 
   const params = new URLSearchParams({
     page: String(deletedViewState.page),
@@ -313,14 +325,20 @@ async function loadDeleted(root) {
     const res = await apiFetch(`/api/deleted?${params.toString()}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      if (seq !== deletedViewState.loadSeq) return;
       deletedViewState.lastRender = { type: "error", detail: body.detail };
       redraw(root);
       return;
     }
     const data = await res.json();
+    if (seq !== deletedViewState.loadSeq) return;
+    if (silent && isUnchanged(deletedViewState.lastRender, data)) return;
     deletedViewState.lastRender = { type: "data", data };
     redraw(root);
   } catch {
+    if (seq !== deletedViewState.loadSeq) return;
+    // A blip during a silent refresh must not wipe a list that is perfectly good.
+    if (silent && deletedViewState.lastRender?.type === "data") return;
     // Genuine network/connectivity failure - no response body to describe, so the generic message stays.
     deletedViewState.lastRender = { type: "networkError" };
     redraw(root);
@@ -398,7 +416,18 @@ function initDeletedView() {
   loadDeleted(listRoot);
 }
 
-export { initDeletedView };
+/**
+ * Called by app.js every time the Deleted tab is switched back to after its first open.
+ * Re-fetches the current page quietly, so newly preserved messages show up without a page reload.
+ * When something did change, redraw() reopens any rows the person had expanded (see restoreExpandedRows()).
+ */
+function refreshDeletedView() {
+  if (!deletedViewState.initialized) return;
+  const listRoot = document.getElementById("deleted-root");
+  if (listRoot) loadDeleted(listRoot, { silent: true });
+}
+
+export { initDeletedView, refreshDeletedView };
 
 // Re-render the already-fetched page in the new language.
 // Expanded rows (see expandedIds) reopen automatically via renderDeletedView's call to restoreExpandedRows() - no special handling needed here.
