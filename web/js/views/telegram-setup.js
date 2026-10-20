@@ -6,8 +6,9 @@
  * (see both files' module docstrings - linking Telegram and having somewhere to store the archived messages don't imply each other at the API layer;
  * this page just happens to lay them out top-to-bottom, plus a completion banner once both are actually done):
  *
- *   1. "Connect Telegram" - drives the three-step handshake POST /telegram/credentials -> POST /telegram/link/send-code -> POST /telegram/link/confirm
- *      (which itself forks into a second confirm call if the account has 2FA enabled).
+ *   1. "Connect Telegram" - saves the API credentials, then links the account one of two ways, QR code first (the primary method) or phone number + code:
+ *      QR:    POST /telegram/qr/start -> POST /telegram/qr/poll every 2 s (-> POST /telegram/link/confirm {password} if the account has 2FA);
+ *      Phone: POST /telegram/link/send-code -> POST /telegram/link/confirm (which forks into a second confirm call if the account has 2FA).
  *   2. "Archive database" - drives POST /archive/provision, gated on GET /api/health's own archive_status field rather than anything wizard-specific
  *      (see loadArchiveCard() below).
  *
@@ -161,20 +162,34 @@ function renderCredentialsStep() {
   `;
 }
 
+/**
+ * The "how do you want to link?" step: QR code first, phone number + login code second.
+ *
+ * QR is the primary method (the filled button, listed first) because it does not depend on Telegram delivering a login code,
+ * which for some accounts never arrives (see api/routes/telegram.py, "The QR alternative").
+ * It is a button, not an automatic QR: showing the code starts a background task on the server that holds a Telegram connection for up to five minutes,
+ * which should only happen when the person actually asks for it - and landing here after an error (an expired QR, a dead code) must not silently start another one.
+ * The phone-number form stays fully working below it for anyone who prefers a code.
+ */
 function renderPhoneStep() {
+  const busy = setupState.telegramBusy ? "disabled" : "";
+  // The error goes first:
+  // it can come from either method (a failed QR start, an invalid phone number, an expired code) and must not read as belonging only to the one under it.
   return `
+    ${renderTelegramError()}
+    <p class="settings-help">${t("tgSetup.qrPrimaryHint")}</p>
+    <button type="button" id="settings-qr-start" class="modal__btn modal__btn--primary" ${busy}>
+      ${t("tgSetup.qrButton")}
+    </button>
+    <p class="settings-or">${t("tgSetup.phoneAlternative")}</p>
     <form id="settings-phone-form">
       <label class="settings-field">
         <span>${t("tgSetup.phoneLabel")}</span>
         <input id="settings-phone" name="phone" type="tel" placeholder="${t("tgSetup.phonePlaceholder")}" autocomplete="off" required />
       </label>
       <p class="settings-help">${t("tgSetup.phoneHelp")}</p>
-      ${renderTelegramError()}
-      <button type="submit" class="modal__btn modal__btn--primary" ${setupState.telegramBusy ? "disabled" : ""}>
+      <button type="submit" class="modal__btn" ${busy}>
         ${setupState.telegramBusy ? t("tgSetup.sendingCode") : t("tgSetup.sendCodeSubmit")}
-      </button>
-      <button type="button" id="settings-qr-start" class="modal__btn" ${setupState.telegramBusy ? "disabled" : ""}>
-        ${t("tgSetup.qrButton")}
       </button>
       <button type="button" id="settings-back-to-credentials" class="modal__btn">
         ${t("tgSetup.useDifferentCredentials")}

@@ -22,7 +22,7 @@ export const en = {
   "common.comingSoon": "This view isn't built yet.",
   "common.loading": "Loading…",
   "common.error": "Something went wrong.",
-  "common.goToSettings": "Go to settings",
+  "common.createArchive": "Create archive database",
   "common.pageOf": "Page {page} of {pages}",
   "common.pageOfPrefix": "Page",
   "common.pageOfSuffix": "of",
@@ -83,10 +83,10 @@ export const en = {
   "health.dbReadable": "Database readable",
   "health.dbNotSetUp": "Archive database not set up yet",
   "health.no": "No",
+  "health.yes": "Yes",
   "health.sessionExists": "Telegram session found",
   "health.messageCount": "Archived messages",
-  "health.unattached":
-    "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
+  "health.unattached": "Your archive database hasn't been created yet.",
   "health.unavailable":
     "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
   "health.misconfigured":
@@ -103,7 +103,7 @@ export const en = {
   "backfill.aboutIntro":
     "The live archiver only records messages sent while it's running. Backfill fills in the gap: it walks each chat's existing history on Telegram and archives everything TeleVault hasn't seen yet - useful right after your first setup, or for any chat TeleVault only recently joined.",
   "backfill.disclaimerSession":
-    "Backfill needs its own Telegram connection. The live archiver (main.py) must be stopped first - Telegram only allows one active session at a time.",
+    "Backfill needs its own Telegram connection. The live archiver must be stopped first - Telegram only allows one active session at a time.",
   "backfill.disclaimerDeleted":
     "Messages already deleted before a chat was first archived can never be recovered - Telegram's history API only returns what currently exists.",
   "backfill.disclaimerEdits":
@@ -164,8 +164,7 @@ export const en = {
     "The live archiver is currently connected. Stop it first - a backfill and the live archiver can't use the same Telegram session at the same time.",
   "error.backfillRunning":
     "A backfill is currently running. Stop it first - it and the live archiver can't use the same Telegram session at the same time.",
-  "error.archiveUnattached":
-    "Your archive hasn't been set up yet. Finish linking your Telegram account to start archiving.",
+  "error.archiveUnattached": "Your archive database hasn't been created yet.",
   "error.archiveUnavailable":
     "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",
   "error.archiveMisconfigured":
@@ -265,7 +264,10 @@ export const en = {
     "This account has two-factor authentication enabled - enter your Telegram password to finish linking.",
   "tgSetup.passwordSubmit": "Finish linking",
   "tgSetup.startOver": "Start over",
-  "tgSetup.qrButton": "Link with a QR code instead",
+  "tgSetup.qrButton": "Link with a QR code",
+  "tgSetup.qrPrimaryHint":
+    "The quickest way: scan a QR code with Telegram on your phone. No login code is needed.",
+  "tgSetup.phoneAlternative": "Or use your phone number and a login code",
   "tgSetup.qrIntro":
     "Scan this code with Telegram on your phone. No login code is needed.",
   "tgSetup.qrStep1": "Open Telegram on your phone.",

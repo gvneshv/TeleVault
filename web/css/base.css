@@ -363,10 +363,19 @@ input:focus-visible {
   background: var(--color-ink-muted);
 }
 
-/* Running = patina (the app's existing "healthy/active" green).
-   Stopped/unknown stay neutral gray - stopped isn't an error state, just off, so it doesn't get the seal-red treatment reserved for deleted/blocked meanings. */
+/* Running = a filled green dot (--color-ok, the same green as the health-check marks).
+   Stopped = a HOLLOW grey ring, so the two differ in shape as well as colour
+   (the old filled patina dot was nearly the same grey-teal as the stopped one in the dark theme).
+   Stopped isn't an error state, just off, so it doesn't get the seal-red treatment reserved for deleted/blocked meanings.
+   Busy ("Starting…"/"Stopping…") and unknown keep the plain filled grey base style above. */
 .archiver-toggle[data-state="running"] .archiver-toggle__dot {
-  background: var(--color-patina);
+  background: var(--color-ok);
+  box-shadow: 0 0 0 3px var(--color-ok-bg);
+}
+
+.archiver-toggle[data-state="stopped"] .archiver-toggle__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--color-ink-muted);
 }
 
 .archiver-toggle__label {
@@ -1182,6 +1191,7 @@ input:focus-visible {
   min-width: 34px;
 }
 
+.health-check__yes,
 .health-check__no {
   display: inline-block;
   padding: 1px 7px;
@@ -1191,6 +1201,12 @@ input:focus-visible {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
+}
+
+/* The passed-check twin of .health-check__no: same pill, green instead of seal-red. */
+.health-check__yes {
+  background: var(--color-ok-bg);
+  color: var(--color-ok);
 }
 
 .health-message-count {
@@ -1279,6 +1295,9 @@ input:focus-visible {
 .setup-cta {
   max-width: 420px;
   width: 100%;
+  /* Same 20px gap .settings-card keeps below itself.
+     The banner sits INSIDE #telegram-setup-root next to those cards, where .setup-page's own flex gap does not reach, so without this it touched the Telegram card. */
+  margin-bottom: 20px;
   padding: 16px 18px;
   border-radius: var(--radius-md);
   background: var(--color-patina-bg);
@@ -1318,6 +1337,15 @@ input:focus-visible {
    the lean in-SPA Settings tab (web/js/views/settings.js) and the standalone telegram-setup.html (web/js/views/telegram-setup.js) -
    kept as one generic "card" vocabulary rather than forked into two near-identical class sets for each.
    ------------------------------------------------------------------- */
+
+/* "or" separator between the two ways to link (QR first, phone number second) on the link step. */
+.settings-or {
+  margin: 18px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
 
 /* The QR picture.
  * White background + padding is the QR "quiet zone": without it a phone camera cannot find the code's edges on a dark theme. */
@@ -2060,6 +2088,13 @@ mark.legal-placeholder {
   font-size: 13.5px;
   line-height: 1.5;
   white-space: pre-line;
+}
+
+/* Optional "fix it" link under an alert's message (lib/dialog.js, showAlert's `link` option). */
+.modal__link {
+  display: inline-block;
+  margin: 0 0 14px;
+  font-size: 13.5px;
 }
 
 /* Inline "that doesn't match" text under a typed-confirmation field (lib/dialog.js). */

@@ -8,8 +8,9 @@
  * (notably: it does NOT confirm the userbot is currently connected to Telegram - that needs IPC, a Phase 3 addition per that file's own docstring).
  *
  * No polling - this is a manually-refreshed diagnostic view, not a live dashboard.
- * Deliberately simple: one fetch, one refresh button.
- * Adding auto-refresh is a small change later if it turns out to be wanted, not something to build speculatively now.
+ * It re-fetches when the Refresh button is pressed and each time the tab is switched back to (app.js calls refreshHealthView()),
+ * so the message count is current without a page reload.
+ * Adding timed auto-refresh is a small change later if it turns out to be wanted, not something to build speculatively now.
  *
  * Lazy-initialized by app.js on first tab open, same pattern as the other non-landing views.
  */
@@ -17,9 +18,15 @@
 import { t } from "../i18n.js";
 import { apiFetch } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
+import { archiveFixLink } from "../lib/archive-error.js";
+import { isUnchanged } from "../lib/refresh.js";
 
 const healthViewState = {
   initialized: false,
+  // The last report that was actually drawn ({ type: "data", data }), so a silent refresh can tell "nothing changed" and leave the page alone (see lib/refresh.js).
+  lastRender: null,
+  // Bumped by every loadHealth() call; a response is only drawn if it belongs to the newest call (a slow, older one must not overwrite a newer one).
+  loadSeq: 0,
 };
 
 /**
@@ -31,13 +38,18 @@ function renderHealthReport(data) {
   const statusLabel =
     data.status === "ok" ? t("health.statusOk") : t("health.statusDegraded");
 
-  // A failed check is marked with the plain word "No" in a red badge; a passed check carries no mark at all,
-  // so the row simply reads as the statement it is ("Telegram session found").
-  // This replaced a ✓/✗ pair that looked identical in colour and, for "...found", an ✗ that read like "found: yes" to people who had never connected anything.
-  // The word is real text (not aria-hidden), so screen readers say it too, and the red is never the only signal.
+  // A failed check is marked with the plain word "No" in a red badge; a passed check with a ✓ in a green one of the same shape.
+  // History: this was a ✓/✗ pair that looked identical in colour and, for "...found", an ✗ that read like "found: yes" to people who had never connected anything;
+  // it then became "No"-only, which left the passing rows with a wide empty gap that looked broken.
+  // The two badges now differ in colour AND glyph/word, so neither mark is the only signal.
+  // Both carry text a screen reader can say: "No" is real text, the ✓ has an aria-label of "Yes".
   const checkRow = (label, passed) => `
     <li class="health-check">
-      <span class="health-check__mark">${passed ? "" : `<span class="health-check__no">${t("health.no")}</span>`}</span>
+      <span class="health-check__mark">${
+        passed
+          ? `<span class="health-check__yes" role="img" aria-label="${t("health.yes")}">✓</span>`
+          : `<span class="health-check__no">${t("health.no")}</span>`
+      }</span>
       <span>${label}</span>
     </li>
   `;
@@ -69,7 +81,8 @@ function renderHealthReport(data) {
   // so it's the only one that gets a link rather than just prose.
   // "unavailable" is a transient outage (nothing to click, just wait) and "misconfigured" is explicitly admin-only.
   // "ok" is the only case with an actual message count to show.
-  const settingsLink = ` <a href="/telegram-setup.html" class="settings-fix-link">${t("common.goToSettings")}</a>`;
+  const fix = archiveFixLink({ reason: "archive_unattached" });
+  const settingsLink = ` <a href="${fix.href}" class="settings-fix-link">${fix.label}</a>`;
   const archiveMessage =
     data.archive_status === "unattached"
       ? `<p class="health-archive-message">${t("health.unattached")}${settingsLink}</p>`
@@ -92,9 +105,19 @@ function renderHealthReport(data) {
   `;
 }
 
-/** Fetch and render the current health report. */
-async function loadHealth(root) {
-  root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+/**
+ * Fetch and render the current health report.
+ *
+ * @param {HTMLElement} root
+ * @param {{ silent?: boolean }} [options] silent=true is the tab-switch refresh: it keeps the current report on screen while fetching
+ *   (no "Loading…" flash), leaves the page untouched if nothing changed, and keeps the old report when the request merely fails
+ *   (a network blip should not wipe a good report), exactly like the other views' silent refresh.
+ */
+async function loadHealth(root, { silent = false } = {}) {
+  const seq = ++healthViewState.loadSeq;
+  if (!silent) {
+    root.innerHTML = `<div class="empty-state">${t("common.loading")}</div>`;
+  }
 
   let data;
   try {
@@ -102,21 +125,30 @@ async function loadHealth(root) {
     // potentially-nonexistent archive (see api/routes/health.py's module docstring):
     // there's no database to check without first knowing which caller is asking.
     const res = await apiFetch("/api/health");
+    if (seq !== healthViewState.loadSeq) return; // a newer load started while this one was in flight
     // Not using res.ok for the normal case - health.py always returns 200, even when status is "degraded"
     // (that's the point: the body carries the real state, not the HTTP status - see its docstring).
     // A non-200 here means something is more seriously wrong, e.g. an expired session that apiFetch couldn't silently refresh
     // (rare on this view - see apiFetch's own docstring for when it redirects instead of returning here).
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      if (seq !== healthViewState.loadSeq) return;
+      healthViewState.lastRender = null;
       root.innerHTML = `<div class="empty-state">${describeError(body.detail)}</div>`;
       return;
     }
     data = await res.json();
   } catch {
+    if (seq !== healthViewState.loadSeq) return;
+    if (silent && healthViewState.lastRender) return; // keep the last good report
+    healthViewState.lastRender = null;
     root.innerHTML = `<div class="empty-state">${t("common.error")}</div>`;
     return;
   }
+  if (seq !== healthViewState.loadSeq) return; // superseded while reading the body
 
+  if (silent && isUnchanged(healthViewState.lastRender, data)) return;
+  healthViewState.lastRender = { type: "data", data };
   root.innerHTML = renderHealthReport(data);
   root
     .querySelector("#health-refresh")
@@ -132,7 +164,17 @@ function initHealthView() {
   if (root) loadHealth(root);
 }
 
-export { initHealthView };
+/**
+ * Called by app.js every time the Health tab is switched back to after its first open (the first open is initHealthView()'s job).
+ * If the previous attempt ended in an error screen, this is also the retry: there is no report on screen to protect, so the fetch is allowed to replace it.
+ */
+function refreshHealthView() {
+  if (!healthViewState.initialized) return;
+  const root = document.getElementById("health-root");
+  if (root) loadHealth(root, { silent: true });
+}
+
+export { initHealthView, refreshHealthView };
 
 // Re-render on language change.
 // Re-fetches (rather than caching like the other views) since this is a live diagnostic - the whole point of a health check is that it reflects the current moment,
