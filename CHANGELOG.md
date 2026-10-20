@@ -9,9 +9,54 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed - QR code is the primary way to link Telegram
+
+- On the Telegram setup page the link step now leads with the QR code (a filled "Link with a QR code" button and a one-line explanation);
+  the phone number + login code form sits below an "or" divider with a plain "Send code" button. Nothing about the code flow changed.
+  The QR is still shown only when the button is pressed, not automatically: starting one opens a Telegram connection on the server for up to
+  5 minutes, which should be a deliberate act (and must not restart by itself after an expired or failed attempt).
+- An error from either method now appears at the top of the step instead of between the form and its buttons.
+
+### Fixed - "archive hasn't been set up yet" blamed the wrong step
+
+- With Telegram already linked but no archive database yet, starting the archiver or a backfill (and opening Chats, Messages, Deleted, Stats or
+  Health) said "Finish linking your Telegram account to start archiving", sending people back to a step they had completed. The message now says
+  "Your archive database hasn't been created yet." (English and Ukrainian) and offers a **Create archive database** link to the setup page - inline
+  on the tabs and in the alert dialog the archiver button and the backfill start show. Only this one error gets a link; transient or
+  admin-only errors (`archive_unavailable`, `archive_misconfigured`) stay plain text.
+- The API's English `message` for `archive_unattached` changed the same way (`reason` and the 409 status are unchanged, so clients keyed on those are not
+  affected). The "Go to settings" string is gone from both languages (it had no other use).
+- `lib/dialog.js`'s `showAlert()` takes an optional `link: { href, label }` for this.
+
+### Fixed - the completion banner touched the Telegram card
+
+- The green "all set" banner on the setup page had no bottom margin, so it sat flush against the "Connect your Telegram account" card. It now has the
+  same 20 px gap the two cards have between them.
+
+### Changed - health marks and the archiver button's dot
+
+- A passing health-check row now carries a green **✓** badge (accessible name "Yes" / "Так") like the red **No** badge failing rows already had,
+  instead of an empty gap that made the rows look broken.
+- New design token `--color-ok` (green; contrast 5.4:1 light, 6.8:1 dark) used for those marks and for the archiver button: **running** is a filled
+  green dot, **stopped** a hollow grey ring (they differ in shape as well as colour). Before, both were a filled grey-teal that was nearly the same
+  colour in the dark theme.
+
+### Fixed - tabs did not show new messages until the page was reloaded
+
+- Chats, Messages, Deleted, Stats and Health each loaded once, on first open, and never again, so messages stored by the running archiver were
+  invisible until a full reload (Health only changed when its Refresh button was pressed). Switching back to one of these tabs now re-fetches it
+  quietly: the old content stays on screen (no "Loading..." flash), nothing is redrawn when the answer is identical (so rows expanded in Deleted stay open),
+  and a failed request keeps what is shown instead of replacing it with an error. Filters, search text and the current page are kept.
+  There is no timer; clicking the tab you are already on refreshes it too. New `lib/refresh.js`.
+- Each load now ignores its response if a newer request has started since, so a slow older answer (an old search term, say) can no longer overwrite
+  newer results - this race existed before and the quiet refresh would have made it easier to hit.
+- Known gap, unchanged: the chat filter's list of chats is fetched once per page load, so a chat that first appears after that is missing from the
+  filter dropdown until a reload.
+- Web shell cache bumped to v34.
+
 ### Added - link Telegram with a QR code
 
-- Settings -> Telegram setup has a second way to link an account: "Link with a QR code instead". No login code is involved, which matters because
+- Settings -> Telegram setup has a way to link an account without a login code: "Link with a QR code" (now the primary method, see above). It matters because
   Telegram decides whether and how a code is delivered (for some accounts it never arrives). Scan the picture in Telegram on your phone
   (Settings -> Devices -> Link Desktop Device). Two-step verification is handled by the same password form as the code flow.
 - New endpoints `POST /api/telegram/qr/start`, `POST /api/telegram/qr/poll`, `DELETE /api/telegram/qr`. The server waits for the scan in a background task

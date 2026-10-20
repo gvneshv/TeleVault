@@ -247,8 +247,11 @@ A few things worth knowing:
 - **Theme and language:** toggle at the bottom of the nav rail (☀/☾ for theme, EN/UK for language) - on
   narrow/mobile screens, where the nav collapses to a top bar, they move to the right end of that bar instead.
   Both persist across visits via `localStorage`.
-- **A freshly-registered account shows "hasn't been set up yet" on most tabs - that's expected**, not a bug: those
-  views need an archive (step 6) before there's anything to show.
+- **A freshly-registered account shows "Your archive database hasn't been created yet" on most tabs - that's expected**, not a bug: those
+  views need an archive (step 6) before there's anything to show. The message links straight to the setup page, where the
+  **Create archive database** button is.
+- **Tabs update when you switch back to them.** Chats, Messages, Deleted, Stats and Health re-fetch quietly each time you return to
+  them, so messages the running archiver stored in the meantime show up without reloading the page. There is no timer.
 - **Deployment note:** for always-on use, run the API under systemd (or similar), with Nginx proxying `/api/*` to
   it and serving `/` - see `api/server.py`'s docstring for the exact setup. Workers are started and stopped by the
   API, so there is nothing else to supervise.

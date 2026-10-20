@@ -41,10 +41,14 @@
  * v31 bumps for the health-row "No" badge (views/health.js, base.css), the localized username hint (i18n.js, register.html) and i18n/{en,uk}.js.
  * v32 bumps for the code-step explanation of where Telegram delivered the code (views/telegram-setup.js, i18n/{en,uk}.js).
  * v33 bumps for QR-code login (views/telegram-setup.js, lib/errors.js, base.css, i18n/{en,uk}.js).
+ * v34 bumps for QR as the primary link method (views/telegram-setup.js), the "archive database not created yet" wording and link
+ * (lib/archive-error.js, lib/dialog.js, archiver-toggle.js, views/backfill.js, i18n/{en,uk}.js), the green check marks and archiver dot
+ * (views/health.js, base.css, variables.css), the gap under the completion banner (base.css), and quiet re-fetching when a data tab is switched back to
+ * (app.js, views/{chats,messages,deleted,stats,health}.js, and the new lib/refresh.js, which is added to SHELL_FILES).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v33";
+const CACHE_NAME = "televault-shell-v34";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -69,6 +73,7 @@ const SHELL_FILES = [
   "/js/lib/dialog.js",
   "/js/lib/chat-filter.js",
   "/js/lib/archive-error.js",
+  "/js/lib/refresh.js",
   "/js/archiver-toggle.js",
   "/js/app.js",
   "/js/views/chats.js",

@@ -36,7 +36,7 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `integration/test_archive_db.py` | the real archive schema: upserts, deletion flagging, search, read-only role |
 | `integration/test_startup_guard.py` | the first-admin startup guard |
 | `api/test_auth_flow.py` | register / login / throttling / refresh rotation and reuse detection / logout |
-| `api/test_gate_chain.py` | every endpoint behind the right gate, with the right status and reason code |
+| `api/test_gate_chain.py` | every endpoint behind the right gate, with the right status and reason code; the "no archive yet" message is about the database, not about linking Telegram |
 | `api/test_tenant_isolation.py` | one account can never read, change or infer another account's archive |
 | `api/test_secret_leakage.py` | no credential, session, hash or token appears in any GET response, the audit log or the token table; secrets are encrypted at rest |
 | `api/test_admin_api.py` | invites, lock / unlock, deletion rules (including dropping the archive database) |

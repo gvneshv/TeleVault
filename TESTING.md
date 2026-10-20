@@ -104,7 +104,7 @@ Needs an invite: create one in the web UI (admin -> Invites), with `scripts/mana
 | Test | Expected outcome |
 |---|---|
 | Account with `archive_db_ref` set to a real, migrated database | `GET /api/chats` / `/messages` / `/deleted` / `/stats` → **200**. |
-| Account with `archive_db_ref = NULL` | Same endpoints → **409** `"Your archive hasn't been set up yet..."` - **not** 403. |
+| Account with `archive_db_ref = NULL` | Same endpoints → **409** `"Your archive database hasn't been created yet..."` (reason `archive_unattached`) - **not** 403. The message must not mention linking Telegram (that is a separate step). |
 | `archive_db_ref` pointing at a database that doesn't actually exist | **503** `"...currently unavailable..."` |
 
 ### C7. Per-account workers - `telethon.py`/`backfill.py`
@@ -135,9 +135,14 @@ Needs an invite: create one in the web UI (admin -> Invites), with `scripts/mana
 | Click "Log out" | Redirects to `/login.html`; pressing Back afterward bounces straight back to `/login.html` (doesn't show stale app content). |
 | Register with an invite token | Auto-redirects to `/index.html` on success (no separate login step needed). |
 | Hard-reload (`Ctrl+Shift+R`) with the OS or saved theme set to dark, then to light | The theme icon matches the theme immediately (moon in dark, sun in light) - before any click. |
-| Open the health panel on an account with nothing set up | A red **No** badge in front of "Telegram session found" (and of the database row, if that check fails); rows that pass have no badge. Switch the language to Ukrainian: the badge reads **Ні**. |
+| Open the health panel on an account with nothing set up | A red **No** badge in front of "Telegram session found" (and of the database row, if that check fails); rows that pass carry a green **✓**. Switch the language to Ukrainian: the badges read **Ні** / the ✓ is announced as **Так**. |
+| Telegram linked, no archive database yet: click the archiver button, then open Backfill and start one | Both alerts say "Your archive database hasn't been created yet." with a **Create archive database** link to the setup page (Ukrainian: "Базу даних вашого архіву ще не створено." / "Створити базу даних архіву"). Chats/Messages/Deleted/Stats/Health show the same text with the same link. Nothing mentions linking Telegram. |
+| Setup page with Telegram linked and the archive created | The green "all set" banner has a gap below it, the same size as the gap between the two cards under it. |
+| Setup page, link step | The filled **Link with a QR code** button comes first, then an "or" line, then the phone-number form with a plain (not filled) **Send code** button. A failed attempt shows its error at the top of the step. |
+| Look at the archiver button in the nav, running vs stopped, in both themes | Running: a filled **green** dot. Stopped: a **hollow grey ring**. They are easy to tell apart at a glance in light and dark. |
+| With the archiver running, send yourself a message from another device, then switch from Chats to another tab and back (repeat for Messages, Stats, Health) | The new message / updated counts appear **without** a page reload and without a "Loading..." flash. In Deleted: expand a row, switch away and back - it stays expanded unless a new deletion arrived. Not covered by automated tests (no browser in the test setup). |
 | Register with a username like `a b`, browser language and app language both Ukrainian | The whole rejection message is Ukrainian, including the 3-32 characters hint. |
-| Settings -> Telegram setup, "Link with a QR code instead" | A QR picture appears and changes about every 30 s. In Telegram on your phone: Settings -> Devices -> Link Desktop Device, scan it. Within a couple of seconds the card shows "linked" (or asks for your two-step password first). Back cancels. Not covered by automated tests: the real scan. |
+| Settings -> Telegram setup, "Link with a QR code" | A QR picture appears and changes about every 30 s. In Telegram on your phone: Settings -> Devices -> Link Desktop Device, scan it. Within a couple of seconds the card shows "linked" (or asks for your two-step password first). Back cancels. Not covered by automated tests: the real scan. |
 | Settings -> Telegram setup, request a login code for your own number | The code step explains where Telegram put it (typically: a message in the chat named "Telegram" inside an app you are logged in to, not an SMS), in the app language. The server log has a matching `delivery=` line. |
 | Settings -> Telegram setup, enter api_id + api_hash and submit | Moves on to the phone-number step. A wrong pair is only reported at the next step (send code), not here. |
 | Register with a username like `a b` or `ab`, or a 129-character password | The browser refuses the field before sending; if the request does go out, a generic "values are not valid" message appears (never a bare "Something went wrong"). |
