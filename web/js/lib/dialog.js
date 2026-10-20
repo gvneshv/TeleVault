@@ -32,6 +32,8 @@ import { t } from "../i18n.js";
  * @param {boolean} [opts.danger] - outlined seal-colored confirm button instead of the filled primary one;
  *   also moves initial focus to Cancel, so a reflexive Enter/Space never lands on the destructive choice.
  * @param {{ expected: string, label: string }} [opts.typed] - require the person to type `expected` exactly before confirming.
+ * @param {{ href: string, label: string }} [opts.link] - a "go and fix it" link shown under the message.
+ *   Built with DOM APIs like everything else here, so `label` is never parsed as HTML; `href` must be one of our own paths, never a value taken from a server response.
  * @returns {Promise<boolean>} true if confirmed, false if cancelled/dismissed.
  */
 function openDialog({
@@ -41,6 +43,7 @@ function openDialog({
   showCancel,
   danger = false,
   typed,
+  link,
 }) {
   return new Promise((resolve) => {
     const previouslyFocused = document.activeElement;
@@ -67,6 +70,14 @@ function openDialog({
     messageEl.textContent = message;
     dialog.setAttribute("aria-describedby", messageEl.id);
     dialog.append(messageEl);
+
+    if (link) {
+      const anchor = document.createElement("a");
+      anchor.className = "settings-fix-link modal__link";
+      anchor.href = link.href;
+      anchor.textContent = link.label;
+      dialog.append(anchor);
+    }
 
     /** @type {HTMLInputElement | null} */
     let input = null;
@@ -165,7 +176,7 @@ function openDialog({
       }
       if (event.key === "Tab") {
         // Minimal focus trap: cycle within the dialog instead of letting Tab wander onto the page behind the backdrop.
-        const focusable = dialog.querySelectorAll("button, input");
+        const focusable = dialog.querySelectorAll("button, input, a[href]");
         if (focusable.length === 0) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -198,15 +209,17 @@ function openDialog({
  * Replacement for window.alert().
  * Resolves when dismissed.
  * @param {string} message
- * @param {{ title?: string }} [options]
+ * @param {{ title?: string, link?: { href: string, label: string } }} [options]
+ *   `link`: an optional "go and fix it" link under the message (see archiveFixLink() in lib/archive-error.js).
  * @returns {Promise<void>}
  */
-async function showAlert(message, { title } = {}) {
+async function showAlert(message, { title, link } = {}) {
   await openDialog({
     message,
     title,
     confirmLabel: t("dialog.ok"),
     showCancel: false,
+    link,
   });
 }
 

@@ -113,6 +113,32 @@ def test_an_account_without_an_archive_gets_409_not_someone_elses_data(client, m
     assert resp.status_code == 409 and resp.json()["detail"]["reason"] == "archive_unattached"
 
 
+@pytest.mark.parametrize("path", ["/api/chats", "/api/telethon/start", "/api/backfill/start"])
+def test_the_no_archive_message_is_about_the_database_not_about_linking_telegram(client, path, control_engine):
+    """Telegram can be fully linked while the archive database does not exist yet (they are separate setup steps).
+
+    The 409 used to say "Finish linking your Telegram account", which sent people back to a step they had already completed.
+    The worker routes only reach the archive check once Telegram IS linked, so those two cases link the account first.
+    """
+    from sqlalchemy import text
+
+    admin = make_admin(client)
+    user_token, user_id = make_user(client, admin, "alice")
+    if path != "/api/chats":
+        with control_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE users SET telegram_api_id = 'x', telegram_api_hash = 'x', telegram_session_string = 'x' WHERE id = :i"
+                ),
+                {"i": user_id},
+            )
+    resp = client.post(path, headers=auth(user_token), json={}) if path != "/api/chats" else client.get(path, headers=auth(user_token))
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["reason"] == "archive_unattached"
+    assert "database" in detail["message"] and "linking" not in detail["message"].lower()
+
+
 @pytest.mark.parametrize("path", ["/api/telethon/start", "/api/backfill/start"])
 def test_workers_cannot_be_started_before_telegram_is_linked(client, path):
     admin = make_admin(client)

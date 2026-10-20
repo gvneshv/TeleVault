@@ -13,6 +13,7 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { describeError } from "../lib/errors.js";
+import { archiveFixLink } from "../lib/archive-error.js";
 import { apiFetch } from "../lib/auth.js";
 import { showAlert } from "../lib/dialog.js";
 import {
@@ -363,7 +364,10 @@ async function openModal(root) {
         started = res.ok;
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          await showAlert(describeError(body.detail));
+          // Same as the archiver button: only the fixable "archive not created yet" error carries a link (archiveFixLink returns null otherwise).
+          await showAlert(describeError(body.detail), {
+            link: archiveFixLink(body.detail),
+          });
         }
       } catch {
         await showAlert(t("common.error"));

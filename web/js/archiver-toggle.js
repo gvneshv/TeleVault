@@ -11,6 +11,7 @@
 
 import { t } from "./i18n.js";
 import { describeError } from "./lib/errors.js";
+import { archiveFixLink } from "./lib/archive-error.js";
 import { apiFetch } from "./lib/auth.js";
 import { showAlert, showConfirm } from "./lib/dialog.js";
 
@@ -109,7 +110,10 @@ async function handleClick(button) {
     if (!res.ok) {
       ok = false;
       const body = await res.json().catch(() => ({}));
-      await showAlert(describeError(body.detail));
+      // "Your archive database hasn't been created yet" gets a "Create archive database" link; every other error is plain text (archiveFixLink returns null).
+      await showAlert(describeError(body.detail), {
+        link: archiveFixLink(body.detail),
+      });
     }
   } catch {
     ok = false;

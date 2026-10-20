@@ -103,7 +103,9 @@ def get_archive_connection(
     Raises:
         HTTPException 409 if this account has no archive_db_ref yet - NOT a 403,
         because this isn't "you don't have access", it's "there is nothing here to have access to yet".
-        The distinct status lets the frontend show "finish linking Telegram" rather than "access denied".
+        The distinct status lets the frontend show a "create your archive database" prompt rather than "access denied".
+        (It is NOT about Telegram: an account can be fully linked and still land here,
+        because linking Telegram and creating the archive database are two separate steps - see api/routes/archive.py.)
         HTTPException 503 if the archive database exists as a reference but isn't actually reachable right now
         (e.g. Postgres restarted, or - once real provisioning exists - mid-provisioning).
         HTTPException 409 with reason "archive_misconfigured" if archive_db_ref names a database that was never actually created
@@ -122,7 +124,7 @@ def get_archive_connection(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "Your archive hasn't been set up yet. Finish linking your Telegram account to provision it.",
+                "message": "Your archive database hasn't been created yet. Create it under Settings -> Telegram setup.",
                 "reason": "archive_unattached",
             },
         )
@@ -223,7 +225,7 @@ def require_archiving_ready(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "Your archive hasn't been set up yet. Finish linking your Telegram account to provision it.",
+                "message": "Your archive database hasn't been created yet. Create it under Settings -> Telegram setup.",
                 "reason": "archive_unattached",
             },
         )
