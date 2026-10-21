@@ -45,10 +45,12 @@
  * (lib/archive-error.js, lib/dialog.js, archiver-toggle.js, views/backfill.js, i18n/{en,uk}.js), the green check marks and archiver dot
  * (views/health.js, base.css, variables.css), the gap under the completion banner (base.css), and quiet re-fetching when a data tab is switched back to
  * (app.js, views/{chats,messages,deleted,stats,health}.js, and the new lib/refresh.js, which is added to SHELL_FILES).
+ * v35 bumps for the backfill progress-bar colours (base.css, variables.css) and the leftover-Telegram-device note on the link step
+ * (views/telegram-setup.js, i18n/{en,uk}.js).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v34";
+const CACHE_NAME = "televault-shell-v35";
 const SHELL_FILES = [
   "/",
   "/index.html",

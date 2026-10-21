@@ -9,6 +9,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed - backfill progress bar could not be read
+
+- The bar's empty track used `--color-border`, which is identical to the fill colour in the dark theme and nearly so in the light one, so progress was invisible.
+  New token `--color-track` (`#0f172a` dark, `#e7e5fe` light) plus a thin outline so the track also shows against the light page. Web shell cache v35.
+
+### Added - warning about leftover Telegram devices
+
+- The link step now says that every link (QR or code, first time or relink, same computer or not) adds a new entry under Telegram's Settings -> Devices,
+  and that TeleVault cannot remove the old ones. TeleVault only stores the session; it never logs one out of Telegram. Ending sessions from inside
+  the app is planned separately.
+
 ### Changed - QR code is the primary way to link Telegram
 
 - On the Telegram setup page the link step now leads with the QR code (a filled "Link with a QR code" button and a one-line explanation);
