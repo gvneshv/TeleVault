@@ -1338,6 +1338,17 @@ input:focus-visible {
    kept as one generic "card" vocabulary rather than forked into two near-identical class sets for each.
    ------------------------------------------------------------------- */
 
+/* A heads-up box on the link step (the leftover-Telegram-device warning): quiet, but set apart from the help text around it. */
+.settings-note {
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--color-focus);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 /* "or" separator between the two ways to link (QR first, phone number second) on the link step. */
 .settings-or {
   margin: 18px 0 12px;

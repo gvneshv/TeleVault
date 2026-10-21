@@ -170,6 +170,9 @@ function renderCredentialsStep() {
  * It is a button, not an automatic QR: showing the code starts a background task on the server that holds a Telegram connection for up to five minutes,
  * which should only happen when the person actually asks for it - and landing here after an error (an expired QR, a dead code) must not silently start another one.
  * The phone-number form stays fully working below it for anyone who prefers a code.
+ *
+ * Both methods (and every relink) create a NEW authorization in the person's Telegram account (Settings -> Devices);
+ * this app only stores the session and never logs the old one out, so the note about leftover devices lives here, on the one step every linking path passes through.
  */
 function renderPhoneStep() {
   const busy = setupState.telegramBusy ? "disabled" : "";
@@ -177,6 +180,7 @@ function renderPhoneStep() {
   // it can come from either method (a failed QR start, an invalid phone number, an expired code) and must not read as belonging only to the one under it.
   return `
     ${renderTelegramError()}
+    <p class="settings-note" role="note">${t("tgSetup.deviceNote")}</p>
     <p class="settings-help">${t("tgSetup.qrPrimaryHint")}</p>
     <button type="button" id="settings-qr-start" class="modal__btn modal__btn--primary" ${busy}>
       ${t("tgSetup.qrButton")}

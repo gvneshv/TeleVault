@@ -265,6 +265,8 @@ export const en = {
   "tgSetup.passwordSubmit": "Finish linking",
   "tgSetup.startOver": "Start over",
   "tgSetup.qrButton": "Link with a QR code",
+  "tgSetup.deviceNote":
+    "Heads-up: every time you link - even the same account on the same computer - Telegram adds a new entry under Settings → Devices, and TeleVault cannot remove the old ones. Clean them up there (Terminate session) whenever you like.",
   "tgSetup.qrPrimaryHint":
     "The quickest way: scan a QR code with Telegram on your phone. No login code is needed.",
   "tgSetup.phoneAlternative": "Or use your phone number and a login code",
