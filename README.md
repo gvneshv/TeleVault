@@ -21,7 +21,10 @@ per-view chat filter, EN/UK language support, and light/dark themes.
 > reliability fixes found under real usage since then (a stopped Docker
 > container, a deleted `data/` directory, Postgres disappearing mid-run),
 > plus the chat filter and Backfill pagination, shipped in
-> [`v2.1.0`](CHANGELOG.md#210--2026-09-13). See the CHANGELOG for the full
+> [`v2.1.0`](CHANGELOG.md#210--2026-09-13). Multi-user accounts (each with
+> its own Telegram link, archive database and workers, linked in the web UI
+> by QR code or login code) shipped in
+> [`v3.0.0`](CHANGELOG.md#300--2026-10-22). See the CHANGELOG for the full
 > writeup and what's next.
 
 ---

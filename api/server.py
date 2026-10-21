@@ -143,7 +143,7 @@ app = FastAPI(
         "Read-only REST API for the TeleVault personal Telegram archive. "
         "All write operations are performed exclusively by the userbot process."
     ),
-    version="2.0.0",
+    version="3.0.0",
     # Interactive docs + schema are opt-in (ENABLE_API_DOCS in .env, off by default - see config.Settings.enable_api_docs for why).
     # Passing None removes the route entirely: the paths then fall through to the static mount and get the same 404 as any other unknown /api/ path.
     docs_url="/api/docs" if settings.enable_api_docs else None,

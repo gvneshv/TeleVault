@@ -265,6 +265,11 @@ export const en = {
   "tgSetup.passwordSubmit": "Finish linking",
   "tgSetup.startOver": "Start over",
   "tgSetup.qrButton": "Link with a QR code",
+  "tgSetup.relinkNote":
+    "You are replacing the current link. It keeps working until the new one succeeds, and Cancel leaves it untouched. Either way, the old session is NOT ended in Telegram: it stays under Settings → Devices until you terminate it there.",
+  "tgSetup.relinkCredentialsNote":
+    "Saving new API credentials signs this account out of TeleVault until you link Telegram again (the archiver cannot run in between). Cancel keeps the current link. The old session is not ended in Telegram either - it stays under Settings → Devices.",
+  "tgSetup.cancelRelink": "Cancel - keep the current link",
   "tgSetup.deviceNote":
     "Heads-up: every time you link - even the same account on the same computer - Telegram adds a new entry under Settings → Devices, and TeleVault cannot remove the old ones. Clean them up there (Terminate session) whenever you like.",
   "tgSetup.qrPrimaryHint":
@@ -285,12 +290,12 @@ export const en = {
     "The QR code expired or the attempt failed. Start again.",
   "tgSetup.linkedBadge": "Linked",
   "tgSetup.linkedBody":
-    "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one.",
+    "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one; the old session is not ended in Telegram.",
   "tgSetup.relinkButton": "Relink a different account",
   "tgSetup.unlinkButton": "Unlink Telegram",
   "tgSetup.unlinking": "Unlinking…",
   "tgSetup.unlinkConfirm":
-    "Disconnect this Telegram account? Your archived messages are kept - you can relink anytime with the same API credentials.",
+    "Disconnect this Telegram account? Your archived messages are kept - you can relink anytime with the same API credentials. This does not end the session in Telegram itself: it stays under Settings → Devices until you terminate it there.",
   "tgSetup.archiveTitle": "Archive database",
   "tgSetup.archiveIntro":
     "Each account gets its own database to store archived messages, separate from every other account on this instance.",

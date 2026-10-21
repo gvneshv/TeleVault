@@ -47,10 +47,11 @@
  * (app.js, views/{chats,messages,deleted,stats,health}.js, and the new lib/refresh.js, which is added to SHELL_FILES).
  * v35 bumps for the backfill progress-bar colours (base.css, variables.css) and the leftover-Telegram-device note on the link step
  * (views/telegram-setup.js, i18n/{en,uk}.js).
+ * v36 bumps for the relink flow (views/telegram-setup.js, i18n/{en,uk}.js: QR-first relink, cancel button, session wording).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v35";
+const CACHE_NAME = "televault-shell-v36";
 const SHELL_FILES = [
   "/",
   "/index.html",

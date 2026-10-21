@@ -89,6 +89,10 @@ const setupState = {
   codeDelivery: "other",
   telegramError: null,
   telegramBusy: false,
+  // True while an already-linked account is replacing its link ("Relink a different account").
+  // The saved session is NOT touched until the new link succeeds, so Cancel can simply return to the "linked" step - see goToTelegramStep().
+  // Not persisted: a page reload lands on "linked" again, which is exactly the state a cancelled relink would have returned to.
+  relinking: false,
 
   // Last GET /api/health body, or null before the first fetch resolves (or if it failed).
   archiveStatus: null,
@@ -141,8 +145,22 @@ function renderCredentialsGuide() {
   `;
 }
 
+/** The "keep the current link" button, shown only while relinking (see setupState.relinking). */
+function renderCancelRelinkButton() {
+  return setupState.relinking
+    ? `<button type="button" id="settings-cancel-relink" class="modal__btn">${t("tgSetup.cancelRelink")}</button>`
+    : "";
+}
+
 function renderCredentialsStep() {
+  // Only reachable mid-relink via "Use different credentials".
+  // Saving here is the one step that DOES touch the current link:
+  // POST /telegram/credentials clears the saved session (see set_telegram_credentials() in control_db/queries.py), so say so before the button.
+  const relinkWarning = setupState.relinking
+    ? `<p class="settings-note" role="note">${t("tgSetup.relinkCredentialsNote")}</p>`
+    : "";
   return `
+    ${relinkWarning}
     ${renderCredentialsGuide()}
     <form id="settings-credentials-form">
       <label class="settings-field">
@@ -158,6 +176,7 @@ function renderCredentialsStep() {
       <button type="submit" class="modal__btn modal__btn--primary" ${setupState.telegramBusy ? "disabled" : ""}>
         ${setupState.telegramBusy ? t("tgSetup.savingCredentials") : t("tgSetup.credentialsSubmit")}
       </button>
+      ${renderCancelRelinkButton()}
     </form>
   `;
 }
@@ -180,7 +199,7 @@ function renderPhoneStep() {
   // it can come from either method (a failed QR start, an invalid phone number, an expired code) and must not read as belonging only to the one under it.
   return `
     ${renderTelegramError()}
-    <p class="settings-note" role="note">${t("tgSetup.deviceNote")}</p>
+    <p class="settings-note" role="note">${t(setupState.relinking ? "tgSetup.relinkNote" : "tgSetup.deviceNote")}</p>
     <p class="settings-help">${t("tgSetup.qrPrimaryHint")}</p>
     <button type="button" id="settings-qr-start" class="modal__btn modal__btn--primary" ${busy}>
       ${t("tgSetup.qrButton")}
@@ -198,6 +217,7 @@ function renderPhoneStep() {
       <button type="button" id="settings-back-to-credentials" class="modal__btn">
         ${t("tgSetup.useDifferentCredentials")}
       </button>
+      ${renderCancelRelinkButton()}
     </form>
   `;
 }
@@ -300,6 +320,7 @@ function renderTelegramCard() {
 /** Reset to a clean, error-free step and re-render - shared by every "go back / start over" button. */
 function goToTelegramStep(root, step, { error = null } = {}) {
   stopQrPolling(); // leaving (or re-entering) any step ends the poll loop; the QR step starts its own after rendering
+  if (step === "linked") setupState.relinking = false; // a finished or cancelled relink ends here
   if (step !== "qr") setupState.qrImage = "";
   setupState.telegramStep = step;
   setupState.telegramError = error;
@@ -455,9 +476,16 @@ function attachTelegramHandlers(root) {
   document
     .getElementById("settings-start-over")
     ?.addEventListener("click", () => goToTelegramStep(root, "phone"));
+  // Relinking starts at the same place a first-time link does: QR first, phone number second, API credentials only as a fallback ("Use different credentials").
+  // The credentials are already saved and almost never need changing, so asking for them again would be a detour (and, see renderCredentialsStep(), a risky one).
   document.getElementById("settings-relink")?.addEventListener("click", () => {
-    goToTelegramStep(root, "credentials");
+    setupState.relinking = true;
+    goToTelegramStep(root, "phone");
   });
+  // Nothing was changed server-side before the new link succeeded, so cancelling is purely a screen change.
+  document
+    .getElementById("settings-cancel-relink")
+    ?.addEventListener("click", () => goToTelegramStep(root, "linked"));
 
   document
     .getElementById("settings-unlink")

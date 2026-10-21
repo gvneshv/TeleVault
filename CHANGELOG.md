@@ -9,6 +9,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-22
+
+### Summary
+
+Multi-user TeleVault. Every account now has its own Telegram link (QR code or login code), its own archive database, and its own archiver and
+backfill workers, all managed from the web UI; Telegram credentials no longer live in `.env`. **Breaking:** the `.env` variables and worker command lines
+changed (see "per-account workers" below), and new usernames must match a stricter format (existing accounts keep working). Upgrading from 2.1.0:
+update `.env` (a fresh clone needs only `CONTROL_DATABASE_URL`, `FERNET_KEY`, `JWT_SECRET`), run `pip install -r requirements.txt` (new `qrcode`
+dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Telegram in the web UI. Nothing migrates existing archive databases automatically.
+
+### Changed - relinking starts with the QR code and can be cancelled
+
+- "Relink a different account" now opens the same QR-first step as a first-time link instead of the API id/hash form; the credentials form is still
+  reachable as a fallback ("Use different credentials"). A **Cancel - keep the current link** button is shown on the way, and the current link stays
+  untouched until a new one succeeds. Saving new API credentials is the one step that signs the account out (the server clears the saved session),
+  so that form says so first.
+- The "linked", relink and unlink texts now say that none of this ends the session in Telegram itself: it stays under Settings -> Devices until it is
+  terminated there. Web shell cache v36.
+
 ### Fixed - backfill progress bar could not be read
 
 - The bar's empty track used `--color-border`, which is identical to the fill colour in the dark theme and nearly so in the light one, so progress was invisible.
@@ -954,7 +973,8 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at)
 
 ---
 
-[Unreleased]: https://github.com/gvneshv/TeleVault/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/gvneshv/TeleVault/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/gvneshv/TeleVault/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/gvneshv/TeleVault/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/gvneshv/TeleVault/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/gvneshv/TeleVault/compare/v1.1.0...v1.2.0
