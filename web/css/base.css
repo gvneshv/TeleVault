@@ -2016,10 +2016,15 @@ mark.legal-placeholder {
   margin-bottom: 8px;
 }
 
+/* The track used to be --color-border, which is the SAME colour as the fill in the dark theme (orange) and nearly the same in the light one,
+   so the bar looked full at any progress.
+   It now has its own token (--color-track) plus a thin muted outline, because in the light theme the track is almost the page colour and would otherwise vanish. */
 .progress-bar {
-  height: 8px;
+  box-sizing: border-box;
+  height: 10px;
   border-radius: 999px;
-  background: var(--color-border);
+  background: var(--color-track);
+  border: 1px solid var(--color-ink-muted);
   overflow: hidden;
   margin-bottom: 8px;
 }
