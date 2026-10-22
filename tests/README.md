@@ -42,6 +42,7 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `api/test_admin_api.py` | invites, lock / unlock, deletion rules (including dropping the archive database) |
 | `api/test_archive_provision.py` | per-account archive creation |
 | `integration/test_logging_configuration.py` | the API server really configures logging (no caplog shortcut), and provisioning does not undo it |
+| `api/test_telegram_sessions.py` | Telegram device list / end one / end all others / unlink ending the session, with a fake Telegram client: guards (linked, archiver stopped), own-session protection, Telegram refusals, nothing sensitive logged |
 | `api/test_telegram_qr.py` | QR login with a fake Telegram client: start/poll/cancel, rotation, scan, 2FA, expiry, errors, the token never logged or cached |
 | `api/test_telegram_send_code.py` | send-code with a fake Telegram client: the delivery type is logged, the phone number never is |
 | `api/test_input_limits.py` | every client-supplied value is bounded; login stays lenient about format |

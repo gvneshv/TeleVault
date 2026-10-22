@@ -24,7 +24,7 @@ per-view chat filter, EN/UK language support, and light/dark themes.
 > [`v2.1.0`](CHANGELOG.md#210--2026-09-13). Multi-user accounts (each with
 > its own Telegram link, archive database and workers, linked in the web UI
 > by QR code or login code) shipped in
-> [`v3.0.0`](CHANGELOG.md#300--2026-10-22). See the CHANGELOG for the full
+> [`v3.0.0`](CHANGELOG.md#300--2026-10-21). See the CHANGELOG for the full
 > writeup and what's next.
 
 ---
@@ -402,6 +402,10 @@ A few things worth checking on periodically once this is deployed and running lo
   file any more). Treat the database dump, `FERNET_KEY` and the database credentials like passwords - together they let
   anyone act as your Telegram account. A legacy `televault.session` file from an older install is no longer used:
   delete it, and terminate that session under Telegram -> Settings -> Devices if you no longer need it.
+  Every link adds a new entry to that device list. **Settings -> Telegram devices** in the web UI lists them and ends one
+  or all except TeleVault's own (the archiver and any backfill must be stopped first, since it connects as your account);
+  **Unlink Telegram** also ends TeleVault's own session in Telegram. Telegram usually refuses to end *other* devices until
+  the current session is about a day old.
 - **Telegram ToS:** TeleVault archives only messages from chats you're already
   part of, for personal use. It doesn't automate sending, scrape public
   content, or interact with other accounts - it stays well within the

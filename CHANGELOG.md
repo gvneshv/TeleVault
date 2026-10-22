@@ -9,7 +9,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [3.0.0] - 2026-10-22
+### Added - end Telegram devices from Settings, and unlinking ends TeleVault's own session
+
+- Every link (QR or code, first time or relink) creates a new session in the person's Telegram account, and nothing ever ended the old ones.
+  **Settings -> Telegram devices** now lists them (the same list as Telegram's Settings -> Devices: device, app, system, place, IP, dates) and ends one
+  device or all devices except TeleVault's own. TeleVault's own entry carries a badge and no button; ending it is "Unlink Telegram".
+- **Unlink Telegram** now also logs TeleVault's session out inside Telegram (`auth.logOut`), so it no longer lingers in the device list. It stays best
+  effort: if Telegram cannot be reached the account is still unlinked here and the response/UI says `ended_in_telegram: false`, telling the person to remove
+  the entry in Telegram themselves. A session Telegram already ended counts as ended.
+- New endpoints: `GET /api/telegram/sessions`, `DELETE /api/telegram/sessions/{id}`, `DELETE /api/telegram/sessions` (all others). `DELETE /api/telegram/session`
+  (unlink) now returns `ended_in_telegram`. Logic lives in `utils/telegram_sessions.py`; routes in `api/routes/telegram_sessions.py`.
+- **This is the first time the API process connects to Telegram with a stored session** (until now only the archiver and backfill workers did, and the API only
+  linked new sessions). Hence the guards: the account must be linked, its archiver and any backfill must be stopped (409, the same rule unlink already had),
+  and only one device operation per account runs at a time. A worker started in the few seconds between the check and the end of the request is an accepted race.
+- Privacy: the list contains IP addresses and places of the person's own sessions. It is sent to that account only with `Cache-Control: no-store`,
+  kept in browser memory only (never localStorage), and never logged (log lines carry the user id and a count).
+- New error reasons, translated in both languages: `telegram_session_invalid` / `telegram_session_unreadable` (link again), `telegram_session_too_new`
+  (Telegram refuses to end other devices while TeleVault's own session is young - Telegram documents about a day),
+  `telegram_device_not_found`, `telegram_cannot_end_current`, `telegram_unreachable` (502). The "already running" reason, which read "It's already running." on
+  the unlink button, now says to stop the archiver first wherever Telegram is involved.
+- A corrupted saved session string used to be able to raise inside Telethon's `StringSession()`; the new code reports it (`telegram_session_unreadable`) instead of a 500.
+- The link-step and relink notes no longer say TeleVault cannot remove old sessions; they point to the new card. Saving new API credentials still clears the stored
+  session (so TeleVault can no longer end it): the relink credentials form now says to end it first. Web shell cache v37.
+- Not covered by automated tests: the real Telegram calls. See TESTING.md for the manual checks.
+
+## [3.0.0] - 2026-10-21
 
 ### Summary
 
