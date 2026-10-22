@@ -33,7 +33,7 @@
 
       <article class="legal-doc">
         <h1>Privacy Policy</h1>
-        <p class="legal-doc__meta">Last updated: October 2026 · Version 2026-10 · Status: Private Beta</p>
+        <p class="legal-doc__meta">Last updated: October 2026 · Version 2026-10-22 · Status: Private Beta</p>
         <p class="legal-doc__note" data-i18n="legal.pageNote">This document is provided in English. If a translation is ever provided, the English version prevails.</p>
 
         <p>Your privacy and data security matter. This policy explains what TeleVault stores, why, who can access it, and how you can have it deleted. It applies to this instance of TeleVault, operated by <mark class="legal-placeholder">[OPERATOR NAME]</mark> (the "Operator"). If someone else hosts their own copy of the open-source software, they are responsible for their own instance. Contact: <mark class="legal-placeholder">[CONTACT EMAIL]</mark>.</p>
@@ -49,6 +49,12 @@
         <ul>
           <li>Your Telegram API ID and API Hash, and the Telegram login session created when you link your account. They are stored encrypted in the database.</li>
           <li>The session works like a saved login: whoever holds it, together with the encryption key, can act as your Telegram account. Protect it accordingly, and revoke it in Telegram (Settings → Devices) if you ever have doubts.</li>
+        </ul>
+        <h3>Your Telegram device list (shown, not stored)</h3>
+        <ul>
+          <li>If you open <em>Settings → Telegram devices</em>, the Service connects to Telegram as your account and fetches the list of sessions signed in to it: for each, the device and app name, system, approximate location, IP address, and sign-in and last-active times.</li>
+          <li>This list is sent only to you, in your browser, and is kept only in that page's memory. It is not stored in the database, not written to the application's logs, and not cached.</li>
+          <li>If you choose to end one of those sessions, or all except TeleVault's own, the Service asks Telegram to end them; the signed-out devices have to log in again. Nothing is ended unless you confirm it.</li>
         </ul>
         <h3>Your archive</h3>
         <ul>
@@ -104,7 +110,7 @@
         <h2>8. Retention and deletion</h2>
         <ul>
           <li>Your data is kept while your account exists. Archived messages stay until you or the Operator delete them (automatic clean-up options may be offered in the future, and this policy will be updated first).</li>
-          <li><strong>Unlinking Telegram</strong> in Settings removes the stored Telegram session. Your saved API ID/API Hash and your existing archive are kept.</li>
+          <li><strong>Unlinking Telegram</strong> in Settings removes the stored Telegram session and, when Telegram can be reached, also ends that session inside Telegram, so it disappears from your Settings → Devices. If Telegram cannot be reached, the session is still removed from the Service and you can end it yourself in Telegram. Your saved API ID/API Hash and your existing archive are kept.</li>
           <li><strong>Deleting your account</strong> (on request to the Operator) permanently removes your account, sessions, stored Telegram credentials and session, and your archive database.</li>
           <li>The security-log entries about your account, including the IP addresses and browser identifiers in them, are permanently deleted with it. A minimal record that an account was deleted (with no IP address or browser identifier) is kept, and an invite you used remains as a used invite with no link back to you.</li>
           <li>Backups, if any, may keep copies of deleted data until they expire: <mark class="legal-placeholder">[BACKUP RETENTION, e.g. 30 days - or delete this sentence if you keep no backups]</mark>.</li>

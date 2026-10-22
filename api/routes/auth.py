@@ -83,7 +83,7 @@ from utils.security import (
 # Bump it - to the pages' "Last updated" month,
 # e.g. "2026-12" - whenever either document changes in a way that matters (new data collected, new feature acting on the Telegram account, changed retention).
 # Older accounts keep the version they accepted, which is exactly what makes a future "please accept the updated terms" prompt possible.
-CURRENT_TERMS_VERSION = "2026-10"
+CURRENT_TERMS_VERSION = "2026-10-22"
 
 def _auth_error(status_code: int, reason: str, message: str) -> HTTPException:
     """
