@@ -22,6 +22,9 @@ from .telegram import (
     TelegramQrPollOut,
     TelegramStatusOut,
     TelegramUnlinkOut,
+    TelegramDeviceOut,
+    TelegramDevicesOut,
+    TelegramDeviceEndedOut,
 )
 from .archive import ArchiveProvisionOut
 from .admin import (
@@ -68,6 +71,9 @@ __all__ = [
     "TelegramConfirmOut",
     "TelegramStatusOut",
     "TelegramUnlinkOut",
+    "TelegramDeviceOut",
+    "TelegramDevicesOut",
+    "TelegramDeviceEndedOut",
     # archive
     "ArchiveProvisionOut",
     # admin

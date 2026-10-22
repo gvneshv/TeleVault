@@ -7,6 +7,7 @@ Three steps, three request bodies (see that module's own docstring for the full 
   3. TelegramConfirmIn      -> POST /telegram/link/confirm    (the code, and later the 2FA password if asked for)
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -127,9 +128,54 @@ class TelegramConfirmOut(BaseModel):
 
 
 class TelegramUnlinkOut(BaseModel):
-    """Returned by DELETE /telegram/session on success."""
+    """
+    Returned by DELETE /telegram/session on success (and, as the plain "done" body, by DELETE /telegram/qr).
+
+    ended_in_telegram: whether TeleVault's session was also ended inside Telegram (it disappears from Telegram's Settings -> Devices).
+    False means the account IS unlinked here but Telegram could not be reached (or refused),
+    so the entry is still listed there and the person has to remove it themselves.
+    None for DELETE /telegram/qr, where no such question applies.
+    """
 
     unlinked: bool = True
+    ended_in_telegram: bool | None = None
+
+
+class TelegramDeviceOut(BaseModel):
+    """
+    One entry of the account's Telegram device list (GET /telegram/sessions).
+
+    `id` is Telegram's session hash as a STRING: it is an int64, which a JavaScript number cannot hold exactly,
+    so the browser only ever treats it as an opaque token and sends it back unchanged to DELETE /telegram/sessions/{id}.
+    `current` marks TeleVault's own session.
+    The location fields (ip/country/region) are the account owner's own data, shown to them only and never logged.
+    """
+
+    id: str
+    current: bool
+    device_model: str
+    platform: str
+    system_version: str
+    app_name: str
+    app_version: str
+    official_app: bool
+    created_at: datetime | None
+    active_at: datetime | None
+    ip: str
+    country: str
+    region: str
+
+
+class TelegramDevicesOut(BaseModel):
+    """Returned by GET /telegram/sessions."""
+
+    devices: list[TelegramDeviceOut]
+
+
+class TelegramDeviceEndedOut(BaseModel):
+    """Returned by DELETE /telegram/sessions[/{id}] on success."""
+
+    ended: bool = True
 
 
 class TelegramStatusOut(BaseModel):

@@ -64,6 +64,7 @@ import asyncio
 import logging
 import time
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.engine import Connection
 from telethon import TelegramClient
@@ -95,6 +96,7 @@ from api.schemas import (
     TelegramStatusOut,
     TelegramUnlinkOut,
 )
+from utils import telegram_sessions
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.qr import qr_data_uri
 from utils.security import DecodedAccessToken
@@ -555,6 +557,30 @@ async def qr_cancel(current: DecodedAccessToken = Depends(get_current_user)) -> 
     return TelegramUnlinkOut()
 
 
+async def _end_session_in_telegram(control_conn: Connection, user_id: int) -> bool:
+    """
+    End this account's stored session inside Telegram (auth.logOut).
+    True when it is gone afterwards - or when there was nothing linked to end.
+
+    Best effort in one specific way: values that cannot be decrypted (a rotated FERNET_KEY, say) or a Telegram that cannot be reached give False, never an error,
+    because "Unlink Telegram" must always work from our side.
+    Telegram/network failures are handled inside telegram_sessions.log_out();
+    it deliberately does NOT swallow unexpected exceptions, so a programming error (or a test that forgot to fake Telegram) still fails loudly.
+    """
+    user = control_db.queries.get_user_by_id(control_conn, user_id)
+    if user is None or not (user["telegram_api_id"] and user["telegram_api_hash"] and user["telegram_session_string"]):
+        return True
+    try:
+        raw_api_id = decrypt_secret(user["telegram_api_id"])
+        raw_api_hash = decrypt_secret(user["telegram_api_hash"])
+        raw_session = decrypt_secret(user["telegram_session_string"])
+    except InvalidToken:
+        logger.warning("Could not decrypt the saved Telegram values during unlink for user %d; unlinking locally only", user_id)
+        return False
+    assert raw_api_id is not None and raw_api_hash is not None and raw_session is not None  # all three were just checked non-empty
+    return await telegram_sessions.log_out(int(raw_api_id), raw_api_hash, raw_session)
+
+
 @router.delete("/session", response_model=TelegramUnlinkOut, summary="Unlink your Telegram account")
 async def unlink(
     current: DecodedAccessToken = Depends(get_current_user),
@@ -572,6 +598,13 @@ async def unlink(
     Discards any in-progress send-code/confirm handshake first: if a relink attempt happened to be mid-flight
     (unusual - the linked step isn't normally reachable while one is pending - but not impossible if a second tab/device kicked one off),
     it would otherwise sit orphaned in memory until PENDING_LINK_TTL_SECONDS.
+
+    Also ends TeleVault's session INSIDE Telegram (auth.logOut), so it disappears from the person's Settings -> Devices instead of lingering there forever
+    (until this was added, unlinking only forgot the session locally).
+    Best effort by design: if Telegram cannot be reached, or the saved values cannot be decrypted,
+    the account is still unlinked here - a person must always be able to disconnect from our side -
+    and the response says `ended_in_telegram: false` so the UI can tell them to remove the entry in Telegram themselves.
+    A session Telegram already considers dead counts as ended.
 
     Idempotent - returns the same 200 whether or not a session actually existed to clear (see clear_telegram_session()'s own docstring).
     The only failure mode is the account itself no longer existing, which can't happen in practice
@@ -592,5 +625,9 @@ async def unlink(
         )
 
     await _discard_pending_link(current["user_id"])
+
+    # Log out in Telegram BEFORE forgetting the session locally: afterwards we would no longer have the string to log out with.
+    ended_in_telegram = await _end_session_in_telegram(control_conn, current["user_id"])
+
     control_db.queries.clear_telegram_session(control_conn, current["user_id"])
-    return TelegramUnlinkOut()
+    return TelegramUnlinkOut(ended_in_telegram=ended_in_telegram)

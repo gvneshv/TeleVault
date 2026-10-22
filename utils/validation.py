@@ -48,6 +48,8 @@ TELEGRAM_API_HASH_MAX_LENGTH = 64  # real hashes are 32 hex characters
 TELEGRAM_PHONE_MAX_LENGTH = 32  # E.164 allows at most 15 digits plus "+", spaces and dashes
 TELEGRAM_CODE_MAX_LENGTH = 16  # login codes are 5-6 digits
 TELEGRAM_2FA_PASSWORD_MAX_LENGTH = 256  # Telegram's own cloud-password limit is not documented to us; this is a sanity bound
+TELEGRAM_DEVICE_HASH_MAX_LENGTH = 21  # Telegram's session id is an int64 (up to 19 digits plus a sign); web/js/views/settings.js sends it back verbatim
+TELEGRAM_DEVICE_HASH_PATTERN = r"^-?[0-9]{1,20}$"  # digits only: it is converted with int() and sent to Telegram, so nothing else may reach that far
 
 # --- Search ------------------------------------------------------------------------------------------------------------
 
