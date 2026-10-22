@@ -212,6 +212,23 @@ export const en = {
   "settings.telegramCardBody":
     "Manage the Telegram account TeleVault archives, and the database it's stored in.",
   "settings.telegramCardLink": "Open Telegram setup",
+  "settings.devicesTitle": "Telegram devices",
+  "settings.devicesIntro":
+    "Every device signed in to your Telegram account - the same list as Telegram's own Settings → Devices. Each time you link TeleVault a new entry is added, so old ones can pile up. Loading the list briefly connects to Telegram as TeleVault, so stop the archiver and any backfill first.",
+  "settings.devicesLoad": "Show my devices",
+  "settings.devicesRefresh": "Refresh",
+  "settings.devicesEmpty": "Telegram reported no devices.",
+  "settings.deviceThisSession": "TeleVault (this session)",
+  "settings.deviceSignedIn": "Signed in",
+  "settings.deviceLastActive": "Last active",
+  "settings.deviceEnd": "End session",
+  "settings.deviceEnding": "Ending…",
+  "settings.deviceUnnamed": "Unknown device",
+  "settings.deviceEndConfirm":
+    'End the session of "{device}"? It will be signed out of your Telegram account and has to log in again.',
+  "settings.devicesEndOthers": "End all other devices",
+  "settings.devicesEndOthersConfirm":
+    "End every session except TeleVault's own? All your other devices (phones, computers, other apps) will be signed out of Telegram and must log in again.",
 
   // telegram-setup.html - the dedicated first-run page a new registration is sent to, also reachable any time from Settings above
   // (e.g. to relink a different account, or if an admin created the account by hand via manage_admin.py and it was never linked in the first place).
@@ -266,12 +283,14 @@ export const en = {
   "tgSetup.startOver": "Start over",
   "tgSetup.qrButton": "Link with a QR code",
   "tgSetup.relinkNote":
-    "You are replacing the current link. It keeps working until the new one succeeds, and Cancel leaves it untouched. Either way, the old session is NOT ended in Telegram: it stays under Settings → Devices until you terminate it there.",
+    "You are replacing the current link. It keeps working until the new one succeeds, and Cancel leaves it untouched. Either way, the old session is NOT ended automatically: it stays in your Telegram devices until you end it - in TeleVault's Settings tab (Telegram devices) or in Telegram under Settings → Devices.",
   "tgSetup.relinkCredentialsNote":
-    "Saving new API credentials signs this account out of TeleVault until you link Telegram again (the archiver cannot run in between). Cancel keeps the current link. The old session is not ended in Telegram either - it stays under Settings → Devices.",
+    "Saving new API credentials signs this account out of TeleVault until you link Telegram again (the archiver cannot run in between). Cancel keeps the current link. The session also stays in Telegram's device list, and once it is cleared here TeleVault can no longer end it - so end it first (Settings tab → Telegram devices) if you want it gone.",
+  "tgSetup.unlinkNotEnded":
+    "Telegram was unlinked here, but TeleVault could not end its session inside Telegram. Remove it yourself under Telegram's Settings → Devices.",
   "tgSetup.cancelRelink": "Cancel - keep the current link",
   "tgSetup.deviceNote":
-    "Heads-up: every time you link - even the same account on the same computer - Telegram adds a new entry under Settings → Devices, and TeleVault cannot remove the old ones. Clean them up there (Terminate session) whenever you like.",
+    "Heads-up: every time you link - even the same account on the same computer - Telegram adds a new entry under Settings → Devices. Earlier ones are not ended automatically; you can end them from TeleVault's Settings tab (Telegram devices) or in Telegram itself.",
   "tgSetup.qrPrimaryHint":
     "The quickest way: scan a QR code with Telegram on your phone. No login code is needed.",
   "tgSetup.phoneAlternative": "Or use your phone number and a login code",
@@ -290,12 +309,12 @@ export const en = {
     "The QR code expired or the attempt failed. Start again.",
   "tgSetup.linkedBadge": "Linked",
   "tgSetup.linkedBody":
-    "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one; the old session is not ended in Telegram.",
+    "Your Telegram account is linked for this session. Relinking replaces the saved session with a new one; the old session is not ended automatically (see Settings → Telegram devices).",
   "tgSetup.relinkButton": "Relink a different account",
   "tgSetup.unlinkButton": "Unlink Telegram",
   "tgSetup.unlinking": "Unlinking…",
   "tgSetup.unlinkConfirm":
-    "Disconnect this Telegram account? Your archived messages are kept - you can relink anytime with the same API credentials. This does not end the session in Telegram itself: it stays under Settings → Devices until you terminate it there.",
+    "Disconnect this Telegram account? Your archived messages are kept - you can relink anytime with the same API credentials. TeleVault also ends its own session in Telegram, so it disappears from Settings → Devices.",
   "tgSetup.archiveTitle": "Archive database",
   "tgSetup.archiveIntro":
     "Each account gets its own database to store archived messages, separate from every other account on this instance.",
@@ -333,6 +352,19 @@ export const en = {
   "error.telegramInvalidPassword": "That password wasn't correct.",
   "error.telegramInvalidCode": "That code wasn't correct.",
   "error.telegramQrNotScanned": "Scan the QR code with Telegram first.",
+  "error.telegramSessionInvalid":
+    "Telegram no longer accepts TeleVault's saved session (it was ended elsewhere). Link your Telegram account again.",
+  "error.telegramSessionUnreadable":
+    "TeleVault's saved Telegram session is unreadable. Link your Telegram account again.",
+  "error.telegramSessionTooNew":
+    "Telegram does not let a session end other devices until it is about a day old. Try again later.",
+  "error.telegramDeviceNotFound": "That device is already gone from Telegram.",
+  "error.telegramCannotEndCurrent":
+    'That is TeleVault\'s own session. Use "Unlink Telegram" to end it.',
+  "error.telegramUnreachable":
+    "Could not reach Telegram right now. Try again shortly.",
+  "error.stopArchiverFirst":
+    "Stop the archiver (and any backfill) first - it is using this Telegram session.",
   "error.telegramCodeExpired": "That code expired. Sending a new one.",
   "error.archiveAlreadyProvisioned":
     "This account already has an archive database.",

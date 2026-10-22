@@ -47,6 +47,14 @@ const ERROR_REASON_KEYS = {
   telegram_code_expired: "error.telegramCodeExpired",
   telegram_qr_not_scanned: "error.telegramQrNotScanned",
 
+  // Telegram device management (api/routes/telegram_sessions.py) - "unreadable" reuses the "invalid" wording on purpose: both mean "link again".
+  telegram_session_invalid: "error.telegramSessionInvalid",
+  telegram_session_unreadable: "error.telegramSessionUnreadable",
+  telegram_session_too_new: "error.telegramSessionTooNew",
+  telegram_device_not_found: "error.telegramDeviceNotFound",
+  telegram_cannot_end_current: "error.telegramCannotEndCurrent",
+  telegram_unreachable: "error.telegramUnreachable",
+
   // Archive provisioning (api/routes/archive.py, db/provisioning.py)
   archive_already_provisioned: "error.archiveAlreadyProvisioned",
   provisioning_permission_denied: "error.provisioningPermissionDenied",
@@ -66,4 +74,23 @@ function describeError(detail) {
   return t("common.error");
 }
 
-export { describeError };
+/**
+ * describeError() for actions that connect to Telegram AS the account (device list, ending devices, unlinking).
+ *
+ * The one difference: "already_running" is the archiver's own reason code and its generic text ("It's already running.") makes sense for the Start button only.
+ * Here the same code means "the archiver holds this Telegram session right now", so say that instead.
+ *
+ * @param {unknown} detail - the parsed response body's `detail` field.
+ */
+function describeSessionError(detail) {
+  if (
+    detail &&
+    typeof detail === "object" &&
+    detail.reason === "already_running"
+  ) {
+    return t("error.stopArchiverFirst");
+  }
+  return describeError(detail);
+}
+
+export { describeError, describeSessionError };

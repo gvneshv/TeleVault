@@ -38,7 +38,7 @@
 import { t } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch, isAdmin, fetchCurrentUser } from "../lib/auth.js";
-import { describeError } from "../lib/errors.js";
+import { describeError, describeSessionError } from "../lib/errors.js";
 import { showConfirm } from "../lib/dialog.js";
 
 // Reasons from POST /telegram/link/confirm that mean "the handshake itself is dead" rather than "you typed the wrong thing" -
@@ -88,6 +88,9 @@ const setupState = {
   // Where Telegram put the login code ("app" | "sms" | "call" | "email" | "other"), from POST /telegram/link/send-code - decides which explanation the code step shows.
   codeDelivery: "other",
   telegramError: null,
+  // A non-error heads-up shown above the step (currently: "unlinked here, but the session could not be ended in Telegram").
+  // Cleared by every step change that does not set it, like telegramError.
+  telegramNotice: null,
   telegramBusy: false,
   // True while an already-linked account is replacing its link ("Relink a different account").
   // The saved session is NOT touched until the new link succeeds, so Cancel can simply return to the "linked" step - see goToTelegramStep().
@@ -108,8 +111,11 @@ const setupState = {
 // ---------------------------------------------------------------------------
 
 function renderTelegramError() {
-  if (!setupState.telegramError) return "";
-  return `<p class="settings-error" role="alert">${escapeHtml(setupState.telegramError)}</p>`;
+  const notice = setupState.telegramNotice
+    ? `<p class="settings-note" role="status">${escapeHtml(setupState.telegramNotice)}</p>`
+    : "";
+  if (!setupState.telegramError) return notice;
+  return `${notice}<p class="settings-error" role="alert">${escapeHtml(setupState.telegramError)}</p>`;
 }
 
 const MY_TELEGRAM_URL = "https://my.telegram.org";
@@ -318,12 +324,13 @@ function renderTelegramCard() {
 }
 
 /** Reset to a clean, error-free step and re-render - shared by every "go back / start over" button. */
-function goToTelegramStep(root, step, { error = null } = {}) {
+function goToTelegramStep(root, step, { error = null, notice = null } = {}) {
   stopQrPolling(); // leaving (or re-entering) any step ends the poll loop; the QR step starts its own after rendering
   if (step === "linked") setupState.relinking = false; // a finished or cancelled relink ends here
   if (step !== "qr") setupState.qrImage = "";
   setupState.telegramStep = step;
   setupState.telegramError = error;
+  setupState.telegramNotice = notice;
   setupState.telegramBusy = false;
   renderRoot(root);
 }
@@ -504,11 +511,18 @@ function attachTelegramHandlers(root) {
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(describeError(data.detail));
+          throw new Error(describeSessionError(data.detail));
         }
+        const result = await res.json().catch(() => ({}));
         // Credentials are kept (see clear_telegram_session()'s own docstring) - land on "phone" rather than
         // "credentials", so relinking doesn't ask for the api_id/api_hash pair again for no reason.
-        goToTelegramStep(root, "phone");
+        // The server also tries to end TeleVault's session inside Telegram; when it could not, say so, because then the entry is still in the person's device list.
+        goToTelegramStep(root, "phone", {
+          notice:
+            result.ended_in_telegram === false
+              ? t("tgSetup.unlinkNotEnded")
+              : null,
+        });
       } catch (err) {
         setupState.telegramBusy = false;
         setupState.telegramError = err.message || t("common.error");

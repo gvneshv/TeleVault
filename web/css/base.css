@@ -1338,6 +1338,49 @@ input:focus-visible {
    kept as one generic "card" vocabulary rather than forked into two near-identical class sets for each.
    ------------------------------------------------------------------- */
 
+.device-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.device-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.device-row:first-child {
+  border-top: none;
+}
+
+.device-row__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.device-row__name {
+  font-weight: 600;
+}
+
+/* One line of " · "-separated facts (joined in settings.js), like .admin-user-row__meta, so wrapping breaks at natural spaces. */
+.device-row__meta {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.device-row__action {
+  flex-shrink: 0;
+}
+
 /* A heads-up box on the link step (the leftover-Telegram-device warning): quiet, but set apart from the help text around it. */
 .settings-note {
   margin: 0 0 14px;
@@ -1383,6 +1426,11 @@ input:focus-visible {
    a username plus role/lock badges plus lock/delete buttons on one line doesn't fit .settings-card's 420px. */
 .settings-card--admin {
   max-width: 720px;
+}
+
+/* Settings -> "Telegram devices": wider than a form card, since a row carries a name, a line of facts and a button. */
+.settings-card--devices {
+  max-width: 620px;
 }
 
 .settings-card h2 {
