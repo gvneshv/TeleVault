@@ -9,6 +9,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed - roadmap and legal texts brought up to date
+
+- Removed two stale items from "Planned - Phase 3": the **admin API endpoints** (invite creation, listing/locking users) are done and in use (`/api/admin/*`, the Admin tab),
+  and **Saved Messages actor inference** was dropped on purpose: a deletion event carries no actor, so "who deleted it" is always an inference, and even the case that looked
+  structural was judged not reliable enough to present as a fact (for instance, a message can be deleted long after the fact, from any device that has the chat).
+- Privacy Policy and Terms: describe the new Telegram devices card (what is fetched, that it is shown but not stored or logged, that nothing is ended without confirmation)
+  and that unlinking now ends the session in Telegram. Both documents move to version `2026-10-22` (`CURRENT_TERMS_VERSION`); the wording change is material because it covers a
+  new kind of action, as the policy's own section 12 promises.
+
+### Changed - relink Cancel is now a bar above the step
+
+- While relinking, a bar at the top of the Telegram card says "You are relinking your Telegram account." and carries a filled, danger-styled Cancel button on every step
+  (QR, phone, code, password, credentials). The old Cancel sat among the form buttons and read as one more option. Cancelling from the QR step also tells the server to drop the QR login.
+
 ### Added - end Telegram devices from Settings, and unlinking ends TeleVault's own session
 
 - Every link (QR or code, first time or relink) creates a new session in the person's Telegram account, and nothing ever ended the old ones.
@@ -517,10 +531,6 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Admin API endpoints (invite creation, listing/locking users) for the auth backend above -
-  `api/routes/auth.py` still explicitly documents these as out of scope; invite creation is
-  CLI-only today (`scripts/manage_admin.py create-invite`). Frontend login/register pages, listed
-  here previously, shipped above and are no longer part of this item
 - Ingestion-time chat filter: allowlist/blocklist to control which chats
   get *archived* in the first place - distinct from the display-time chat
   filter (which chats a view *shows* from what's already archived) shipped
@@ -532,12 +542,6 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 - Data management: clear all data, clear per-chat data (with irreversibility warning)
 - Message ignore rules: filter by chat or text pattern before archiving
 - TTL / retention policy: auto-delete archived messages older than N months
-- Saved Messages actor inference: `deleted_by_inference = 'self'` when a
-  message's `chat_id` equals the archiving account's own Telegram user ID
-  (only that one chat is deterministic this way - see [1.1.0]'s note on why
-  private/group chats generally aren't). Needs the account's own ID
-  captured once at startup and stored somewhere `flag_deleted()` can reach
-  it - not done yet, `main.py` currently only uses `get_me()` for a log line
 - Expose `SenderOut.resolved_name` as a computed API field instead of the
   same priority logic being duplicated in three places (the backend
   property, `messages.js`, `deleted.js`)
