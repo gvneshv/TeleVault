@@ -1392,6 +1392,25 @@ input:focus-visible {
   line-height: 1.5;
 }
 
+/* Top-of-card bar while relinking: the message plus a filled danger-style Cancel, so an accidental "Relink" has an obvious way out on every step. */
+.relink-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-focus);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+}
+.relink-bar__text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* "or" separator between the two ways to link (QR first, phone number second) on the link step. */
 .settings-or {
   margin: 18px 0 12px;

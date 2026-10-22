@@ -151,11 +151,21 @@ function renderCredentialsGuide() {
   `;
 }
 
-/** The "keep the current link" button, shown only while relinking (see setupState.relinking). */
-function renderCancelRelinkButton() {
-  return setupState.relinking
-    ? `<button type="button" id="settings-cancel-relink" class="modal__btn">${t("tgSetup.cancelRelink")}</button>`
-    : "";
+/**
+ * The bar at the top of the card while relinking (see setupState.relinking): says what is going on and carries the Cancel button.
+ *
+ * It sits ABOVE every step, not inside one form, on purpose: someone who pressed "Relink" by accident must see the way out immediately,
+ * whichever step they are on, and a Cancel button among the other form buttons looks like just one more option (it used to).
+ * The button keeps its id (`settings-cancel-relink`) - there is only ever one on screen.
+ */
+function renderRelinkBar() {
+  if (!setupState.relinking || setupState.telegramStep === "linked") return "";
+  return `
+    <div class="relink-bar" role="status">
+      <span class="relink-bar__text">${t("tgSetup.relinkingBar")}</span>
+      <button type="button" id="settings-cancel-relink" class="modal__btn modal__btn--danger">${t("tgSetup.cancelRelink")}</button>
+    </div>
+  `;
 }
 
 function renderCredentialsStep() {
@@ -182,7 +192,6 @@ function renderCredentialsStep() {
       <button type="submit" class="modal__btn modal__btn--primary" ${setupState.telegramBusy ? "disabled" : ""}>
         ${setupState.telegramBusy ? t("tgSetup.savingCredentials") : t("tgSetup.credentialsSubmit")}
       </button>
-      ${renderCancelRelinkButton()}
     </form>
   `;
 }
@@ -223,7 +232,6 @@ function renderPhoneStep() {
       <button type="button" id="settings-back-to-credentials" class="modal__btn">
         ${t("tgSetup.useDifferentCredentials")}
       </button>
-      ${renderCancelRelinkButton()}
     </form>
   `;
 }
@@ -317,6 +325,7 @@ function renderTelegramCard() {
   return `
     <section class="settings-card">
       <h2>${t("tgSetup.telegramTitle")}</h2>
+      ${renderRelinkBar()}
       <p class="settings-help">${t("tgSetup.telegramIntro")}</p>
       ${body}
     </section>
@@ -489,10 +498,18 @@ function attachTelegramHandlers(root) {
     setupState.relinking = true;
     goToTelegramStep(root, "phone");
   });
-  // Nothing was changed server-side before the new link succeeded, so cancelling is purely a screen change.
+  // Nothing was changed server-side before the new link succeeded, so cancelling is a screen change - plus, if a QR login is open,
+  // telling the server to drop it (best effort, same as the QR step's own cancel button; the server's QR time limit cleans up otherwise).
   document
     .getElementById("settings-cancel-relink")
-    ?.addEventListener("click", () => goToTelegramStep(root, "linked"));
+    ?.addEventListener("click", async () => {
+      const wasQr = setupState.telegramStep === "qr";
+      goToTelegramStep(root, "linked");
+      if (wasQr)
+        await apiFetch("/api/telegram/qr", { method: "DELETE" }).catch(
+          () => {},
+        );
+    });
 
   document
     .getElementById("settings-unlink")

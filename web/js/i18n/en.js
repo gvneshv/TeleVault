@@ -289,6 +289,7 @@ export const en = {
   "tgSetup.unlinkNotEnded":
     "Telegram was unlinked here, but TeleVault could not end its session inside Telegram. Remove it yourself under Telegram's Settings → Devices.",
   "tgSetup.cancelRelink": "Cancel - keep the current link",
+  "tgSetup.relinkingBar": "You are relinking your Telegram account.",
   "tgSetup.deviceNote":
     "Heads-up: every time you link - even the same account on the same computer - Telegram adds a new entry under Settings → Devices. Earlier ones are not ended automatically; you can end them from TeleVault's Settings tab (Telegram devices) or in Telegram itself.",
   "tgSetup.qrPrimaryHint":

@@ -281,6 +281,7 @@ export const uk = {
   "tgSetup.unlinkNotEnded":
     "Telegram відключено тут, але TeleVault не зміг завершити свою сесію всередині Telegram. Видаліть її самостійно в Telegram: Налаштування → Пристрої.",
   "tgSetup.cancelRelink": "Скасувати - залишити поточне підключення",
+  "tgSetup.relinkingBar": "Ви перепідключаєте акаунт Telegram.",
   "tgSetup.deviceNote":
     "Зверніть увагу: щоразу, коли ви підключаєте акаунт - навіть той самий на тому самому комп'ютері - Telegram додає новий запис у Налаштування → Пристрої. Попередні автоматично не завершуються; ви можете завершити їх на вкладці «Налаштування» в TeleVault (Пристрої Telegram) або в самому Telegram.",
   "tgSetup.qrPrimaryHint":
