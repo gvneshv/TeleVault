@@ -11,12 +11,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed - roadmap and legal texts brought up to date
 
-- Removed two stale items from "Planned - Phase 3": the **admin API endpoints** (invite creation, listing/locking users) are done and in use (`/api/admin/*`, the Admin tab),
-  and **Saved Messages actor inference** was dropped on purpose: a deletion event carries no actor, so "who deleted it" is always an inference, and even the case that looked
-  structural was judged not reliable enough to present as a fact (for instance, a message can be deleted long after the fact, from any device that has the chat).
+- Removed three stale items from "Planned - Phase 3". They stayed listed only because nobody removed them when the work shipped:
+  the **admin API endpoints** (invite creation, listing/locking users; in use as `/api/admin/*` and the Admin tab), the **Saved Messages actor inference**
+  (shipped: `flag_deleted()` sets `deleted_by_inference = 'self'` for the account's own Saved Messages chat, and the Deleted view shows it; it is the one chat where the actor is certain,
+  every other private/group chat stays `unknown` because a deletion event carries no actor), and the **Deleted-view expanded-panel** item (already implemented).
 - Privacy Policy and Terms: describe the new Telegram devices card (what is fetched, that it is shown but not stored or logged, that nothing is ended without confirmation)
   and that unlinking now ends the session in Telegram. Both documents move to version `2026-10-22` (`CURRENT_TERMS_VERSION`); the wording change is material because it covers a
   new kind of action, as the policy's own section 12 promises.
+
+### Changed - account linking page layout
+
+- The three blocks on the linking page (the "all set" banner, the Telegram card, the archive card) are now the same width, 560px instead of up to 420px, and the QR code is centered in its card.
 
 ### Changed - relink Cancel is now a bar above the step
 
@@ -545,8 +550,6 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 - Expose `SenderOut.resolved_name` as a computed API field instead of the
   same priority logic being duplicated in three places (the backend
   property, `messages.js`, `deleted.js`)
-- Preserve a Deleted-view row's expanded detail panel across pagination and
-  language switches (currently collapses - a deliberate trade-off, not a bug)
 
 ### Planned - Phase 4 (Infrastructure & Expansion)
 

@@ -1292,6 +1292,19 @@ input:focus-visible {
   margin-top: 0;
 }
 
+/* The setup page's column.
+   Its three blocks (the "all set" banner, the Telegram card, the archive card) used to be as wide as their own content, capped at 420px,
+   so they came out slightly different widths; now the column is one fixed 560px (less on a narrow screen) and every block fills it.
+   Scoped to this page: the Settings tab shares .settings-card and keeps its own 420px. */
+#telegram-setup-root {
+  width: 100%;
+  max-width: 560px;
+}
+#telegram-setup-root .settings-card,
+#telegram-setup-root .setup-cta {
+  max-width: none;
+}
+
 .setup-cta {
   max-width: 420px;
   width: 100%;
@@ -1426,7 +1439,7 @@ input:focus-visible {
   display: block;
   width: 100%;
   max-width: 240px;
-  margin: 12px 0;
+  margin: 12px auto; /* auto = centered in the card */
   padding: 12px;
   background: #fff;
   border-radius: var(--radius-md);

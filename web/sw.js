@@ -50,10 +50,11 @@
  * v36 bumps for the relink flow (views/telegram-setup.js, i18n/{en,uk}.js: QR-first relink, cancel button, session wording).
  * v37 bumps for Telegram device management (views/settings.js, views/telegram-setup.js, lib/errors.js, css/base.css, i18n/{en,uk}.js).
  * v38 bumps for the relink bar (views/telegram-setup.js, css/base.css, i18n/{en,uk}.js: Cancel moved to a prominent bar above every relink step).
+ * v39 bumps for the setup page layout (css/base.css: wider, equal-width cards; centered QR code).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v38";
+const CACHE_NAME = "televault-shell-v39";
 const SHELL_FILES = [
   "/",
   "/index.html",
