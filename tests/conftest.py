@@ -245,7 +245,8 @@ def pytest_sessionfinish(session, exitstatus):
 # Archive databases
 # ---------------------------------------------------------------------------
 
-_ARCHIVE_TABLES = "chats, senders, backfill_runs, chat_migrations"  # CASCADE reaches messages/edits/deletions; chat_migrations has no FK, so it is listed
+# CASCADE reaches messages/edits/deletions; chat_migrations and ingest_blocked_chats have no FK (on purpose), so they are listed
+_ARCHIVE_TABLES = "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats"
 
 
 @pytest.fixture

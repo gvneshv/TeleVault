@@ -212,6 +212,22 @@ def get_chat_options(conn: Connection) -> list[dict[str, Any]]:
     return _rows_to_dicts(conn.execute(sql_text(sql)))
 
 
+def get_blocked_chats(conn: Connection) -> list[dict[str, Any]]:
+    """
+    Return every chat on the ingest blocklist as {chat_id, name, blocked_at}, newest block first.
+
+    Unpaginated: the API caps the list's size (utils/validation.py's INGEST_BLOCKLIST_MAX_COUNT), so it is bounded by construction.
+    Reads the rule's own copy of the name, not `chats.name`, so an entry still has a label after its chat's row is gone.
+    Raises ProgrammingError (undefined table) on an archive that predates the blocklist migration - api/routes/ingest.py turns that into a clear 409.
+    """
+    sql = """
+        SELECT chat_id, name, blocked_at
+        FROM ingest_blocked_chats
+        ORDER BY blocked_at DESC, chat_id ASC
+    """
+    return _rows_to_dicts(conn.execute(sql_text(sql)))
+
+
 def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
     """
     Return a single chat record with aggregate counts.

@@ -33,9 +33,14 @@ from typing import Any
 
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import Connection
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
+
+from db.connection import is_undefined_table_error
 
 logger = logging.getLogger(__name__)
+
+# Set once the "archive predates the blocklist table" warning in is_chat_blocked() has been logged, so a busy account does not log it for every message.
+_blocklist_table_missing_warned = False
 
 
 def get_last_archived_message_id(conn: Connection, chat_id: int) -> int | None:
@@ -288,9 +293,131 @@ def record_chat_migration(conn: Connection, old_chat_id: int, new_chat_id: int) 
         raise
     logger.info(f"Recorded chat migration: {old_chat_id} -> {new_chat_id}.")
 
+    # A blocked basic group must stay blocked once it becomes a supergroup - see _move_blocklist_rule().
+    _move_blocklist_rule(conn, old_chat_id, new_chat_id)
+
     # Fold any pre-existing rows under old_chat_id in immediately, rather than waiting for a manual merge_migrated_chats.py run.
     # Safe every time - merge_chat() is a no-op if old_chat_id already has nothing left.
     merge_chat(conn, old_chat_id, new_chat_id)
+
+
+# ---------------------------------------------------------------------------
+# Ingest blocklist (chats the owner chose not to archive)
+# ---------------------------------------------------------------------------
+# Policy and the "why" live in handlers/ingest_filter.py; the table's shape and the no-foreign-key decision in db/schema.py.
+# Every rule is keyed by the CANONICAL chat id (resolve_chat_id()), the same id insert_message() would store the message under -
+# so "is this message blocked?" and "which chat would it be written to?" can never disagree, even for a group that has since been upgraded.
+
+
+def is_chat_blocked(conn: Connection, chat_id: int) -> bool:
+    """
+    True if messages from `chat_id` must not be archived.
+
+    Called by the live handlers (once per event, BEFORE any Telegram entity lookup or database write) and by backfill.py (once per chat).
+    `chat_id` may be an old, pre-migration id: it is canonicalized first, exactly as insert_message() does.
+
+    An archive that predates the blocklist migration has no table. That can only mean no rules exist (nobody could have created one),
+    so this answers False - the same behaviour as before the feature existed - and warns ONCE that the archive needs `alembic upgrade head`.
+    Any OTHER database error propagates: the caller must then skip the message rather than guess (handlers/ingest_filter.py).
+    """
+    global _blocklist_table_missing_warned
+    try:
+        canonical = resolve_chat_id(conn, chat_id)
+        row = conn.execute(
+            sql_text("SELECT 1 FROM ingest_blocked_chats WHERE chat_id = :chat_id"),
+            {"chat_id": canonical},
+        ).first()
+    except ProgrammingError as exc:
+        # A failed statement aborts the whole Postgres transaction - release it before this connection is used (or returned to the pool) again.
+        conn.rollback()
+        if not is_undefined_table_error(exc):
+            raise
+        if not _blocklist_table_missing_warned:
+            _blocklist_table_missing_warned = True
+            logger.warning(
+                "This archive has no ingest_blocked_chats table yet, so no chat can be blocked. "
+                "Run `alembic -x url=... upgrade head` against it (see RUNBOOK.md) to enable the blocklist."
+            )
+        return False
+    return row is not None
+
+
+def block_chat(conn: Connection, chat_id: int, name: str | None, commit: bool = True) -> bool:
+    """
+    Add a chat to the blocklist. Returns True if it was newly blocked, False if it already was (the existing rule, and its name, are left alone).
+
+    `name` is copied into the rule so the list stays readable after the chat's own row is gone - see db/schema.py's comment on the table.
+    Only stops FUTURE archiving: messages already stored stay where they are (removing them is a separate, destructive action).
+    """
+    chat_id = resolve_chat_id(conn, chat_id)
+    try:
+        row = conn.execute(
+            sql_text(
+                "INSERT INTO ingest_blocked_chats (chat_id, name) VALUES (:chat_id, :name) "
+                "ON CONFLICT (chat_id) DO NOTHING RETURNING chat_id"
+            ),
+            {"chat_id": chat_id, "name": name},
+        ).first()
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return row is not None
+
+
+def unblock_chat(conn: Connection, chat_id: int, commit: bool = True) -> bool:
+    """
+    Remove a chat from the blocklist. Returns True if a rule was removed, False if the chat was not blocked.
+    Archiving resumes from the next message - nothing that arrived while it was blocked can be recovered (it was never stored).
+    """
+    chat_id = resolve_chat_id(conn, chat_id)
+    try:
+        row = conn.execute(
+            sql_text("DELETE FROM ingest_blocked_chats WHERE chat_id = :chat_id RETURNING chat_id"),
+            {"chat_id": chat_id},
+        ).first()
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return row is not None
+
+
+def _move_blocklist_rule(conn: Connection, old_chat_id: int, new_chat_id: int) -> None:
+    """
+    Carry a blocklist rule over when a basic group becomes a supergroup (record_chat_migration()).
+
+    The upgrade gives the chat a brand-new id. Without this, a chat the person blocked would start being archived again the moment it was upgraded -
+    exactly the kind of silent surprise a blocklist exists to prevent.
+    The rule is MOVED, not copied: is_chat_blocked() canonicalizes through chat_migrations first,
+    so a rule left on the old id would never be looked at again and would only show up as a duplicate in the list.
+    If the new id is somehow blocked already, that rule wins and the old one is simply dropped.
+
+    Tolerates an archive without the table (see is_chat_blocked()): nothing to move there.
+    """
+    try:
+        conn.execute(
+            sql_text(
+                "INSERT INTO ingest_blocked_chats (chat_id, name, blocked_at) "
+                "SELECT :new_chat_id, name, blocked_at FROM ingest_blocked_chats WHERE chat_id = :old_chat_id "
+                "ON CONFLICT (chat_id) DO NOTHING"
+            ),
+            {"old_chat_id": old_chat_id, "new_chat_id": new_chat_id},
+        )
+        conn.execute(
+            sql_text("DELETE FROM ingest_blocked_chats WHERE chat_id = :old_chat_id"),
+            {"old_chat_id": old_chat_id},
+        )
+        _commit(conn)
+    except ProgrammingError as exc:
+        conn.rollback()
+        if not is_undefined_table_error(exc):
+            raise
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def resolve_chat_id(conn: Connection, chat_id: int) -> int:

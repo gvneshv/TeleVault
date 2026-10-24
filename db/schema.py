@@ -13,6 +13,7 @@ Table overview:
   - message_deletions   : full deletion history for messages that were deleted
   - chat_migrations     : maps an old (pre-migration) chat_id to its canonical new one
   - backfill_runs       : records each time a backfill is run
+  - ingest_blocked_chats: chats the account owner chose NOT to archive (the ingestion-time blocklist)
 
 Schema history (SQLite era, db/migrations/001-005 - see that package for the full reasoning behind each;
 this file represents the END state of all of them, not the incremental steps):
@@ -275,6 +276,31 @@ backfill_runs = Table(
         "status IN ('running', 'completed', 'cancelled', 'error')",
         name="ck_backfill_runs_status",
     ),
+)
+
+
+# ---------------------------------------------------------------------------
+# ingest_blocked_chats
+# ---------------------------------------------------------------------------
+# The ingestion-time blocklist: a chat listed here is never archived -
+# the live handlers (handlers/on_message.py, on_edit.py) and backfill.py consult it BEFORE any message content is read or written.
+# See handlers/ingest_filter.py for the full policy.
+# Anything not listed is archived: new chats are allowed by default, the owner blocks them after seeing them.
+#
+# Deliberately NO foreign key to `chats`:
+#   - a rule must survive the chat's own row being removed.
+#     The planned "delete all data of one chat" feature removes the `chats` row,
+#     and "block it AND delete what is already stored" must not silently drop the block along with the data it was meant to stop refilling.
+#   - the name is therefore copied here at block time, so the list stays readable after the `chats` row is gone.
+# chat_id is the CANONICAL id (after chat_migrations, see db/queries.py's resolve_chat_id());
+# record_chat_migration() moves a rule from the old id to the new one when a basic group is upgraded to a supergroup.
+# autoincrement=False: same reasoning as chats.chat_id above - it is Telegram's own id, supplied by the app.
+ingest_blocked_chats = Table(
+    "ingest_blocked_chats",
+    metadata,
+    Column("chat_id", BigInteger, primary_key=True, autoincrement=False),
+    Column("name", Text),
+    Column("blocked_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
 )
 
 

@@ -383,3 +383,19 @@ def is_missing_database_error(exc: OperationalError) -> bool:
     if sqlstate is not None:
         return sqlstate == "3D000"
     return "does not exist" in str(exc).lower()
+
+
+def is_undefined_table_error(exc: Exception) -> bool:
+    """
+    True when `exc` is Postgres saying "this table does not exist" (SQLSTATE 42P01, undefined_table).
+
+    Exists for archives that predate a migration: nothing migrates an existing archive automatically (see RUNBOOK.md),
+    so code that ships together with a new table must cope with running against an archive that does not have it yet.
+    Today's only user is the ingest blocklist (db/queries.py's is_chat_blocked()), where "no table" provably means "no rules".
+
+    Same SQLSTATE-first approach as is_missing_database_error() above, for the same reason (a stable part of the wire protocol, not message text).
+    Unlike that function there is deliberately NO substring fallback: with no SQLSTATE we cannot tell "table missing" from some other ProgrammingError,
+    and treating the wrong one as "no rules" could archive a chat the person asked us not to.
+    """
+    orig = getattr(exc, "orig", None)
+    return getattr(orig, "sqlstate", None) == "42P01"
