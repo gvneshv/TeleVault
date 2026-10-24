@@ -34,7 +34,7 @@ from config import settings
 from control_db import queries as cq
 from utils.logging_setup import setup_logging
 
-from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, telegram_sessions, archive, admin
+from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, telegram_sessions, archive, ingest, admin
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +174,12 @@ app = FastAPI(
 # linking Telegram and provisioning your own archive are per-account self-service actions every user does for themselves.
 # See those routers' own module docstrings.
 #
+# ingest:
+# the account's own ingestion blocklist (which chats are NOT archived).
+# Reading uses get_archive_connection like chats/messages do;
+# adding/removing a rule uses api.dependencies.get_archive_write_connection - the one other place (besides cancel_backfill) the API writes to an archive.
+# See that router's own module docstring.
+#
 # admin:
 # gated at the router level on require_admin - every route in api/routes/admin.py requires the same one thing (the caller is the sole admin),
 # so a blanket router-level dependency is the right shape here (unlike backfill/telethon, whose routes are per-account and gated individually).
@@ -194,6 +200,7 @@ app.include_router(stats.router,     prefix="/api")
 app.include_router(telegram.router,  prefix="/api")
 app.include_router(telegram_sessions.router, prefix="/api")
 app.include_router(archive.router,   prefix="/api")
+app.include_router(ingest.router,    prefix="/api")
 app.include_router(backfill.router,  prefix="/api")
 app.include_router(telethon.router,  prefix="/api")
 app.include_router(admin.router,     prefix="/api", dependencies=[Depends(require_admin)])

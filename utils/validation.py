@@ -51,6 +51,17 @@ TELEGRAM_2FA_PASSWORD_MAX_LENGTH = 256  # Telegram's own cloud-password limit is
 TELEGRAM_DEVICE_HASH_MAX_LENGTH = 21  # Telegram's session id is an int64 (up to 19 digits plus a sign); web/js/views/settings.js sends it back verbatim
 TELEGRAM_DEVICE_HASH_PATTERN = r"^-?[0-9]{1,20}$"  # digits only: it is converted with int() and sent to Telegram, so nothing else may reach that far
 
+# --- Ingest blocklist (api/routes/ingest.py) ---------------------------------------------------------------------------
+
+# Telegram chat ids are 64-bit integers (marked ids such as -1001234567890 are well inside that); the archive stores them as BIGINT.
+# Anything outside this range is not a chat id and would only make Postgres raise a numeric-overflow error, which must be a 422, not a 500.
+TELEGRAM_CHAT_ID_MIN = -(2**63)
+TELEGRAM_CHAT_ID_MAX = 2**63 - 1
+# How many chats one account may block.
+# A rule can only be created for a chat the archive already knows, so this is far above any real use
+# (a very large account is in a few thousand chats at most); it exists so that "no upper bound" is never true of a write endpoint.
+INGEST_BLOCKLIST_MAX_COUNT = 2000
+
 # --- Search ------------------------------------------------------------------------------------------------------------
 
 SEARCH_QUERY_MAX_LENGTH = 200  # message-text substring search; the pg_trgm scan cost grows with the pattern

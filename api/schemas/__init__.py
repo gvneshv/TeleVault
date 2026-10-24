@@ -27,6 +27,7 @@ from .telegram import (
     TelegramDeviceEndedOut,
 )
 from .archive import ArchiveProvisionOut
+from .ingest import BlockedChatOut, BlocklistOut, BlockedChatRemovedOut
 from .admin import (
     AdminUserOut,
     AdminUserListOut,
@@ -76,6 +77,10 @@ __all__ = [
     "TelegramDeviceEndedOut",
     # archive
     "ArchiveProvisionOut",
+    # ingest blocklist
+    "BlockedChatOut",
+    "BlocklistOut",
+    "BlockedChatRemovedOut",
     # admin
     "AdminUserOut",
     "AdminUserListOut",

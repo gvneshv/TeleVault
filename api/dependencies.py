@@ -9,7 +9,11 @@ Why read-only?
     Enforced via `SET default_transaction_read_only = on` on checkout.
     Any write attempted through the connection errors out at the Postgres level.
     The workers (main.py, backfill.py) and the API server are separate processes that can touch the same archive database,
-    and a route handler has no business writing to it (the one deliberate exception, cancel_backfill(), opens its own explicit write connection).
+    and a route handler has no business writing to it.
+    The deliberate exceptions are few and each one is explicit: cancel_backfill() opens its own write connection,
+    and the ingest blocklist's add/remove routes (api/routes/ingest.py) use get_archive_write_connection() below -
+    the same account-resolution and error mapping as get_archive_connection(), but read-write.
+    Everything that merely READS an archive keeps using the read-only dependency, so a bug in a read route still cannot modify archived data.
 """
 
 from typing import Generator
@@ -89,6 +93,51 @@ def get_current_user(token: str = Depends(_oauth2_scheme)) -> DecodedAccessToken
         ) from exc
 
 
+def _archive_ref_or_409(current: DecodedAccessToken, control_conn: Connection) -> str:
+    """
+    The calling account's archive database name (users.archive_db_ref), or HTTPException 409 "archive_unattached" if it has none yet.
+    Shared by get_archive_connection() and get_archive_write_connection() so both gate on exactly the same thing, with exactly the same wording.
+    """
+    user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
+    if user is None or user["archive_db_ref"] is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Your archive database hasn't been created yet. Create it under Settings -> Telegram setup.",
+                "reason": "archive_unattached",
+            },
+        )
+    return user["archive_db_ref"]
+
+
+def _archive_connect_error(exc: OperationalError, archive_db_ref: str, user_id: int) -> HTTPException:
+    """
+    The HTTPException for "could not connect to this account's archive" - see get_archive_connection()'s docstring for the 409 vs 503 reasoning.
+    The underlying exception is logged here (it names internal hosts/ports) and deliberately never put in the response.
+    """
+    if db.is_missing_database_error(exc):
+        # archive_db_ref names a database that was never actually created (contrast the generic 503 below, a transient outage that WILL clear up on its own) -
+        # see db.is_missing_database_error()'s own docstring.
+        # This can only be fixed by an administrator (create the database, or correct the reference);
+        # it must never be told to the caller as "try again shortly", since retrying cannot possibly help.
+        logger.error("Archive %r (user_id=%s) does not exist - misconfigured archive_db_ref: %s", archive_db_ref, user_id, exc)
+        return HTTPException(
+            status_code=409,
+            detail={
+                "message": "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator.",
+                "reason": "archive_misconfigured",
+            },
+        )
+    logger.warning("Archive %r (user_id=%s) is unreachable: %s", archive_db_ref, user_id, exc)
+    return HTTPException(
+        status_code=503,
+        detail={
+            "message": "Your archive database is currently unavailable.",
+            "reason": "archive_unavailable",
+        },
+    )
+
+
 def get_archive_connection(
     current: DecodedAccessToken = Depends(get_current_user),
     control_conn: Connection = Depends(get_control_db),
@@ -119,46 +168,44 @@ def get_archive_connection(
     mention internal hostnames/ports, and mean nothing to an end user;
     the real exception is logged server-side instead, for whoever's actually debugging it.
     """
-    user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
-    if user is None or user["archive_db_ref"] is None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "Your archive database hasn't been created yet. Create it under Settings -> Telegram setup.",
-                "reason": "archive_unattached",
-            },
-        )
+    archive_db_ref = _archive_ref_or_409(current, control_conn)
 
-    cm = db.get_tenant_readonly_connection(user["archive_db_ref"])
+    cm = db.get_tenant_readonly_connection(archive_db_ref)
     try:
         conn = cm.__enter__()
     except OperationalError as exc:
-        if db.is_missing_database_error(exc):
-            # archive_db_ref names a database that was never actually created (contrast the generic 503 below, a transient outage that WILL clear up on its own) -
-            # see db.is_missing_database_error()'s own docstring.
-            # This can only be fixed by an administrator (create the database, or correct the reference);
-            # it must never be told to the caller as "try again shortly", since retrying cannot possibly help.
-            logger.error("Archive %r (user_id=%s) does not exist - misconfigured archive_db_ref: %s", user["archive_db_ref"], current["user_id"], exc)
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "Your archive database reference is misconfigured and cannot be fixed by retrying. Contact your administrator.",
-                    "reason": "archive_misconfigured",
-                },
-            ) from exc
-        logger.warning("Archive %r (user_id=%s) is unreachable: %s", user["archive_db_ref"], current["user_id"], exc)
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "message": "Your archive database is currently unavailable.",
-                "reason": "archive_unavailable",
-            },
-        ) from exc
+        raise _archive_connect_error(exc, archive_db_ref, current["user_id"]) from exc
 
     try:
         yield conn
     finally:
         cm.__exit__(None, None, None)
+
+
+def get_archive_write_connection(
+    current: DecodedAccessToken = Depends(get_current_user),
+    control_conn: Connection = Depends(get_control_db),
+) -> Generator[Connection, None, None]:
+    """
+    Like get_archive_connection(), but READ-WRITE:
+    for the few routes that legitimately change an archive (today only the ingest blocklist's add/remove, api/routes/ingest.py).
+    Same account resolution (the caller's own archive, never another's, admin or not) and the same 409/503 errors.
+
+    Use it only where a route must write - every route that merely reads keeps the read-only dependency,
+    so a bug there still cannot modify archived data (see this module's docstring).
+    The caller commits its own changes; whatever is uncommitted when the request ends is discarded when the connection is closed.
+    """
+    archive_db_ref = _archive_ref_or_409(current, control_conn)
+
+    try:
+        conn = db.get_tenant_connection(archive_db_ref)
+    except OperationalError as exc:
+        raise _archive_connect_error(exc, archive_db_ref, current["user_id"]) from exc
+
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def require_admin(current: DecodedAccessToken = Depends(get_current_user)) -> DecodedAccessToken:
