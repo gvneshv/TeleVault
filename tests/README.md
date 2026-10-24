@@ -35,6 +35,10 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `unit/test_manage_admin_helpers.py`, `test_read_queries_pure.py`, `test_telethon_compat.py` | CLI helpers, query building, typing shims |
 | `integration/test_archive_db.py` | the real archive schema: upserts, deletion flagging, search, read-only role |
 | `integration/test_startup_guard.py` | the first-admin startup guard |
+| `integration/test_ingest_blocklist_db.py` | the ingest blocklist's table and migration (incl. downgrade round trip), queries, how a rule follows a group's upgrade to a supergroup, and an archive that has not been migrated yet |
+| `integration/test_backfill_blocklist.py` | the real `backfill.run()` on a real archive with a fake Telegram: blocked chats are never fetched or stored, also when named explicitly |
+| `unit/test_ingest_filter.py` | the blocklist's failure policy: unreadable rules mean "skip", never "archive" |
+| `api/test_ingest_blocklist.py` | block / unblock API: idempotency, limits and cap, per-account isolation, the read-only/write connection split, an unmigrated archive |
 | `api/test_auth_flow.py` | register / login / throttling / refresh rotation and reuse detection / logout |
 | `api/test_gate_chain.py` | every endpoint behind the right gate, with the right status and reason code; the "no archive yet" message is about the database, not about linking Telegram |
 | `api/test_tenant_isolation.py` | one account can never read, change or infer another account's archive |

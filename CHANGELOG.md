@@ -9,6 +9,45 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - ingestion-time chat blocklist ("Chats not archived")
+
+- **Settings -> Chats not archived** lists the chats TeleVault must not archive and lets you add or remove one. A chat on the list gets no new messages and no edits stored.
+  Everything else is archived as before - **a new chat is always allowed until you block it**, so there is no allowlist to maintain. This is a different thing from the
+  display-time chat filter on the Messages/Deleted views (shipped in [2.1.0]), which only changes what is *shown* from what is already archived.
+- **The decision is made before anything is read or written.** The live handlers (`handlers/on_message.py`, `handlers/on_edit.py`) ask `handlers/ingest_filter.py` right after
+  they have the chat id: before the message text is resolved, before `get_chat()`/`get_sender()` (which can cost Telegram API calls), before any database write.
+  `backfill.py` applies the same rule per chat, before a single message of it is requested - also when the chat is named with `--chat`: the run says so and archives nothing
+  instead of quietly overriding your rule.
+- **Edits are filtered too, on purpose.** The edit handler stores the new text of a known message and *inserts* a message it has never seen, so filtering only new messages would have
+  let a blocked chat keep leaking through edits.
+- **Takes effect on the next message, no restart.** The rule is one primary-key lookup per event in the account's own archive, not a copy held in memory. A short-lived
+  in-memory cache was considered and left out: the live handler is low-volume and already does several round-trips per archived message, and a lookup has no refresh interval, no stale copy that can
+  disagree with the Settings page, and no invalidation to get wrong. If an account's traffic ever makes it show up in a profile, a cache is a small change inside `should_skip()`.
+- **When the rules cannot be read, the event is skipped, not archived.** A lost message is the ordinary cost of the database being down (the insert would have failed too); guessing
+  "not blocked" could store a chat you asked never to store. The one exception is an archive without the table (below).
+- **Blocking only stops FUTURE archiving.** Messages already archived stay and remain visible; removing them is a separate destructive action that does not exist yet (planned).
+  Deletion events are deliberately *not* filtered: a deletion adds no content, only flags a row already stored, and for private chats and legacy groups Telegram does not say which
+  chat it came from. What arrives while a chat is blocked is never stored and cannot be recovered by unblocking.
+- **A blocked group stays blocked when it is upgraded to a supergroup.** The upgrade gives the chat a new id; `record_chat_migration()` now *moves* the rule to the new id, and the
+  lookup canonicalizes through `chat_migrations` first, so "is this blocked?" and "which chat would this be stored under?" cannot disagree. The migration service message itself is
+  still processed for a blocked chat (it holds no text; it is what carries the rule over).
+- **A rule has no foreign key to `chats`** and keeps its own copy of the chat's name, so the planned "delete everything stored for this chat" can leave the block (and a readable list
+  entry) in place instead of silently lifting it.
+- API: `GET /api/ingest/blocklist`, `PUT` and `DELETE /api/ingest/blocklist/{chat_id}` (both idempotent). Only chats the archive already knows can be blocked (404 `chat_not_found`),
+  so the client never sends free text. Bounded: the chat id must fit 64 bits (422 otherwise, not a database overflow error), at most 2000 rules per account (409 `blocklist_full`).
+  Both limits live in `utils/validation.py`. Each account sees and changes only its own list; being the admin changes nothing.
+- **Existing archives need one migration.** `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head` for each archive (revision `0e528a688c4c`; RUNBOOK.md,
+  "Updating existing archives"). Nothing applies it automatically. Until it is applied nothing breaks: the workers treat the missing table as "no rules" (they log one warning) and
+  archive as before, and the blocklist endpoints answer 409 `archive_outdated`, which the Settings card shows in plain words. Archives created from now on already have it.
+- The API gained its second archive write path, `get_archive_write_connection()` (the first is `cancel_backfill`). Routes that only read keep the read-only connection, and a test pins
+  which routes use which, so a read route cannot quietly gain write access.
+- New error reasons, translated in both languages: `archive_outdated`, `blocklist_full`, `chat_not_found`. Web shell cache v40.
+- Tests: the migration (including a downgrade/upgrade round trip), the queries, the group-upgrade rule move, the unmigrated-archive behaviour, both handlers (a blocked chat's content is
+  never read and Telegram is never asked about it), the failure policy, a full `backfill.run()` against a real archive with a fake Telegram, and the API (limits, cap, isolation, outdated
+  archive). Each rule was shown to fail when its code was reverted once. Not covered by automated tests: real Telegram events and the UI in a real browser - see TESTING.md.
+- Not done, by design: allowlist mode (it needs "seen but not archived" metadata about chats you chose not to store), blocking from inside a chat's own view, and
+  per-chat data removal (planned next to this).
+
 ### Changed - roadmap and legal texts brought up to date
 
 - Removed three stale items from "Planned - Phase 3". They stayed listed only because nobody removed them when the work shipped:
@@ -536,16 +575,16 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Ingestion-time chat filter: allowlist/blocklist to control which chats
-  get *archived* in the first place - distinct from the display-time chat
-  filter (which chats a view *shows* from what's already archived) shipped
-  in [2.1.0]
+- Ingestion-time chat allowlist (the blocklist half shipped, see "Unreleased"): archive *only*
+  chosen chats. Needs a way to see chats that are not archived yet, which means storing
+  metadata about chats the person chose not to keep - undecided
 - Storage mode: `all` (default) vs `deletions_only`
 - Display name overrides: map a friendly label to a sender ID
 - Username change tracking (`username_history` table)
 - Auto-read policies: mark selected chats as read on a schedule
 - Data management: clear all data, clear per-chat data (with irreversibility warning)
-- Message ignore rules: filter by chat or text pattern before archiving
+- Message ignore rules: filter by text pattern before archiving (filtering by chat shipped
+  as the ingest blocklist)
 - TTL / retention policy: auto-delete archived messages older than N months
 - Expose `SenderOut.resolved_name` as a computed API field instead of the
   same priority logic being duplicated in three places (the backend

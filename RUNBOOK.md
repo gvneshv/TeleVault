@@ -53,6 +53,23 @@ python scripts/manage_admin.py set-archive --username youruser --db-name DBNAME
 
 `alembic current` (with the matching `-c` / `-x`) shows what is applied.
 
+### Updating existing archives
+
+A new release can add a migration to the archive schema (`alembic/versions/`). **Nothing applies it to archives that already exist** - only a freshly provisioned one gets the whole chain.
+After pulling an update, run it once per archive:
+
+```bash
+# which archives exist (the control database knows them):
+docker compose exec postgres psql -U televault -d televault_control -c "SELECT id, username, archive_db_ref FROM users WHERE archive_db_ref IS NOT NULL;"
+
+# then, for each one:
+alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head
+```
+
+Quote the URL if the password contains special characters. The step is safe to repeat: only unapplied migrations run.
+Until an archive is migrated nothing breaks - the code that needs a new table treats its absence as "nothing configured yet" - but the matching feature is unavailable
+(for the ingest blocklist, Settings -> Chats not archived says the archive needs updating, and the archiver logs one warning).
+
 ---
 
 ## 3. Per-account runtime layout
@@ -121,5 +138,5 @@ A restore procedure has not been written or rehearsed; do that before relying on
 
 - Docker disk use: `docker system df`, then `docker system prune` occasionally. Never pass `--volumes`; that is what would delete the database volume.
 - Disk space (`df -h`): archives only grow.
-- After pulling updates: `pip install -r requirements.txt -c constraints.txt` (exact tested versions), then `alembic -c alembic_control.ini upgrade head`. Existing archive databases are migrated per account, not by that command.
+- After pulling updates: `pip install -r requirements.txt -c constraints.txt` (exact tested versions), then `alembic -c alembic_control.ini upgrade head`. Existing archive databases are migrated per account, not by that command (see "Updating existing archives" in section 2).
 - Legal pages: while `instance/legal/` is missing, the server logs a warning at startup and serves the placeholder templates.
