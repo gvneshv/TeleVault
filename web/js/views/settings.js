@@ -1,9 +1,13 @@
 /**
  * Settings view.
  *
- * Two cards:
+ * Three cards:
  *   1. A link out to the dedicated telegram-setup.html page (see that file's own module docstring for why the Telegram/archive wizard lives there instead of here).
- *   2. "Telegram devices": the account's Telegram sessions (the same list as Telegram's own Settings -> Devices)
+ *   2. "Chats not archived": the ingestion blocklist (api/routes/ingest.py, policy in handlers/ingest_filter.py) -
+ *      pick an already-archived chat to stop archiving it, or take one off the list.
+ *      It is a cheap database read, so unlike the devices card it loads as soon as the tab opens.
+ *      Only chats the archive already knows are offered: a new chat is always archived until you block it here.
+ *   3. "Telegram devices": the account's Telegram sessions (the same list as Telegram's own Settings -> Devices)
  *      with buttons to end one device or every device except TeleVault's own.
  *      Every link creates a new Telegram session and nothing used to end the old ones, so they piled up.
  *
@@ -19,11 +23,27 @@
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
-import { describeSessionError } from "../lib/errors.js";
+import { describeError, describeSessionError } from "../lib/errors.js";
+import { archiveFixLink } from "../lib/archive-error.js";
 import { showConfirm } from "../lib/dialog.js";
 
 const settingsViewState = {
   initialized: false,
+  blocklist: {
+    // null = not loaded (yet, or the load failed - see `error`), otherwise the rules from GET /api/ingest/blocklist.
+    items: null,
+    // Every archived chat as {chat_id, name} (GET /api/chats/options) - what the picker offers, minus what is already blocked.
+    chats: [],
+    maxCount: null,
+    loading: false,
+    // The chat id (string) being blocked/unblocked, or null.
+    busy: null,
+    // What the picker currently shows; kept here so a re-render (language change, a finished request) does not reset it.
+    selected: "",
+    error: null,
+    // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
+    fix: null,
+  },
   devices: {
     // null = never loaded (only the "Show my devices" button), otherwise the last list from GET /api/telegram/sessions.
     list: null,
@@ -34,8 +54,8 @@ const settingsViewState = {
   },
 };
 
-/** @param {string | null} iso @returns {string} */
-function formatDeviceDate(iso) {
+/** A date-time in the UI language's own style (device sessions and blocklist entries share it). @param {string | null} iso @returns {string} */
+function formatDate(iso) {
   if (!iso) return "-";
   const locale = getCurrentLang() === "uk" ? "uk-UA" : "en-US";
   try {
@@ -63,8 +83,8 @@ function renderDeviceRow(d) {
     system,
     place,
     d.ip,
-    `${t("settings.deviceSignedIn")}: ${formatDeviceDate(d.created_at)}`,
-    `${t("settings.deviceLastActive")}: ${formatDeviceDate(d.active_at)}`,
+    `${t("settings.deviceSignedIn")}: ${formatDate(d.created_at)}`,
+    `${t("settings.deviceLastActive")}: ${formatDate(d.active_at)}`,
   ].filter(Boolean);
 
   // TeleVault's own session gets a badge and NO button: ending it is "Unlink Telegram" (setup page), and the server refuses it too.
@@ -125,6 +145,86 @@ function renderDevicesCard() {
   `;
 }
 
+/** One blocked chat: its name (as it was when blocked), id and date, and the button that lifts the block. */
+function renderBlockedRow(rule) {
+  const s = settingsViewState.blocklist;
+  const id = String(rule.chat_id);
+  const busy = s.busy !== null || s.loading;
+  const facts = [
+    `ID ${id}`,
+    `${t("settings.blocklistBlockedOn")}: ${formatDate(rule.blocked_at)}`,
+  ];
+  return `
+    <li class="device-row">
+      <div class="device-row__body">
+        <div class="device-row__name">${escapeHtml(rule.name || t("settings.blocklistUnnamed"))}</div>
+        <div class="device-row__meta">${facts.map(escapeHtml).join(" · ")}</div>
+      </div>
+      <div class="device-row__action">
+        <button type="button" class="modal__btn" data-unblock-id="${escapeHtml(id)}" ${busy ? "disabled" : ""}>
+          ${s.busy === id ? t("settings.blocklistRemoving") : t("settings.blocklistRemove")}
+        </button>
+      </div>
+    </li>
+  `;
+}
+
+function renderBlocklistCard() {
+  const s = settingsViewState.blocklist;
+  const busy = s.busy !== null || s.loading;
+
+  const error = s.error
+    ? `<p class="settings-error" role="alert">${escapeHtml(s.error)}${
+        s.fix
+          ? ` <a href="${s.fix.href}" class="settings-fix-link">${escapeHtml(s.fix.label)}</a>`
+          : ""
+      }</p>`
+    : "";
+
+  let body =
+    s.loading && s.items === null
+      ? `<p class="settings-help">${t("common.loading")}</p>`
+      : "";
+  if (s.items !== null) {
+    const blockedIds = new Set(s.items.map((r) => String(r.chat_id)));
+    const choices = s.chats.filter((c) => !blockedIds.has(String(c.chat_id)));
+    // A stale selection (the chat was just blocked, or vanished) must not stay "selected" with no matching <option>.
+    const selected = choices.some((c) => String(c.chat_id) === s.selected)
+      ? s.selected
+      : "";
+    const options = choices
+      .map(
+        (c) =>
+          `<option value="${escapeHtml(String(c.chat_id))}" ${String(c.chat_id) === selected ? "selected" : ""}>${escapeHtml(c.name || `ID ${c.chat_id}`)}</option>`,
+      )
+      .join("");
+
+    body = choices.length
+      ? `<div class="blocklist-add">
+           <select id="blocklist-select" class="blocklist-select" aria-label="${escapeHtml(t("settings.blocklistChatLabel"))}" ${busy ? "disabled" : ""}>
+             <option value="">${t("settings.blocklistPick")}</option>${options}
+           </select>
+           <button type="button" id="blocklist-add" class="modal__btn modal__btn--primary" ${busy || !selected ? "disabled" : ""}>
+             ${s.busy === "add" ? t("settings.blocklistAdding") : t("settings.blocklistAdd")}
+           </button>
+         </div>`
+      : `<p class="settings-help">${t("settings.blocklistNoChats")}</p>`;
+
+    body += s.items.length
+      ? `<ul class="device-list">${s.items.map(renderBlockedRow).join("")}</ul>`
+      : `<p class="settings-help">${t("settings.blocklistEmpty")}</p>`;
+  }
+
+  return `
+    <section class="settings-card settings-card--blocklist" id="blocklist-card">
+      <h2>${t("settings.blocklistTitle")}</h2>
+      <p class="settings-help">${t("settings.blocklistIntro")}</p>
+      ${error}
+      ${body}
+    </section>
+  `;
+}
+
 function renderRoot(root) {
   root.innerHTML = `
     <section class="settings-card">
@@ -132,9 +232,113 @@ function renderRoot(root) {
       <p class="settings-help">${t("settings.telegramCardBody")}</p>
       <a href="/telegram-setup.html" class="modal__btn modal__btn--primary">${t("settings.telegramCardLink")}</a>
     </section>
+    ${renderBlocklistCard()}
     ${renderDevicesCard()}
   `;
+  attachBlocklistHandlers(root);
   attachDevicesHandlers(root);
+}
+
+/** Put an error response into the blocklist card: translated, and with the "create your archive" link when that is what is missing. */
+async function failBlocklist(res) {
+  const s = settingsViewState.blocklist;
+  const body = await res.json().catch(() => ({}));
+  s.error = describeError(body.detail);
+  s.fix = archiveFixLink(body.detail);
+}
+
+/**
+ * (Re)load the blocklist and the chats the picker offers.
+ * Never throws; problems land in the card.
+ *
+ * @param {HTMLElement} root
+ */
+async function loadBlocklist(root) {
+  const s = settingsViewState.blocklist;
+  s.error = null;
+  s.fix = null;
+  s.loading = true;
+  renderRoot(root);
+
+  try {
+    const [rules, chats] = await Promise.all([
+      apiFetch("/api/ingest/blocklist"),
+      apiFetch("/api/chats/options"),
+    ]);
+    if (!rules.ok) {
+      s.items = null;
+      await failBlocklist(rules);
+    } else if (!chats.ok) {
+      s.items = null;
+      await failBlocklist(chats);
+    } else {
+      const data = await rules.json();
+      s.items = data.items;
+      s.maxCount = data.max_count;
+      s.chats = await chats.json();
+    }
+  } catch {
+    s.items = null;
+    s.error = t("common.error");
+  }
+  s.loading = false;
+  renderRoot(root);
+}
+
+/**
+ * Block (PUT) or unblock (DELETE) one chat, then reload both lists so the screen shows what the server now holds.
+ *
+ * @param {HTMLElement} root
+ * @param {string} chatId
+ * @param {boolean} block
+ */
+async function changeBlock(root, chatId, block) {
+  const s = settingsViewState.blocklist;
+  s.error = null;
+  s.fix = null;
+  s.busy = block ? "add" : chatId;
+  renderRoot(root);
+
+  let ok = false;
+  try {
+    // The id came from the server as a number; encodeURIComponent is belt and braces for the URL.
+    const res = await apiFetch(
+      `/api/ingest/blocklist/${encodeURIComponent(chatId)}`,
+      { method: block ? "PUT" : "DELETE" },
+    );
+    if (res.ok) ok = true;
+    else await failBlocklist(res);
+  } catch {
+    s.error = t("common.error");
+  }
+  s.busy = null;
+  if (!ok) {
+    renderRoot(root);
+    return;
+  }
+  s.selected = "";
+  await loadBlocklist(root);
+}
+
+function attachBlocklistHandlers(root) {
+  const s = settingsViewState.blocklist;
+
+  document
+    .getElementById("blocklist-select")
+    ?.addEventListener("change", (e) => {
+      s.selected = e.target.value;
+      renderRoot(root);
+    });
+
+  document.getElementById("blocklist-add")?.addEventListener("click", () => {
+    if (s.selected) changeBlock(root, s.selected, true);
+  });
+
+  document.querySelectorAll("[data-unblock-id]").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      changeBlock(root, btn.dataset.unblockId, false),
+    );
+  });
 }
 
 /**
@@ -221,11 +425,13 @@ function initSettingsView() {
   settingsViewState.initialized = true;
 
   renderRoot(root);
+  loadBlocklist(root);
 }
 
 export { initSettingsView };
 
-// Re-render in the new language - same pattern as the other views (e.g. health.js). The device list is redrawn from memory, not re-fetched.
+// Re-render in the new language - same pattern as the other views (e.g. health.js).
+// The blocklist and the device list are redrawn from memory, not re-fetched.
 // A server error message already shown stays in the language it was produced in until the next action;
 // it is short-lived and re-translating it would need the raw `detail` kept around for no real gain.
 document.addEventListener("televault:langchange", () => {

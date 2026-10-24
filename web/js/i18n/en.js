@@ -212,6 +212,20 @@ export const en = {
   "settings.telegramCardBody":
     "Manage the Telegram account TeleVault archives, and the database it's stored in.",
   "settings.telegramCardLink": "Open Telegram setup",
+  "settings.blocklistTitle": "Chats not archived",
+  "settings.blocklistIntro":
+    "Messages and edits in a chat on this list are no longer archived. Every other chat is - including any new chat - until you add it here. Messages already archived stay as they are. It takes effect with the next message, no restart needed. Anything that arrives while a chat is blocked is never stored, so it can't be recovered if you unblock the chat later.",
+  "settings.blocklistChatLabel": "Chat to stop archiving",
+  "settings.blocklistPick": "Choose a chat…",
+  "settings.blocklistAdd": "Stop archiving",
+  "settings.blocklistAdding": "Blocking…",
+  "settings.blocklistRemove": "Archive again",
+  "settings.blocklistRemoving": "Unblocking…",
+  "settings.blocklistEmpty":
+    "No chat is blocked - every chat is being archived.",
+  "settings.blocklistNoChats": "No archived chats to choose from yet.",
+  "settings.blocklistUnnamed": "Unnamed chat",
+  "settings.blocklistBlockedOn": "Blocked",
   "settings.devicesTitle": "Telegram devices",
   "settings.devicesIntro":
     "Every device signed in to your Telegram account - the same list as Telegram's own Settings → Devices. Each time you link TeleVault a new entry is added, so old ones can pile up. Loading the list briefly connects to Telegram as TeleVault, so stop the archiver and any backfill first.",
@@ -367,6 +381,11 @@ export const en = {
   "error.stopArchiverFirst":
     "Stop the archiver (and any backfill) first - it is using this Telegram session.",
   "error.telegramCodeExpired": "That code expired. Sending a new one.",
+  "error.archiveOutdated":
+    "Your archive database needs updating before chats can be blocked. Ask whoever runs this TeleVault to apply the database update (alembic upgrade head).",
+  "error.blocklistFull":
+    "The blocked-chats list is full. Unblock a chat first.",
+  "error.chatNotFound": "That chat isn't in your archive.",
   "error.archiveAlreadyProvisioned":
     "This account already has an archive database.",
   "error.provisioningPermissionDenied":

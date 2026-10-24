@@ -55,6 +55,11 @@ const ERROR_REASON_KEYS = {
   telegram_cannot_end_current: "error.telegramCannotEndCurrent",
   telegram_unreachable: "error.telegramUnreachable",
 
+  // Ingest blocklist (api/routes/ingest.py)
+  archive_outdated: "error.archiveOutdated",
+  blocklist_full: "error.blocklistFull",
+  chat_not_found: "error.chatNotFound",
+
   // Archive provisioning (api/routes/archive.py, db/provisioning.py)
   archive_already_provisioned: "error.archiveAlreadyProvisioned",
   provisioning_permission_denied: "error.provisioningPermissionDenied",

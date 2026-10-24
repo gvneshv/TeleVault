@@ -206,6 +206,19 @@ export const uk = {
   "settings.telegramCardBody":
     "Керуйте акаунтом Telegram, який архівує TeleVault, і базою даних, де він зберігається.",
   "settings.telegramCardLink": "Відкрити налаштування Telegram",
+  "settings.blocklistTitle": "Чати без архівування",
+  "settings.blocklistIntro":
+    "Повідомлення та редагування в чатах із цього списку більше не архівуються. Усі інші чати, зокрема й будь-який новий, архівуються, доки ви не додасте їх сюди. Уже заархівовані повідомлення залишаються як є. Зміна діє з наступного повідомлення, перезапуск не потрібен. Усе, що надходить, поки чат заблоковано, не зберігається взагалі, тож його не можна відновити, якщо ви пізніше розблокуєте чат.",
+  "settings.blocklistChatLabel": "Чат, який більше не архівувати",
+  "settings.blocklistPick": "Оберіть чат…",
+  "settings.blocklistAdd": "Не архівувати",
+  "settings.blocklistAdding": "Блокування…",
+  "settings.blocklistRemove": "Архівувати знову",
+  "settings.blocklistRemoving": "Розблокування…",
+  "settings.blocklistEmpty": "Жоден чат не заблоковано - архівуються всі чати.",
+  "settings.blocklistNoChats": "Поки що немає заархівованих чатів для вибору.",
+  "settings.blocklistUnnamed": "Чат без назви",
+  "settings.blocklistBlockedOn": "Заблоковано",
   "settings.devicesTitle": "Пристрої Telegram",
   "settings.devicesIntro":
     "Усі пристрої, на яких виконано вхід в ваш акаунт Telegram - той самий список, що в Налаштування → Пристрої самого Telegram. Щоразу, коли ви підключаєте TeleVault, додається новий запис, тож старі можуть накопичуватися. Щоб завантажити список, TeleVault ненадовго підключається до Telegram, тому спершу зупиніть архіватор та імпорт історії.",
@@ -360,6 +373,11 @@ export const uk = {
   "error.stopArchiverFirst":
     "Спочатку зупиніть архіватор (і імпорт історії, якщо він запущений) - вони використовують цю сесію Telegram.",
   "error.telegramCodeExpired": "Термін дії коду минув. Надсилаємо новий.",
+  "error.archiveOutdated":
+    "Базу даних вашого архіву потрібно оновити, перш ніж блокувати чати. Попросіть того, хто обслуговує цей TeleVault, застосувати оновлення бази (alembic upgrade head).",
+  "error.blocklistFull":
+    "Список заблокованих чатів заповнений. Спершу розблокуйте якийсь чат.",
+  "error.chatNotFound": "Цього чату немає у вашому архіві.",
   "error.archiveAlreadyProvisioned": "У цього акаунта вже є база даних архіву.",
   "error.provisioningPermissionDenied":
     "Роль бази даних, під якою підключається TeleVault, не має прав на створення баз даних. Зверніться до адміністратора.",

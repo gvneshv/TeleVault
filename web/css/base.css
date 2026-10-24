@@ -1465,6 +1465,31 @@ input:focus-visible {
   max-width: 620px;
 }
 
+/* Settings -> "Chats not archived": same width as the devices card, and it reuses .device-list / .device-row* for its rows
+   (a name, a line of facts, one button on the right - the same shape; those class names predate the second user). */
+.settings-card--blocklist {
+  max-width: 620px;
+}
+
+/* The chat picker and its button, on one row that wraps on a narrow screen. */
+.blocklist-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.blocklist-select {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+}
+
 .settings-card h2 {
   font-family: var(--font-display);
   font-size: 15px;
