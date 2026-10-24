@@ -16,6 +16,11 @@ Consequences and how we handle them:
   - event.chat_id is None  -> fall back to flagging by message ID only,
     which may match the same tg_message_id in multiple chats (rare but possible). Logged.
 
+Not filtered by the ingest blocklist, on purpose (handlers/ingest_filter.py has the full reasoning):
+a deletion adds no new content - it only flags a row already stored and snapshots text already stored -
+and for private chats and legacy groups the event does not even say which chat it came from.
+Blocking a chat stops future archiving; it does not erase the past, including the record that something archived earlier was later deleted.
+
 self_id (passed in via register()) is the archiving account's own Telegram user ID,
 forwarded to flag_deleted() for Saved Messages detection - see db/queries.py's flag_deleted() docstring for why that's the one private chat where the deletion actor can be known for certain.
 

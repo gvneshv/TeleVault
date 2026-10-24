@@ -7,6 +7,9 @@ Why we bother archiving edits:
   Without the edit history, the archive shows only the final text before deletion. With it, you get the full picture.
 
 Flow per event:
+  0. Skip the event if its chat is on the ingest blocklist, before anything else - see handlers/ingest_filter.py.
+     An edit is NOT harmless to ignore the filter for: it stores the new text of a known message, and for an unknown one it inserts the whole message,
+     so a blocked chat would otherwise keep leaking its content through edits.
   1. Confirm the edited message has text (skip media caption changes for now).
   2. Call queries.record_edit, which:
        a. Fetches the current text from the DB (becomes old_text).
@@ -27,6 +30,7 @@ from telethon import events
 from sqlalchemy.exc import OperationalError
 
 import db
+from handlers import ingest_filter
 from handlers.helpers import get_chat_type, get_sender_fields
 
 logger = logging.getLogger(__name__)
@@ -114,6 +118,15 @@ def register(client) -> None:
         chat_id = event.chat_id
         if chat_id is None:
             logger.warning("Skipping edit event for message %s - no chat_id in event.", message.id)
+            return
+
+        # Before every other check (and so before any content or entity is touched) - see this module's docstring, step 0.
+        if await ingest_filter.should_skip(chat_id):
+            logger.debug(
+                "Skipping edit of message %s in chat %s - chat is blocked (or the blocklist could not be read).",
+                message.id,
+                chat_id,
+            )
             return
 
         if event.sender_id is None:

@@ -2,6 +2,8 @@
 Handles Telethon's NewMessage event - fired for every message that arriveson the account, both incoming and outgoing (including Saved Messages).
 
 Flow per event:
+  0. Record a chat migration if this is one (an id mapping only, no text), then skip the event if its chat is on the ingest blocklist -
+     before anything below reads the message or asks Telegram about the chat (handlers/ingest_filter.py explains why it must be this early).
   1. Resolve the text to store - either the message body or a synthesized call label for MessageActionPhoneCall service messages.
   2. Skip if there is nothing worth archiving (media-only, stickers, etc.).
   3. Extract the chat entity and upsert it into `chats`.
@@ -32,6 +34,7 @@ from telethon.tl.types import (
 from sqlalchemy.exc import OperationalError
 
 import db
+from . import ingest_filter
 from .helpers import get_chat_type, get_sender_fields, resolve_message_text
 
 logger = logging.getLogger(__name__)
@@ -169,6 +172,18 @@ def register(client) -> None:
                     old_chat_id,
                     chat_id,
                 )
+            return
+
+        # --- Ingest blocklist ----------------------------------------------
+        # After the migration branches above on purpose: those store only an id mapping (no text),
+        # and recording it is what carries a block over to the new id when a blocked group is upgraded - skipping them here would silently un-block that chat.
+        # Everything below this point reads or stores content, so this is the last place the decision can be made without the content having been touched.
+        if await ingest_filter.should_skip(chat_id):
+            logger.debug(
+                "Skipping message %s in chat %s - chat is blocked (or the blocklist could not be read).",
+                message.id,
+                chat_id,
+            )
             return
 
         # --- Resolve the text to archive -----------------------------------

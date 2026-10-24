@@ -29,6 +29,13 @@ Important limitations - Telegram's API, not something TeleVault can work around:
     so backfilled messages are stored as not-yet-edited (is_edited=0) even if they actually were edited before backfill ran.
     There's no way to see prior versions of a message you didn't already have archived.
 
+Blocked chats are skipped:
+    A chat on the account's ingest blocklist (Settings -> Blocked chats) is not fetched and not stored -
+    the same rule the live archiver applies (handlers/ingest_filter.py).
+    It is checked per chat, before any message of it is requested from Telegram.
+    That also holds when one is named with --chat: the run says so and archives nothing, rather than quietly overriding the owner's rule.
+    Remove the chat from the blocklist first if you do want it backfilled.
+
 Do not run this at the same time as main.py (the live userbot) FOR THE SAME ACCOUNT - Telethon sessions support one active connection at a time.
 Stop that account's archiver first, run this, then start it again. (Other accounts' archivers are unaffected.)
 
@@ -353,6 +360,7 @@ async def run(
 
     total_stored = 0
     total_skipped = 0
+    total_blocked = 0
     any_failures = False
 
     status["chats_total"] = len(chats)
@@ -369,9 +377,18 @@ async def run(
         stored = skipped = 0
         max_flood_retries = 5
         failed = False
+        blocked = False
         for attempt in range(1, max_flood_retries + 1):
             try:
                 status["current_chat"] = name
+
+                # The ingest blocklist - decided before a single message of this chat is requested, let alone stored (see handlers/ingest_filter.py).
+                # Inside the try on purpose:
+                # if the rules cannot be read this chat is reported as failed and skipped like any other per-chat error, never archived on a guess.
+                # `break` also skips the for-else below, which is only for "ran out of flood-wait retries".
+                if db.queries.is_chat_blocked(conn, utils.get_peer_id(chat)):
+                    blocked = True
+                    break
 
                 # Recomputed on every attempt, not just the first:
                 # if an earlier attempt got partway through before a flood wait hit,
@@ -421,6 +438,16 @@ async def run(
             _write_status(status)
             continue
 
+        if blocked:
+            logger.info(
+                f"Skipping '{name}' - it is on your ingest blocklist, so nothing was fetched or stored "
+                f"(remove it under Settings -> Blocked chats if you want it archived)."
+            )
+            total_blocked += 1
+            status["chats_done"] += 1
+            _write_status(status)
+            continue
+
         if failed:
             any_failures = True
             status["chats_done"] += 1
@@ -434,7 +461,8 @@ async def run(
         _write_status(status)
 
     logger.info(
-        f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall."
+        f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall"
+        + (f", {total_blocked} chat(s) skipped because they are blocked." if total_blocked else ".")
     )
 
     final_status = (

@@ -17,7 +17,7 @@ from telethon.tl.types import (
     PhoneCallDiscardReasonMissed,
 )
 
-from handlers import on_edit, on_message
+from handlers import ingest_filter, on_edit, on_message
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -58,6 +58,52 @@ class FakeEvent:
 
 def run(coro):
     return asyncio.run(coro)
+
+
+class _SpyMessage:
+    """Wraps a fake message and records every read of its CONTENT (`.message` / `.text`); ids, dates and the service `action` are not content."""
+
+    def __init__(self, base, touched):
+        self._base, self._touched = base, touched
+        self.id, self.date, self.action, self.edit_date = base.id, base.date, base.action, base.edit_date
+
+    @property
+    def message(self):
+        self._touched.append("message")
+        return self._base.message
+
+    @property
+    def text(self):
+        self._touched.append("text")
+        return self._base.text
+
+
+class SpyEvent(FakeEvent):
+    """A FakeEvent that records every sign of a handler reading content or asking Telegram about the chat/sender."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.touched: list[str] = []
+        self.message = _SpyMessage(self.message, self.touched)
+
+    async def get_chat(self):
+        self.touched.append("get_chat")
+        return await super().get_chat()
+
+    async def get_sender(self):
+        self.touched.append("get_sender")
+        return await super().get_sender()
+
+
+@pytest.fixture(autouse=True)
+def blocked_chats(monkeypatch):
+    """
+    The set of chat ids the blocklist reports as blocked - empty by default, so every pre-existing test below runs as if the feature did not exist.
+    Replaces only the database half (ingest_filter._lookup); the real should_skip() and the handlers' own wiring stay under test.
+    """
+    blocked: set[int] = set()
+    monkeypatch.setattr(ingest_filter, "_lookup", lambda chat_id: chat_id in blocked)
+    return blocked
 
 
 @pytest.fixture
@@ -171,3 +217,72 @@ class TestEditedHandler:
         with caplog.at_level(logging.ERROR, logger="handlers.on_edit"):
             run(edited_handler(FakeEvent()))
         assert "database unreachable" in caplog.text
+
+
+class TestIngestBlocklist:
+    """A blocked chat is dropped BEFORE its content is read, before Telegram is asked about it, and before anything is written."""
+
+    def test_a_blocked_chats_message_is_not_persisted_and_nothing_is_touched(self, new_message_handler, recorded, blocked_chats):
+        blocked_chats.add(123)
+        event = SpyEvent(chat_id=123, text="private words")
+        run(new_message_handler(event))
+        assert recorded["persist"] == []
+        assert event.touched == []  # no content read, no get_chat(), no get_sender()
+
+    def test_other_chats_are_still_archived(self, new_message_handler, recorded, blocked_chats):
+        blocked_chats.add(999)
+        run(new_message_handler(FakeEvent(chat_id=123)))
+        assert len(recorded["persist"]) == 1
+
+    def test_the_lookup_is_made_for_the_events_own_chat_id(self, new_message_handler, edited_handler, recorded, monkeypatch):
+        seen = []
+        monkeypatch.setattr(ingest_filter, "_lookup", lambda chat_id: seen.append(chat_id) or False)
+        run(new_message_handler(FakeEvent(chat_id=123)))
+        run(edited_handler(FakeEvent(chat_id=456, edit_date=NOW)))
+        assert seen == [123, 456]
+
+    def test_a_blocked_chats_edit_is_not_persisted_and_nothing_is_touched(self, edited_handler, recorded, blocked_chats):
+        """The edit handler inserts a message it has never seen, so without this a blocked chat would keep leaking through edits."""
+        blocked_chats.add(123)
+        event = SpyEvent(chat_id=123, text="edited private words", edit_date=NOW)
+        run(edited_handler(event))
+        assert recorded["edit"] == []
+        assert event.touched == []
+
+    def test_other_chats_edits_are_still_recorded(self, edited_handler, recorded, blocked_chats):
+        blocked_chats.add(999)
+        run(edited_handler(FakeEvent(chat_id=123, edit_date=NOW)))
+        assert len(recorded["edit"]) == 1
+
+    def test_a_blocked_groups_upgrade_is_still_recorded(self, new_message_handler, recorded, blocked_chats):
+        """The migration service message holds no text, and recording it is what carries the block over to the new id."""
+        blocked_chats.add(-777)
+        run(new_message_handler(FakeEvent(chat_id=-777, text="", action=MessageActionChatMigrateTo(channel_id=555))))
+        assert recorded["migration"] == [(-777, utils.get_peer_id(PeerChannel(555)))]
+        assert recorded["persist"] == []
+
+    def test_unreadable_rules_skip_the_message_rather_than_archive_it(self, new_message_handler, recorded, monkeypatch, caplog):
+        def broken(chat_id):
+            raise ValueError("rules unreadable")
+
+        monkeypatch.setattr(ingest_filter, "_lookup", broken)
+        event = SpyEvent(chat_id=123)
+        with caplog.at_level(logging.ERROR, logger="handlers.ingest_filter"):
+            run(new_message_handler(event))
+        assert recorded["persist"] == [] and event.touched == []
+        assert "rather than risk archiving a blocked chat" in caplog.text
+
+    def test_unreadable_rules_skip_the_edit_too(self, edited_handler, recorded, monkeypatch):
+        def broken(chat_id):
+            raise ValueError("rules unreadable")
+
+        monkeypatch.setattr(ingest_filter, "_lookup", broken)
+        run(edited_handler(FakeEvent(chat_id=123, edit_date=NOW)))
+        assert recorded["edit"] == []
+
+    def test_a_blocked_chat_is_logged_without_its_content(self, new_message_handler, recorded, blocked_chats, caplog):
+        blocked_chats.add(123)
+        with caplog.at_level(logging.DEBUG, logger="handlers.on_message"):
+            run(new_message_handler(FakeEvent(chat_id=123, text="TOP SECRET WORDS", message_id=77)))
+        assert "TOP SECRET WORDS" not in caplog.text
+        assert "77" in caplog.text and "123" in caplog.text
