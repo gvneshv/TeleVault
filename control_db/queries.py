@@ -71,6 +71,19 @@ def list_users(conn: Connection) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def list_archive_databases(conn: Connection) -> list[dict[str, Any]]:
+    """
+    {id, username, archive_db_ref} for every account that has an archive database, oldest account first.
+
+    Used by scripts/migrate_archives.py, which needs to visit every archive and nothing else about the accounts.
+    Deliberately selects only those three columns - unlike list_users() above, no password hash or Telegram credential is ever loaded into the caller's memory.
+    """
+    rows = conn.execute(
+        sql_text("SELECT id, username, archive_db_ref FROM users WHERE archive_db_ref IS NOT NULL ORDER BY created_at ASC, id ASC")
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 # ---------------------------------------------------------------------------
 # invites - reads
 # ---------------------------------------------------------------------------

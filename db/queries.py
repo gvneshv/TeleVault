@@ -317,7 +317,7 @@ def is_chat_blocked(conn: Connection, chat_id: int) -> bool:
     `chat_id` may be an old, pre-migration id: it is canonicalized first, exactly as insert_message() does.
 
     An archive that predates the blocklist migration has no table. That can only mean no rules exist (nobody could have created one),
-    so this answers False - the same behaviour as before the feature existed - and warns ONCE that the archive needs `alembic upgrade head`.
+    so this answers False - the same behaviour as before the feature existed - and warns ONCE that the archive needs updating (`python scripts/migrate_archives.py`).
     Any OTHER database error propagates: the caller must then skip the message rather than guess (handlers/ingest_filter.py).
     """
     global _blocklist_table_missing_warned
@@ -336,7 +336,7 @@ def is_chat_blocked(conn: Connection, chat_id: int) -> bool:
             _blocklist_table_missing_warned = True
             logger.warning(
                 "This archive has no ingest_blocked_chats table yet, so no chat can be blocked. "
-                "Run `alembic -x url=... upgrade head` against it (see RUNBOOK.md) to enable the blocklist."
+                "Run `python scripts/migrate_archives.py` (see RUNBOOK.md) to update it and enable the blocklist."
             )
         return False
     return row is not None

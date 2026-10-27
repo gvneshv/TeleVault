@@ -8,7 +8,8 @@ Adds `ingest_blocked_chats`: chats the account owner chose not to archive.
 The workers (handlers/on_message.py, handlers/on_edit.py, backfill.py) read it before touching any message content - see handlers/ingest_filter.py.
 
 This is a per-account ARCHIVE database migration (alembic/, not alembic_control/), and nothing applies it to archives that already exist:
-run `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head` once per existing archive (RUNBOOK.md, "Updating existing archives").
+run `python scripts/migrate_archives.py` once (RUNBOOK.md, "Updating existing archives") - it migrates every archive with the app's own database credentials,
+so there is no per-archive URL or password to look up.
 Archives provisioned after this change get it automatically (db/provisioning.py runs the whole chain).
 Until an old archive is migrated nothing breaks: the workers treat a missing table as "no rules" and archive as before,
 and the blocklist endpoints answer with a clear "archive needs updating" error (api/routes/ingest.py).

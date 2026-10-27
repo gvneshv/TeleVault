@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy.exc import ProgrammingError
 
 import db
 import db.queries as q
@@ -207,7 +208,7 @@ class TestArchiveWithoutTheTable:
                 q.is_chat_blocked(unmigrated, 42)
         warnings = [r for r in caplog.records if "ingest_blocked_chats" in r.getMessage()]
         assert len(warnings) == 1
-        assert "alembic" in warnings[0].getMessage()
+        assert "migrate_archives.py" in warnings[0].getMessage()  # the fix we point at must be the one that works
 
     def test_a_group_upgrade_is_still_recorded(self, unmigrated):
         seed_chat(unmigrated, chat_id=-777, name="Book club", chat_type="group", messages=[(1, 5, "hello")])
@@ -223,6 +224,6 @@ class TestArchiveWithoutTheTable:
         """
         unmigrated.execute(sa.text("CREATE TABLE ingest_blocked_chats (cid BIGINT)"))
         unmigrated.commit()
-        with pytest.raises(sa.exc.ProgrammingError):
+        with pytest.raises(ProgrammingError):
             q.is_chat_blocked(unmigrated, 42)
         assert scalar(unmigrated, "SELECT 1") == 1  # still rolled back

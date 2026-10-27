@@ -44,7 +44,7 @@ class FakeClient:
 
 
 class FakeEvent:
-    def __init__(self, *, chat_id=123, sender_id=55, text="hello", action=None, message_id=9, edit_date=None):
+    def __init__(self, *, chat_id: int | None = 123, sender_id: int | None = 55, text="hello", action=None, message_id=9, edit_date=None):
         self.chat_id = chat_id
         self.sender_id = sender_id
         self.message = SimpleNamespace(id=message_id, message=text, text=text, action=action, date=NOW, edit_date=edit_date)

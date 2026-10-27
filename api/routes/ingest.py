@@ -20,8 +20,8 @@ so the client never supplies free text, and there is nothing to validate beyond 
 Writes go through api.dependencies.get_archive_write_connection (read-write); the GET uses the usual read-only get_archive_connection.
 Both resolve the CALLER's own archive, so one account can never read or change another's blocklist.
 
-Archives created before this feature have no table until `alembic upgrade head` is run against them (RUNBOOK.md). Every route here answers 409
-"archive_outdated" for such an archive instead of a 500; the workers meanwhile simply archive everything, as they always did.
+Archives created before this feature have no table until `python scripts/migrate_archives.py` is run (RUNBOOK.md).
+Every route here answers 409 "archive_outdated" for such an archive instead of a 500; the workers meanwhile simply archive everything, as they always did.
 """
 
 from contextlib import contextmanager
@@ -57,7 +57,7 @@ def _needs_migrated_archive():
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "Your archive database needs updating before chats can be blocked. Run `alembic upgrade head` against it - see RUNBOOK.md.",
+                "message": "Your archive database needs updating before chats can be blocked. Run `python scripts/migrate_archives.py` - see RUNBOOK.md.",
                 "reason": "archive_outdated",
             },
         ) from exc

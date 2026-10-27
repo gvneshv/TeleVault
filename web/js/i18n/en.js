@@ -382,7 +382,7 @@ export const en = {
     "Stop the archiver (and any backfill) first - it is using this Telegram session.",
   "error.telegramCodeExpired": "That code expired. Sending a new one.",
   "error.archiveOutdated":
-    "Your archive database needs updating before chats can be blocked. Ask whoever runs this TeleVault to apply the database update (alembic upgrade head).",
+    "Your archive database needs updating before chats can be blocked. Ask whoever runs this TeleVault to apply the database update (python scripts/migrate_archives.py).",
   "error.blocklistFull":
     "The blocked-chats list is full. Unblock a chat first.",
   "error.chatNotFound": "That chat isn't in your archive.",
