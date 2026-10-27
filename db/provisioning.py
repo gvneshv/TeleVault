@@ -25,8 +25,11 @@ from pathlib import Path
 import psycopg.errors
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.pool import NullPool
 
 import db
 
@@ -121,6 +124,38 @@ def _migrate_database(db_name: str) -> None:
             del os.environ["TELEVAULT_ALEMBIC_URL_OVERRIDE"]
 
     logger.info("Migrated archive database %r to head.", db_name)
+
+
+def migrate_archive_database(db_name: str) -> None:
+    """
+    Bring an EXISTING archive database up to the current schema (the same migration chain provisioning runs for a new one).
+
+    For archives that were created before a release that added a migration: nothing applies those automatically, see RUNBOOK.md ("Updating existing archives").
+    Public wrapper so scripts/migrate_archives.py does not reach into this module's private helpers.
+    Safe to repeat - only unapplied migrations run.
+    """
+    _migrate_database(db_name)
+
+
+def head_revision() -> str:
+    """The newest archive-schema revision in alembic/versions/ - what a fully migrated archive is at."""
+    head = ScriptDirectory.from_config(Config(str(_ALEMBIC_INI_PATH))).get_current_head()
+    assert head is not None, "alembic/versions/ has no revisions"
+    return head
+
+
+def archive_revision(db_name: str) -> str | None:
+    """
+    The schema revision the archive database `db_name` is currently at, or None if it has never been migrated at all (no alembic_version row).
+    Read-only.
+    Raises whatever the connection raises (e.g. OperationalError if the database does not exist) - the caller decides how to report it.
+    """
+    engine = create_engine(db.server_database_url(db_name), poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            return MigrationContext.configure(conn).get_current_revision()
+    finally:
+        engine.dispose()
 
 
 def provision_archive_database(user_id: int) -> str:
