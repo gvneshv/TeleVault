@@ -36,9 +36,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - API: `GET /api/ingest/blocklist`, `PUT` and `DELETE /api/ingest/blocklist/{chat_id}` (both idempotent). Only chats the archive already knows can be blocked (404 `chat_not_found`),
   so the client never sends free text. Bounded: the chat id must fit 64 bits (422 otherwise, not a database overflow error), at most 2000 rules per account (409 `blocklist_full`).
   Both limits live in `utils/validation.py`. Each account sees and changes only its own list; being the admin changes nothing.
-- **Existing archives need one migration.** `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head` for each archive (revision `0e528a688c4c`; RUNBOOK.md,
-  "Updating existing archives"). Nothing applies it automatically. Until it is applied nothing breaks: the workers treat the missing table as "no rules" (they log one warning) and
+- **Existing archives need one migration** (revision `0e528a688c4c`): run `python scripts/migrate_archives.py` once (`--dry-run` first to only see which archives are out of date;
+  RUNBOOK.md, "Updating existing archives"). Nothing applies it automatically. Until it is applied nothing breaks: the workers treat the missing table as "no rules" (they log one warning) and
   archive as before, and the blocklist endpoints answer 409 `archive_outdated`, which the Settings card shows in plain words. Archives created from now on already have it.
+- **`scripts/migrate_archives.py`** migrates every archive in one go. The manual `alembic -x url=...` needed a password nobody has: archives have no password of their own, they all
+  share the app's role from `CONTROL_DATABASE_URL`, which the script reads from `.env`. It prints no URL or password, is safe to repeat and to run while the app runs, keeps going
+  past an archive that fails (exit status 1), and has a `--dry-run`. Supporting pieces: `control_db.queries.list_archive_databases()` (reads no secrets) and
+  `db.provisioning.migrate_archive_database()` / `head_revision()` / `archive_revision()`.
 - The API gained its second archive write path, `get_archive_write_connection()` (the first is `cancel_backfill`). Routes that only read keep the read-only connection, and a test pins
   which routes use which, so a read route cannot quietly gain write access.
 - New error reasons, translated in both languages: `archive_outdated`, `blocklist_full`, `chat_not_found`. Web shell cache v40.

@@ -59,14 +59,16 @@ A new release can add a migration to the archive schema (`alembic/versions/`). *
 After pulling an update, run it once per archive:
 
 ```bash
-# which archives exist (the control database knows them):
-docker compose exec postgres psql -U televault -d televault_control -c "SELECT id, username, archive_db_ref FROM users WHERE archive_db_ref IS NOT NULL;"
-
-# then, for each one:
-alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head
+python scripts/migrate_archives.py --dry-run   # only report which archives are out of date
+python scripts/migrate_archives.py             # migrate them
 ```
 
-Quote the URL if the password contains special characters. The step is safe to repeat: only unapplied migrations run.
+Run it from the repo root with the virtualenv active and the same `.env` as the API server. There is **no per-archive password to look up**: every archive lives on the same Postgres
+server and is reached with the role from `CONTROL_DATABASE_URL`; the script reads that, asks the control database which archives exist, and migrates each. It prints no URL or password.
+It is safe to repeat and to run while the app is running (only unapplied migrations run, and so far they only add tables). If one archive fails (say its database was removed by hand)
+it says which and carries on; the exit status is then 1.
+
+Advanced fallback, for a single archive: `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head`, with USER and PASS taken from `CONTROL_DATABASE_URL`.
 Until an archive is migrated nothing breaks - the code that needs a new table treats its absence as "nothing configured yet" - but the matching feature is unavailable
 (for the ingest blocklist, Settings -> Chats not archived says the archive needs updating, and the archiver logs one warning).
 

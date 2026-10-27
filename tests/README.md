@@ -37,6 +37,7 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `integration/test_startup_guard.py` | the first-admin startup guard |
 | `integration/test_ingest_blocklist_db.py` | the ingest blocklist's table and migration (incl. downgrade round trip), queries, how a rule follows a group's upgrade to a supergroup, and an archive that has not been migrated yet |
 | `integration/test_backfill_blocklist.py` | the real `backfill.run()` on a real archive with a fake Telegram: blocked chats are never fetched or stored, also when named explicitly |
+| `integration/test_migrate_archives.py` | `scripts/migrate_archives.py`: dry run, migrate and repeat, one broken archive does not stop the rest, no URL or password in output |
 | `unit/test_ingest_filter.py` | the blocklist's failure policy: unreadable rules mean "skip", never "archive" |
 | `api/test_ingest_blocklist.py` | block / unblock API: idempotency, limits and cap, per-account isolation, the read-only/write connection split, an unmigrated archive |
 | `api/test_auth_flow.py` | register / login / throttling / refresh rotation and reuse detection / logout |
