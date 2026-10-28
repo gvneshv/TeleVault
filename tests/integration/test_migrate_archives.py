@@ -25,7 +25,7 @@ def add_account(control_conn, username: str, archive: str | None) -> int:
 
 def make_old_archive(user_id: int) -> str:
     """A real archive taken back to the revision before the blocklist - what every archive created before that release looks like."""
-    name = provisioning.provision_archive_database(user_id)
+    name = provisioning.provision_archive_database(user_id).db_name
     engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
     with engine.begin() as conn:
         conn.execute(sa.text("DROP TABLE ingest_blocked_chats"))
@@ -55,7 +55,7 @@ def test_with_no_archives_there_is_nothing_to_do(accounts, capsys):
 
 
 def test_an_archive_that_is_already_current_is_left_alone(accounts, capsys):
-    name = provisioning.provision_archive_database(900_020)
+    name = provisioning.provision_archive_database(900_020).db_name
     add_account(accounts, "alice", name)
     assert migrate_archives.main([]) == 0
     out = capsys.readouterr().out
@@ -108,10 +108,10 @@ def test_the_report_never_contains_a_connection_url_or_credentials(accounts, cap
 
 
 def test_listing_archives_loads_no_secrets(accounts):
-    name = provisioning.provision_archive_database(900_025)
+    name = provisioning.provision_archive_database(900_025).db_name
     add_account(accounts, "alice", name)
     rows = cq.list_archive_databases(accounts)
-    assert [set(r) for r in rows] == [{"id", "username", "archive_db_ref"}]
+    assert [set(r) for r in rows] == [{"id", "username", "archive_db_ref", "archive_db_user"}]
     assert rows[0]["archive_db_ref"] == name
 
 

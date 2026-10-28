@@ -249,7 +249,7 @@ def cmd_delete_admin(user_id: int | None, username: str | None) -> None:
         except ValueError as exc:
             sys.exit(str(exc))
         if archive_db_ref is not None:
-            drop_archive_database(archive_db_ref)
+            drop_archive_database(archive_db_ref, role=user.get("archive_db_user"))  # `user` was read before the row was deleted
 
         print(f"'{user['username']}' (id={user['id']}) and everything belonging to it has been deleted.")
     finally:
@@ -266,6 +266,8 @@ def cmd_set_archive(user_id: int | None, username: str | None, db_name: str) -> 
             print(f"This OVERWRITES the existing value: '{user['archive_db_ref']}'.")
         print("This only records the reference - it does NOT create or migrate the database.")
         print(f"Make sure '{db_name}' already exists and has had `alembic upgrade head` run against it.")
+        print("Any database login stored for the previous archive is cleared; the new one is reached with the server's own login until you run")
+        print("`python scripts/secure_archives.py`, which gives it a login of its own.")
         if not _confirm("Proceed?"):
             print("Cancelled. Nothing was written.")
             return

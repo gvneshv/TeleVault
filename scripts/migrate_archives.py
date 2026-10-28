@@ -5,10 +5,11 @@ Why this exists
     Each account's archive is its own Postgres database, created (and migrated) when the account set it up. A later release can add a migration to the archive schema
     (alembic/versions/), but nothing applies it to archives that already exist - only a newly created archive gets the whole chain.
     Running `alembic -x url=...` by hand for each one works in principle, but needs a connection URL with a password, and there is no per-account password to look up:
-    EVERY archive lives on the same Postgres server and is reached with the same role as the control database (db/connection.py builds each archive's URL from
-    CONTROL_DATABASE_URL and swaps in the database name). This script does exactly that - it reads CONTROL_DATABASE_URL from your .env like the rest of the app,
-    asks the control database which archives exist, and migrates each one. Nothing to look up, nothing to type, and no password ever appears on a command line
-    (where `ps` and shell history would show it) or in this script's output.
+    Every archive lives on the same Postgres server, and the password for it is stored (encrypted) in the control database, not anywhere you would have to look it up:
+    an archive that has its own role (everything created after per-archive logins, and anything scripts/secure_archives.py has processed) is migrated as that role;
+    an older one is reached with the server's login from CONTROL_DATABASE_URL, as before.
+    This script reads CONTROL_DATABASE_URL and FERNET_KEY from your .env like the rest of the app, asks the control database which archives exist, and migrates each one.
+    Nothing to look up, nothing to type, and no password ever appears on a command line (where `ps` and shell history would show it) or in this script's output.
 
 Usage (from the repo root, with the same .env the API server uses; the virtualenv active):
     python scripts/migrate_archives.py --dry-run     # only report which archives are out of date
@@ -34,6 +35,7 @@ import db
 from config import settings
 from control_db import queries as cq
 from db import provisioning
+from utils.archive_login import archive_login_from_row
 
 
 def _describe_failure(exc: Exception) -> str:
@@ -71,14 +73,16 @@ def migrate_all(dry_run: bool) -> int:
         for archive in archives:
             label = f"{archive['username']} (account {archive['id']}, database {archive['archive_db_ref']})"
             try:
-                current = provisioning.archive_revision(archive["archive_db_ref"])
+                with control_db.get_connection() as conn:
+                    login = archive_login_from_row(cq.get_archive_login_row(conn, archive["id"]) or {})  # None = not secured yet: the server's login
+                current = provisioning.archive_revision(archive["archive_db_ref"], login)
                 if current == head:
                     print(f"  ok       {label}: already up to date")
                 elif dry_run:
                     outdated += 1
                     print(f"  OUTDATED {label}: at {current or 'no revision'}, newest is {head}")
                 else:
-                    provisioning.migrate_archive_database(archive["archive_db_ref"])
+                    provisioning.migrate_archive_database(archive["archive_db_ref"], login)
                     migrated += 1
                     print(f"  migrated {label}: {current or 'no revision'} -> {head}")
             except Exception as exc:  # noqa: BLE001 - one broken archive must not stop the rest
