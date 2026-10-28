@@ -9,6 +9,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security - every archive has its own Postgres login
+Until now all archives were reached with the one login in `CONTROL_DATABASE_URL`, so Postgres could not stop a connection meant for one account from opening another's archive - only the
+application's care kept them apart. The isolation tests showed the application itself never mixes them up (each request resolves the caller's own archive from their account row), but
+nothing below the application enforced it. Now:
+- **Provisioning creates a role per archive** (`db/provisioning.py`): named like the database, `LOGIN` only (no superuser, `CREATEDB`, `CREATEROLE`, replication), the owner of its one
+  database, with a random password. `CONNECT` is revoked from `PUBLIC` on the archive **and on the control database** (password hashes, Telegram sessions), so no archive role can open anything but its own archive.
+  The password is stored Fernet-encrypted in new columns `users.archive_db_user` / `users.archive_db_password` (control migration `c4a1f7d29b58`), never logged, never in a response, never on a command line;
+  the one statement that carries it runs on the raw psycopg connection because SQLAlchemy would copy it into an exception message.
+- The connection layer takes the login (`db.ArchiveLogin`, password hidden from `repr`): the API (`api/dependencies.py`, health, backfill cancel) and both workers (`utils/account.py`) open
+  each archive as its own role. Pools are per (database, role). **An unusable stored login is a 503 / a worker that refuses to start - never a quiet fall-back to the server login.**
+- **Existing archives**: `python scripts/secure_archives.py` (`--dry-run` first) gives each one a role, hands it the tables, proves the login works and only then stores it; `--repair` replaces a stored
+  login that no longer works (e.g. a lost `FERNET_KEY`). Until it is run they keep working with the server login. Restart the workers afterwards. `scripts/migrate_archives.py` migrates each archive as its own role.
+- Deleting an account drops its role with its database. `set-archive` (manual attach) clears any stored login. The server login now needs `CREATEROLE` as well as `CREATEDB` (tested with a non-superuser that has exactly those).
+- Tests: a role cannot connect to another archive or the control database and has no extra power; securing an existing archive keeps its data and lets the role migrate and write (trigger functions included);
+  requests and workers authenticate as the right role; a broken login fails closed; the script's dry run / repeat / failure handling; least-privileged server login. Each safeguard was broken on purpose once to see a test catch it.
+- `provision_archive_database()` now returns a `ProvisionedArchive(db_name, login)` instead of the bare name. See RUNBOOK.md, "Who can open an archive".
+
 ### Added - ingestion-time chat blocklist ("Chats not archived")
 
 - **Settings -> Chats not archived** lists the chats TeleVault must not archive and lets you add or remove one. A chat on the list gets no new messages and no edits stored.

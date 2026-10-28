@@ -145,11 +145,12 @@ In the web UI open **Settings -> Telegram setup**:
 2. **Enter your phone number** - Telegram sends a login code to your Telegram app.
 3. **Enter the code** (and your two-step-verification password, if you have one).
 4. **Create archive database** - provisions your own Postgres database and applies the schema. This needs the
-   Postgres role behind `CONTROL_DATABASE_URL` to have `CREATEDB` (the Docker setup already does; a deliberately
+   Postgres role behind `CONTROL_DATABASE_URL` to have `CREATEDB` and `CREATEROLE` (the Docker setup already does; a deliberately
    least-privileged production role may not - you then get a clear `provisioning_permission_denied` error. Either
-   grant it with `ALTER ROLE <role> CREATEDB;`, or create and migrate a database yourself with
-   `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head` and point your account at it with
-   `python scripts/manage_admin.py set-archive --username youruser --db-name DBNAME`).
+   grant it with `ALTER ROLE <role> CREATEDB CREATEROLE;` - each archive gets its own Postgres login, so the role needs `CREATEROLE` too -
+   or create and migrate a database yourself with
+   `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head`, point your account at it with
+   `python scripts/manage_admin.py set-archive --username youruser --db-name DBNAME` and run `python scripts/secure_archives.py`).
 
 The same steps exist as plain API calls (`POST /api/telegram/credentials`, `/telegram/link/send-code`,
 `/telegram/link/confirm`, `POST /api/archive/provision`) if you'd rather script them.

@@ -37,9 +37,9 @@ a dump together with the key and the DB credentials lets someone act as your Tel
 | Database | Name | Created by | Migrated by |
 |---|---|---|---|
 | Control (accounts, invites, refresh tokens, audit log, encrypted Telegram credentials) | `televault_control` (from `CONTROL_DATABASE_URL`) | you / your Postgres setup | `alembic -c alembic_control.ini upgrade head` (re-run after every update; only unapplied migrations run) |
-| One archive per account | `televault_archive_<user_id>` | the web UI's "Create archive database" (`POST /api/archive/provision`, `db/provisioning.py`) | the same step runs `alembic upgrade head` against it |
+| One archive per account | `televault_archive_<user_id>` (plus a Postgres role of the same name that alone can open it) | the web UI's "Create archive database" (`POST /api/archive/provision`, `db/provisioning.py`) | the same step runs `alembic upgrade head` against it |
 
-The Postgres role behind `CONTROL_DATABASE_URL` needs `CREATEDB` for provisioning (the Docker one has it).
+The Postgres role behind `CONTROL_DATABASE_URL` needs `CREATEDB` and `CREATEROLE` for provisioning (the Docker one is a superuser and has both).
 The Docker image creates only `televault_control` (`POSTGRES_DB`). A volume created by an older compose file also contains an unused empty `televault` database; remove it with
 `docker compose exec postgres psql -U televault -d televault_control -c "DROP DATABASE televault;"` (it cannot be dropped while connected to it, hence `-d televault_control`), or ignore it.
 Changing `POSTGRES_DB` has no effect on an existing volume - the image only reads it when it first initialises an empty one.
@@ -49,9 +49,36 @@ Manual archive, if provisioning isn't possible:
 ```bash
 alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head
 python scripts/manage_admin.py set-archive --username youruser --db-name DBNAME
+python scripts/secure_archives.py     # gives it its own login (see "Who can open an archive" below)
 ```
 
 `alembic current` (with the matching `-c` / `-x`) shows what is applied.
+
+### Who can open an archive
+
+Every archive has its **own Postgres role** (named like the database, e.g. `televault_archive_3`): it owns that one database, has no other privilege, and Postgres refuses every
+other role a connection to it (`CONNECT` is revoked from `PUBLIC`; the same is done once for the control database, which holds password hashes and Telegram sessions).
+So if the application ever picked the wrong database, or one account's password leaked, Postgres itself would say "permission denied" instead of handing over someone else's messages.
+The role's password is random, shown to nobody, and kept **Fernet-encrypted in the control database** (`users.archive_db_password`), like the Telegram sessions - so **back up `FERNET_KEY`**
+as well. If it is ever lost, the stored passwords cannot be read and the archives show as unavailable; `python scripts/secure_archives.py --repair` then resets every unusable login
+(it needs the server login, which can reset any role, and never touches the data).
+The login in `CONTROL_DATABASE_URL` stays all-powerful: it is the server's own login (needed to create archives, run `migrate_archives.py` for older archives and manage the control database).
+
+Archives created **before** this feature have no role yet and keep working with that server login. Give them one, once:
+
+```bash
+python scripts/secure_archives.py --dry-run   # which archives are not secured yet (changes nothing)
+python scripts/secure_archives.py             # secure them: create the role, hand it the tables, prove it works, then store the password
+```
+
+Run it from the repo root with the virtualenv active and the same `.env` as the API server (needs `CONTROL_DATABASE_URL` and `FERNET_KEY`). The data is not touched - only who owns it.
+It is safe to repeat, never prints a password, and carries on past an archive that fails (exit status 1). **Restart the archiver and backfill workers afterwards** so they pick up the
+new logins (the API server needs nothing). Deleting an account drops its role together with its database. An archive whose stored login stops working is reported as unavailable -
+the app never silently falls back to the server login.
+
+Two caveats. Postgres's own log records the `CREATE ROLE ... PASSWORD` statement if `log_statement` is `ddl` or `all`; keep it at the default (`none`) on a production server.
+And a non-superuser server login only closes the control database to the archive roles if it owns that database; otherwise have its owner run
+`REVOKE CONNECT ON DATABASE <control> FROM PUBLIC;` once.
 
 ### Updating existing archives
 
@@ -63,12 +90,14 @@ python scripts/migrate_archives.py --dry-run   # only report which archives are 
 python scripts/migrate_archives.py             # migrate them
 ```
 
-Run it from the repo root with the virtualenv active and the same `.env` as the API server. There is **no per-archive password to look up**: every archive lives on the same Postgres
-server and is reached with the role from `CONTROL_DATABASE_URL`; the script reads that, asks the control database which archives exist, and migrates each. It prints no URL or password.
+Run it from the repo root with the virtualenv active and the same `.env` as the API server. There is **no password to look up or type**: the script reads `CONTROL_DATABASE_URL` and
+`FERNET_KEY`, asks the control database which archives exist, and migrates each as that archive's own role (an archive not yet secured, see above, is reached with the server login).
+It prints no URL or password.
 It is safe to repeat and to run while the app is running (only unapplied migrations run, and so far they only add tables). If one archive fails (say its database was removed by hand)
 it says which and carries on; the exit status is then 1.
 
-Advanced fallback, for a single archive: `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head`, with USER and PASS taken from `CONTROL_DATABASE_URL`.
+Advanced fallback, for a single archive: `alembic -x url=postgresql+psycopg://USER:PASS@HOST:5432/DBNAME upgrade head`, with USER and PASS taken from `CONTROL_DATABASE_URL`
+(the server login works on every archive, secured or not, as long as it is a superuser).
 Until an archive is migrated nothing breaks - the code that needs a new table treats its absence as "nothing configured yet" - but the matching feature is unavailable
 (for the ingest blocklist, Settings -> Chats not archived says the archive needs updating, and the archiver logs one warning).
 
