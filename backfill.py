@@ -259,7 +259,7 @@ async def run(
     # Schema application is `alembic upgrade head`, run when the archive was provisioned (db/provisioning.py) - not called here (see db/schema.py's module docstring for why).
     # This assumes migrations have already been applied.
     db.init_server(settings.control_database_url)
-    db.init_db(db.server_database_url(account.archive_db_name).render_as_string(hide_password=False))
+    db.init_db(db.server_database_url(account.archive_db_name, account.archive_login).render_as_string(hide_password=False))
 
     # init_db() only builds the Engine - it doesn't open a connection (see db/connection.py's docstring).
     # Without this check, an unreachable Postgres (e.g. Docker not running) would only surface once the loop

@@ -27,6 +27,7 @@ from sqlalchemy.exc import OperationalError
 
 import control_db
 import db
+from utils.archive_login import ArchiveLoginError, archive_login_from_row
 
 logger = logging.getLogger(__name__)
 from utils.security import DecodedAccessToken, decode_access_token
@@ -93,9 +94,28 @@ def get_current_user(token: str = Depends(_oauth2_scheme)) -> DecodedAccessToken
         ) from exc
 
 
-def _archive_ref_or_409(current: DecodedAccessToken, control_conn: Connection) -> str:
+def archive_target_for_user(user: dict) -> tuple[str, db.ArchiveLogin | None]:
     """
-    The calling account's archive database name (users.archive_db_ref), or HTTPException 409 "archive_unattached" if it has none yet.
+    (archive database name, that archive's own login) from a control-DB users row whose archive_db_ref is set.
+    The login is None for an archive that has not been given its own Postgres role yet (it is then reached with the server's login) - see db/connection.py.
+    If a stored login cannot be decrypted this raises HTTPException 503 "archive_unavailable" rather than falling back to the server's login:
+    quietly using the all-powerful login is exactly what per-archive roles exist to prevent.
+    Shared by every API route that opens an archive, so they all pick the database and the login from the same row in the same way.
+    """
+    try:
+        login = archive_login_from_row(user)
+    except ArchiveLoginError as exc:
+        logger.error("Archive %r (user_id=%s): %s", user["archive_db_ref"], user["id"], exc)
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Your archive database is currently unavailable.", "reason": "archive_unavailable"},
+        ) from exc
+    return user["archive_db_ref"], login
+
+
+def _archive_target_or_409(current: DecodedAccessToken, control_conn: Connection) -> tuple[str, db.ArchiveLogin | None]:
+    """
+    The calling account's archive (database name from users.archive_db_ref, plus its own login), or HTTPException 409 "archive_unattached" if it has none yet.
     Shared by get_archive_connection() and get_archive_write_connection() so both gate on exactly the same thing, with exactly the same wording.
     """
     user = control_db.queries.get_user_by_id(control_conn, current["user_id"])
@@ -107,7 +127,7 @@ def _archive_ref_or_409(current: DecodedAccessToken, control_conn: Connection) -
                 "reason": "archive_unattached",
             },
         )
-    return user["archive_db_ref"]
+    return archive_target_for_user(user)
 
 
 def _archive_connect_error(exc: OperationalError, archive_db_ref: str, user_id: int) -> HTTPException:
@@ -168,9 +188,9 @@ def get_archive_connection(
     mention internal hostnames/ports, and mean nothing to an end user;
     the real exception is logged server-side instead, for whoever's actually debugging it.
     """
-    archive_db_ref = _archive_ref_or_409(current, control_conn)
+    archive_db_ref, login = _archive_target_or_409(current, control_conn)
 
-    cm = db.get_tenant_readonly_connection(archive_db_ref)
+    cm = db.get_tenant_readonly_connection(archive_db_ref, login)
     try:
         conn = cm.__enter__()
     except OperationalError as exc:
@@ -195,10 +215,10 @@ def get_archive_write_connection(
     so a bug there still cannot modify archived data (see this module's docstring).
     The caller commits its own changes; whatever is uncommitted when the request ends is discarded when the connection is closed.
     """
-    archive_db_ref = _archive_ref_or_409(current, control_conn)
+    archive_db_ref, login = _archive_target_or_409(current, control_conn)
 
     try:
-        conn = db.get_tenant_connection(archive_db_ref)
+        conn = db.get_tenant_connection(archive_db_ref, login)
     except OperationalError as exc:
         raise _archive_connect_error(exc, archive_db_ref, current["user_id"]) from exc
 

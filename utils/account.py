@@ -17,10 +17,12 @@ Requires the same FERNET_KEY the API server used to encrypt the values; a differ
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import control_db
+import db
 from config import settings
+from utils.archive_login import ArchiveLoginError, archive_login_from_row
 from utils.crypto import decrypt_secret
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,8 @@ class AccountContext:
     api_hash: str            # secret - never log
     session_string: str      # secret - never log, never put on a command line
     archive_db_name: str     # the account's own archive database (users.archive_db_ref)
+    archive_login: db.ArchiveLogin | None = field(default=None, repr=False)  # that archive's own Postgres role (secret password, hence repr=False);
+                                                                             # None = the server's login (archive not secured yet)
 
 
 def load_account_context(user_id: int) -> AccountContext:
@@ -98,6 +102,11 @@ def load_account_context(user_id: int) -> AccountContext:
         ) from exc
 
     assert api_hash is not None and session_string is not None  # decrypt_secret() only returns None for a None input, ruled out above
+    try:
+        archive_login = archive_login_from_row(user)
+    except ArchiveLoginError as exc:
+        # NOT a fall-back to the server's login: that would silently undo the per-archive isolation (utils/archive_login.py).
+        raise AccountContextError(str(exc), "archive_login_unreadable") from exc
     return AccountContext(
         user_id=user["id"],
         username=user["username"],
@@ -105,4 +114,5 @@ def load_account_context(user_id: int) -> AccountContext:
         api_hash=api_hash,
         session_string=session_string,
         archive_db_name=user["archive_db_ref"],
+        archive_login=archive_login,
     )

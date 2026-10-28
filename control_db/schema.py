@@ -82,6 +82,13 @@ users = Table(
     Column("telegram_api_hash", Text),
     Column("telegram_session_string", Text),
     Column("archive_db_ref", Text),
+    # The archive database's OWN Postgres login (see db/provisioning.py): the role name,
+    # and its password encrypted with utils/crypto.py's Fernet key like the telegram_* columns.
+    # Both NULL for an archive that predates per-archive roles (it is then reached with the server's own login until scripts/secure_archives.py gives it one)
+    # and for a manual set-archive.
+    # Always written together, and always cleared when archive_db_ref changes - a login for the OLD database must never be tried against a new one.
+    Column("archive_db_user", Text),
+    Column("archive_db_password", Text),
     # Consent record: when this account ticked "I agree to the Terms of Service and acknowledge the Privacy Policy" at registration,
     # and which version of those documents was current (api/routes/auth.py's CURRENT_TERMS_VERSION).
     # NULL for accounts that predate the checkbox and for admins created from the shell - see the migration's docstring.

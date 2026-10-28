@@ -62,7 +62,7 @@ class TestSchema:
 
         from db.provisioning import provision_archive_database
 
-        name = provision_archive_database(900_010)
+        name = provision_archive_database(900_010).db_name
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         cfg.attributes["configure_logger"] = False
         os.environ["TELEVAULT_ALEMBIC_URL_OVERRIDE"] = db.server_database_url(name).render_as_string(hide_password=False)
@@ -184,7 +184,7 @@ def unmigrated(server_ready):
     """A real archive with the blocklist table dropped again - what every archive created before this feature looks like."""
     from db.provisioning import provision_archive_database
 
-    name = provision_archive_database(900_011)
+    name = provision_archive_database(900_011).db_name
     eng = sa.create_engine(db.server_database_url(name), poolclass=sa.pool.NullPool)
     with eng.begin() as conn:
         conn.execute(sa.text("DROP TABLE ingest_blocked_chats"))

@@ -42,6 +42,7 @@ import control_db
 import db
 
 from api.dependencies import (
+    archive_target_for_user,
     get_archive_connection,
     get_control_db,
     get_current_user,
@@ -186,9 +187,9 @@ def cancel_backfill(
     run_id = status.get("run_id")
     if run_id is not None:
         user = control_db.queries.get_user_by_id(control_conn, user_id)
-        archive_db_ref = user["archive_db_ref"] if user else None
-        if archive_db_ref is not None:
-            with db.get_tenant_connection(archive_db_ref) as conn:
+        if user is not None and user["archive_db_ref"] is not None:
+            archive_db_ref, login = archive_target_for_user(user)
+            with db.get_tenant_connection(archive_db_ref, login) as conn:
                 conn.execute(
                     sql_text(
                         "UPDATE backfill_runs SET finished_at = CURRENT_TIMESTAMP, status = 'cancelled', "

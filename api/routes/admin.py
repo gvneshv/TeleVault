@@ -163,7 +163,7 @@ def delete_user(
         # a failure here leaves an orphaned-but-harmless database behind, not an inconsistent account,
         # and is logged rather than turned into a 5xx for an operation the caller would otherwise have every reason to believe already succeeded.
         try:
-            drop_archive_database(archive_db_ref)
+            drop_archive_database(archive_db_ref, role=target.get("archive_db_user"))  # the role, read from the row fetched BEFORE it was deleted
         except Exception:
             logger.exception("Deleted user %r (id=%s) but failed to drop archive database %r - orphaned, needs manual cleanup.", target["username"], user_id, archive_db_ref)
 

@@ -23,7 +23,14 @@ import db
 logger = logging.getLogger(__name__)
 
 
-def drop_archive_database(db_name: str) -> None:
+def _safe_role(role: str) -> str:
+    """The role name goes into DDL as an identifier; only ever accept the shape provisioning generates (see db.provisioning._SAFE_NAME)."""
+    from db.provisioning import _require_safe_name
+
+    return _require_safe_name(role)
+
+
+def drop_archive_database(db_name: str, role: str | None = None) -> None:
     """
     Permanently and irreversibly DROP a user's archive database, tolerating it already being gone (DROP DATABASE IF EXISTS -
     the same "a retry after an earlier partial failure looks like this" tolerance db.provisioning._create_database_if_missing() already applies to CREATE DATABASE,
@@ -41,6 +48,11 @@ def drop_archive_database(db_name: str) -> None:
     Runs in AUTOCOMMIT, on its own dedicated connection - same requirement, same reason, as db.provisioning._create_database_if_missing():
     DROP DATABASE cannot run inside a transaction block at all.
 
+    `role` (users.archive_db_user) is the archive's own Postgres role,
+    dropped AFTER the database (a role that still owns a database cannot be dropped) - also tolerating it being gone already.
+    Pass None for an archive that never had one;
+    the role is never guessed from the database name, so a manually attached database can never cause an unrelated role to be dropped.
+
     Raises whatever the underlying exception actually is for anything other than "already doesn't exist"
     (e.g. ObjectInUse, if some other, truly external connection is somehow still attached) - same "propagate,
     don't guess at a recovery" posture as every other unhandled database error in this codebase.
@@ -50,5 +62,8 @@ def drop_archive_database(db_name: str) -> None:
     try:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
         logger.info("Dropped archive database %r.", db_name)
+        if role is not None:
+            conn.execute(text(f'DROP ROLE IF EXISTS "{_safe_role(role)}"'))
+            logger.info("Dropped archive role %r.", role)
     finally:
         conn.close()

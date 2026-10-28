@@ -24,6 +24,7 @@ from db.connection import (
     close_tenant_engines,
     dispose_tenant_engine,
     init_server,
+    ArchiveLogin,
     server_database_url,
     get_server_connection,
     close_server,
@@ -46,4 +47,4 @@ from .read_queries import (
 )
 
 
-__all__ = ["init_db", "close_db", "check_connection", "get_connection", "get_engine", "get_readonly_connection", "get_tenant_readonly_connection", "close_tenant_engines", "dispose_tenant_engine", "init_server", "server_database_url", "get_server_connection", "close_server", "get_tenant_connection", "is_missing_database_error", "is_undefined_table_error", "queries", "get_chats", "get_chat", "get_chat_options", "get_blocked_chats", "get_messages", "get_chat_messages", "get_message_detail", "get_stats", "get_message_count", "get_backfill_history"]
+__all__ = ["ArchiveLogin", "init_db", "close_db", "check_connection", "get_connection", "get_engine", "get_readonly_connection", "get_tenant_readonly_connection", "close_tenant_engines", "dispose_tenant_engine", "init_server", "server_database_url", "get_server_connection", "close_server", "get_tenant_connection", "is_missing_database_error", "is_undefined_table_error", "queries", "get_chats", "get_chat", "get_chat_options", "get_blocked_chats", "get_messages", "get_chat_messages", "get_message_detail", "get_stats", "get_message_count", "get_backfill_history"]

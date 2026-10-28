@@ -582,6 +582,11 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 - Ingestion-time chat allowlist (the blocklist half shipped, see "Unreleased"): archive *only*
   chosen chats. Needs a way to see chats that are not archived yet, which means storing
   metadata about chats the person chose not to keep - undecided
+- Chat view: a Telegram-like page for one chat showing every archived message, deleted ones
+  (marked) and edited ones included; clicking an edited message expands its edit history with the
+  date of each version. Layout idea (not final): a second, narrow (resizable) panel listing chats
+  next to the conversation, with the main navigation collapsed to icons (icons not chosen yet).
+  The "Block this chat" button lives in this view's header. Needs a design pass first
 - Storage mode: `all` (default) vs `deletions_only`
 - Display name overrides: map a friendly label to a sender ID
 - Username change tracking (`username_history` table)

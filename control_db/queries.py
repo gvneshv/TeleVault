@@ -73,15 +73,32 @@ def list_users(conn: Connection) -> list[dict[str, Any]]:
 
 def list_archive_databases(conn: Connection) -> list[dict[str, Any]]:
     """
-    {id, username, archive_db_ref} for every account that has an archive database, oldest account first.
+    {id, username, archive_db_ref, archive_db_user} for every account that has an archive database, oldest account first.
+    `archive_db_user` is the archive's own Postgres role name, or None for an archive that has not been secured yet (see set_archive_db_login()).
 
-    Used by scripts/migrate_archives.py, which needs to visit every archive and nothing else about the accounts.
-    Deliberately selects only those three columns - unlike list_users() above, no password hash or Telegram credential is ever loaded into the caller's memory.
+    Used by the maintenance scripts (scripts/migrate_archives.py, scripts/secure_archives.py), which need to visit every archive and nothing else.
+    Deliberately selects only those columns - unlike list_users() above, no password hash, Telegram credential or archive password is ever loaded into the caller's memory.
     """
     rows = conn.execute(
-        sql_text("SELECT id, username, archive_db_ref FROM users WHERE archive_db_ref IS NOT NULL ORDER BY created_at ASC, id ASC")
+        sql_text(
+            "SELECT id, username, archive_db_ref, archive_db_user FROM users WHERE archive_db_ref IS NOT NULL ORDER BY created_at ASC, id ASC"
+        )
     ).mappings().all()
     return [dict(row) for row in rows]
+
+
+def get_archive_login_row(conn: Connection, user_id: int) -> dict[str, Any] | None:
+    """
+    {archive_db_ref, archive_db_user, archive_db_password} for one account (the password is still ENCRYPTED - decrypt it with utils/archive_login.py),
+    or None if there is no such account.
+    Exactly the columns needed to open that account's archive and nothing else,
+    so a maintenance script that loops over every archive never holds anyone's password hash or Telegram session.
+    """
+    row = conn.execute(
+        sql_text("SELECT archive_db_ref, archive_db_user, archive_db_password FROM users WHERE id = :user_id"),
+        {"user_id": user_id},
+    ).mappings().first()
+    return dict(row) if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -740,10 +757,22 @@ def delete_user_completely(conn: Connection, user_id: int, actor_id: int) -> str
         raise
 
 
-def set_archive_db_ref(conn: Connection, user_id: int, archive_db_ref: str) -> bool:
+def set_archive_db_ref(
+    conn: Connection,
+    user_id: int,
+    archive_db_ref: str,
+    archive_db_user: str | None = None,
+    archive_db_password_encrypted: str | None = None,
+) -> bool:
     """
-    Set a user's archive_db_ref directly.
+    Set a user's archive_db_ref directly, together with that archive's own login (both None = "reach it with the server's login").
     Returns False if no such user exists, True on success.
+
+    The login columns are ALWAYS written along with the reference, never left as they were:
+    pointing the account at a different database while the old database's role is still stored would make every connection try the wrong credentials.
+    One UPDATE, so the three values can never disagree.
+    The password must already be encrypted by the caller (utils/crypto.py) - this module never touches Fernet, see the module docstring.
+    Passing a user without the matching password (or the reverse) is a caller bug and raises ValueError before anything is written.
 
     Called from scripts/manage_admin.py's `set-archive` subcommand
     (the manual path - still useful as a fallback when automatic provisioning can't run, e.g. db/provisioning.py's ArchiveProvisioningError)
@@ -757,10 +786,20 @@ def set_archive_db_ref(conn: Connection, user_id: int, archive_db_ref: str) -> b
     Deliberately touches ONLY archive_db_ref - never password_hash, never is_admin, never the telegram_* credential columns,
     for the same reason promote_user_to_admin() above stays narrow: one function should do exactly the one thing its name says.
     """
+    if (archive_db_user is None) != (archive_db_password_encrypted is None):
+        raise ValueError("archive_db_user and archive_db_password_encrypted must be given together or not at all.")
     try:
         result = conn.execute(
-            sql_text("UPDATE users SET archive_db_ref = :archive_db_ref WHERE id = :user_id"),
-            {"user_id": user_id, "archive_db_ref": archive_db_ref},
+            sql_text(
+                "UPDATE users SET archive_db_ref = :archive_db_ref, archive_db_user = :archive_db_user, archive_db_password = :archive_db_password "
+                "WHERE id = :user_id"
+            ),
+            {
+                "user_id": user_id,
+                "archive_db_ref": archive_db_ref,
+                "archive_db_user": archive_db_user,
+                "archive_db_password": archive_db_password_encrypted,
+            },
         )
         if result.rowcount == 0:
             conn.rollback()
@@ -776,6 +815,32 @@ def set_archive_db_ref(conn: Connection, user_id: int, archive_db_ref: str) -> b
 # ---------------------------------------------------------------------------
 # telegram credentials / session (self-service, via api/routes/telegram.py)
 # ---------------------------------------------------------------------------
+
+def set_archive_db_login(conn: Connection, user_id: int, archive_db_user: str, archive_db_password_encrypted: str) -> bool:
+    """
+    Record (or replace) the archive's own Postgres login for an account whose archive_db_ref is already set -
+    what scripts/secure_archives.py does for an archive that was created before per-archive roles existed.
+    Touches ONLY the two login columns.
+    Returns False if the account does not exist or has no archive_db_ref (a login without a database it belongs to is meaningless, so nothing is written then).
+    The password must already be encrypted by the caller (utils/crypto.py).
+    """
+    try:
+        result = conn.execute(
+            sql_text(
+                "UPDATE users SET archive_db_user = :u, archive_db_password = :p WHERE id = :user_id AND archive_db_ref IS NOT NULL"
+            ),
+            {"user_id": user_id, "u": archive_db_user, "p": archive_db_password_encrypted},
+        )
+        if result.rowcount == 0:
+            conn.rollback()
+            return False
+        _insert_audit_log(conn, event_type="archive_db_login_set", user_id=user_id)
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
 
 def set_telegram_credentials(conn: Connection, user_id: int, encrypted_api_id: str, encrypted_api_hash: str) -> bool:
     """

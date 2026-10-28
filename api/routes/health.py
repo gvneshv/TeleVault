@@ -20,13 +20,13 @@ What this checks vs. what it doesn't:
     ✗ Whether the userbot is currently connected to Telegram (that requires IPC - a Phase 3 addition, see CHANGELOG)
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import OperationalError
 
 import control_db
 import db
-from api.dependencies import get_control_db, get_current_user
+from api.dependencies import archive_target_for_user, get_control_db, get_current_user
 from api.schemas import HealthOut
 from utils.security import DecodedAccessToken
 
@@ -71,9 +71,12 @@ def health_check(
         archive_status = "unattached"
     else:
         try:
-            with db.get_tenant_readonly_connection(archive_ref) as tenant_conn:
+            _, login = archive_target_for_user(user)  # type: ignore[arg-type]  # user is not None here: archive_ref came from it
+            with db.get_tenant_readonly_connection(archive_ref, login) as tenant_conn:
                 message_count = db.get_message_count(tenant_conn)
             archive_status = "ok"
+        except HTTPException:  # the stored login cannot be used (archive_target_for_user logged why) - a display state here, not an error page
+            archive_status = "unavailable"
         except OperationalError as exc:
             if db.is_missing_database_error(exc):
                 archive_status = "misconfigured"

@@ -20,6 +20,7 @@ import control_db
 from api.dependencies import get_control_db, get_current_user
 from api.schemas import ArchiveProvisionOut
 from db.provisioning import ArchiveProvisioningError, provision_archive_database
+from utils.archive_login import encrypt_archive_password
 from utils.security import DecodedAccessToken
 
 router = APIRouter(prefix="/archive", tags=["archive"])
@@ -47,9 +48,18 @@ def provision(
         )
 
     try:
-        db_name = provision_archive_database(current["user_id"])
+        provisioned = provision_archive_database(current["user_id"])
     except ArchiveProvisioningError as exc:
         raise HTTPException(status_code=503, detail={"message": str(exc), "reason": exc.reason}) from exc
 
-    control_db.queries.set_archive_db_ref(control_conn, current["user_id"], db_name)
-    return ArchiveProvisionOut(archive_db_ref=db_name)
+    # The database, its own role and that role's (encrypted) password are saved in ONE statement:
+    # an account can never end up pointing at a database whose login was not stored.
+    # The password is not part of the response or any log line - it exists only in this process's memory and, encrypted, in the control DB.
+    control_db.queries.set_archive_db_ref(
+        control_conn,
+        current["user_id"],
+        provisioned.db_name,
+        provisioned.login.role,
+        encrypt_archive_password(provisioned.login.password),
+    )
+    return ArchiveProvisionOut(archive_db_ref=provisioned.db_name)

@@ -29,7 +29,9 @@ class TestProvisioning:
         from db.provisioning import provision_archive_database
 
         first = provision_archive_database(900_003)
-        assert provision_archive_database(900_003) == first
+        second = provision_archive_database(900_003)
+        assert second.db_name == first.db_name
+        assert second.login.role == first.login.role  # the retry reuses the role and gives it a fresh password - the caller stores the latest login
 
 
 class TestWriteQueries:

@@ -149,6 +149,21 @@ def _list_run_databases() -> list[str]:
     return [r[0] for r in rows]
 
 
+def _drop_run_roles() -> None:
+    """
+    DROP the per-archive roles this run's provisioning created (roles live in the whole server, not in a database, so dropping the databases leaves them behind).
+    Same safety net as _drop_database(): only names carrying this run's own prefix, which a real role (`televault`, `televault_archive_<id>`) can never have.
+    Must run AFTER the databases are dropped - a role that still owns one cannot be dropped.
+    """
+    eng = _server_engine()
+    with eng.connect() as conn:
+        names = [r[0] for r in conn.execute(sa.text("SELECT rolname FROM pg_roles WHERE rolname LIKE :p"), {"p": f"{TEST_DB_PREFIX}{RUN_ID}%"})]
+        for name in names:
+            assert name.startswith(f"{TEST_DB_PREFIX}{RUN_ID}")
+            conn.execute(sa.text(f'DROP ROLE IF EXISTS "{name}"'))
+    eng.dispose()
+
+
 @pytest.fixture(scope="session")
 def control_database():
     """Create this run's control database, migrate it with the real Alembic chain, and drop everything created during the run at the end."""
@@ -172,6 +187,7 @@ def control_database():
                 pass
         for name in _list_run_databases():
             _drop_database(name)
+        _drop_run_roles()
 
 
 @pytest.fixture
@@ -275,7 +291,7 @@ def _shared_archive_name(control_database):
     original = provisioning._tenant_database_name
     provisioning._tenant_database_name = archive_db_name  # session scope cannot use the function-scoped monkeypatch fixture
     try:
-        return provisioning.provision_archive_database(900_001)
+        return provisioning.provision_archive_database(900_001).db_name
     finally:
         provisioning._tenant_database_name = original
 

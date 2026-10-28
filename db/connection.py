@@ -44,6 +44,7 @@ Foreign keys and journal mode - not applicable here:
 
 import logging
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
@@ -215,17 +216,43 @@ def get_readonly_connection() -> Generator[Connection, None, None]:
 #
 # Each user's own archive lives in its own Postgres DATABASE, named by that user's control_db.schema.users.archive_db_ref -
 # see api/dependencies.py's get_archive_connection() for the full reasoning.
-# Everything below assumes every archive database lives on the SAME Postgres server/credentials as the control database
-# (same host, port, username, password - only the database name differs).
-# If archive databases ever need their own separate credentials or a different server, this assumption is the first thing to revisit.
+# Every archive database lives on the SAME Postgres server (same host and port) as the control database.
 #
-# The "server URL" is simply the control database's URL: it is only ever used as a template (host/port/credentials),
-# with the database name swapped for the one wanted - see server_database_url().
+# Who may open an archive:
+#   - Each archive has its OWN Postgres role (login), created at provisioning time (db/provisioning.py).
+#     The role owns that one database, and CONNECT on the database is revoked from PUBLIC, so that role - and nobody else but a superuser - can open it.
+#     A bug (or a stolen password) that confuses one account's connection with another's is then refused by Postgres itself,
+#     instead of silently reading the wrong person's messages.
+#     Callers pass the role's credentials as an ArchiveLogin.
+#   - Archives created BEFORE per-archive roles existed have no login of their own (login=None everywhere below):
+#     they are reached with the server's own login, i.e. the one in CONTROL_DATABASE_URL, exactly as before.
+#     scripts/secure_archives.py gives them one.
+#
+# The "server URL" is the control database's URL: it is the template for host/port (and the fallback credentials),
+# with the database name - and, for a secured archive, the user and password - swapped in: see server_database_url().
 # ---------------------------------------------------------------------------
 
 _server_url: Optional[URL] = None
 _server_engine: Optional[Engine] = None
-_tenant_engines: dict[str, Engine] = {}
+# Keyed by (database name, role name or None): the same database reached with a different login is a different pool -
+# after scripts/secure_archives.py switches an archive to its own role,
+# a long-running API process must not keep serving it from a pool that still authenticates as the shared login.
+_tenant_engines: dict[tuple[str, str | None], Engine] = {}
+
+
+@dataclass(frozen=True)
+class ArchiveLogin:
+    """
+    The Postgres login for ONE archive database: the role created for it (db/provisioning.py) and that role's password.
+
+    The password is a secret.
+    repr=False keeps it out of every log line, traceback and assertion message that happens to print this object,
+    and SQLAlchemy's URL.__str__ masks it as well -
+    never turn it into a string yourself except via server_database_url(...).render_as_string(hide_password=False) at the moment of connecting.
+    """
+
+    role: str
+    password: str = field(repr=False)
 
 
 def init_server(server_url: str) -> None:
@@ -246,15 +273,20 @@ def _require_server_url() -> URL:
     return _server_url
 
 
-def server_database_url(db_name: str) -> URL:
+def server_database_url(db_name: str, login: ArchiveLogin | None = None) -> URL:
     """
-    The connection URL for the database named `db_name` on the configured server (same host/credentials, different database).
+    The connection URL for the database named `db_name` on the configured server (same host, different database).
+    With `login`, the URL authenticates as that archive's own role; without it, as the server's own login (CONTROL_DATABASE_URL's user) -
+    right for archives that predate per-archive roles, and for the provisioning/maintenance code that is allowed to do anything.
 
     Returns a URL OBJECT. To hand it to init_db() or alembic, render it with `.render_as_string(hide_password=False)` -
     str(url) masks the password as "***", which silently breaks authentication
     (the same trap db/provisioning.py's _migrate_database() documents from experience).
     """
-    return _require_server_url().set(database=db_name)
+    url = _require_server_url().set(database=db_name)
+    if login is not None:
+        url = url.set(username=login.role, password=login.password)
+    return url
 
 
 def get_server_connection() -> Connection:
@@ -281,28 +313,30 @@ def close_server() -> None:
         _server_engine = None
 
 
-def get_tenant_engine(db_name: str) -> Engine:
+def get_tenant_engine(db_name: str, login: ArchiveLogin | None = None) -> Engine:
     """
     Return a (cached) Engine for the archive database named `db_name`, on the configured server - see this section's header comment.
+    `login` is that archive's own role (None = the server's login, for archives not yet secured); each (database, role) pair has its own pool.
 
     Builds and caches a new Engine the first time `db_name` is seen, reusing it on every later call -
     opening a fresh Engine (and its own connection pool) per request would be wasteful
     and would defeat pooling entirely for a name that's requested repeatedly (which every archive view does, once per page load).
     """
-    if db_name in _tenant_engines:
-        return _tenant_engines[db_name]
+    key = (db_name, login.role if login else None)
+    if key in _tenant_engines:
+        return _tenant_engines[key]
 
-    logger.info("Creating tenant database engine for %r", db_name)
+    logger.info("Creating tenant database engine for %r (%s)", db_name, f"role {login.role!r}" if login else "server login")
     engine = create_engine(
-        server_database_url(db_name),
+        server_database_url(db_name, login),
         pool_pre_ping=True,
         connect_args=_CONNECT_ARGS,
     )
-    _tenant_engines[db_name] = engine
+    _tenant_engines[key] = engine
     return engine
 
 
-def get_tenant_connection(db_name: str) -> Connection:
+def get_tenant_connection(db_name: str, login: ArchiveLogin | None = None) -> Connection:
     """
     A READ-WRITE connection to the archive database `db_name`.
     Caller owns it and must close it (or use `with`).
@@ -311,16 +345,16 @@ def get_tenant_connection(db_name: str) -> Connection:
     (api/routes/backfill.py's cancel_backfill() - see its comment for why the API has to do it rather than the killed worker).
     Everything else the API does to an archive is a read and goes through get_tenant_readonly_connection() below.
     """
-    return get_tenant_engine(db_name).connect()
+    return get_tenant_engine(db_name, login).connect()
 
 
 @contextmanager
-def get_tenant_readonly_connection(db_name: str) -> Generator[Connection, None, None]:
+def get_tenant_readonly_connection(db_name: str, login: ArchiveLogin | None = None) -> Generator[Connection, None, None]:
     """
     Same contract as get_readonly_connection() above, but against the archive database named `db_name` instead of this process's own (the API server has none).
     See api/dependencies.py's get_archive_connection() for the one caller of this today.
     """
-    conn = get_tenant_engine(db_name).connect()
+    conn = get_tenant_engine(db_name, login).connect()
     conn.execute(text("SET default_transaction_read_only = on"))
     conn.commit()
     try:
@@ -336,7 +370,7 @@ def close_tenant_engines() -> None:
     """Dispose every cached tenant engine's pool. Called alongside close_db() on shutdown (see api/server.py's lifespan)
     so no pooled connection is left open on exit."""
     global _tenant_engines
-    for db_name, engine in _tenant_engines.items():
+    for (db_name, _role), engine in _tenant_engines.items():
         engine.dispose()
         logger.info("Tenant database engine for %r disposed.", db_name)
     _tenant_engines = {}
@@ -351,9 +385,8 @@ def dispose_tenant_engine(db_name: str) -> None:
     dropping a database this process is still pooling connections to would otherwise fail (Postgres refuses to DROP DATABASE while it has active connections),
     so that function calls this first to release exactly the one pool that could be holding one open - never every OTHER user's live tenant connection along with it.
     """
-    engine = _tenant_engines.pop(db_name, None)
-    if engine is not None:
-        engine.dispose()
+    for key in [k for k in _tenant_engines if k[0] == db_name]:  # one pool per login that was ever used for this database
+        _tenant_engines.pop(key).dispose()
         logger.info("Tenant database engine for %r disposed (single-tenant).", db_name)
 
 
