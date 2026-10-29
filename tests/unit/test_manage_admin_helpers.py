@@ -1,11 +1,17 @@
 """scripts/manage_admin.py - argument handling and prompts (the parts that need no database)."""
 
 import sys
+from typing import cast
 from unittest import mock
+
+from sqlalchemy.engine import Connection
 
 import pytest
 
 import scripts.manage_admin as ma
+
+# _find_user() only forwards the connection to the (mocked) queries, so these tests need none; the cast keeps the type checker honest about that.
+NO_CONNECTION = cast(Connection, None)
 
 
 class TestFindUser:
@@ -18,36 +24,36 @@ class TestFindUser:
 
     def test_id_takes_precedence_and_uses_the_id_lookup(self, cq):
         by_id, by_name = cq
-        assert ma._find_user(None, 1, None)["username"] == "alice"
+        assert ma._find_user(NO_CONNECTION, 1, None)["username"] == "alice"
         by_id.assert_called_once()
         by_name.assert_not_called()
 
     def test_username_lookup(self, cq):
         by_id, by_name = cq
-        assert ma._find_user(None, None, "bob")["id"] == 2
+        assert ma._find_user(NO_CONNECTION, None, "bob")["id"] == 2
         by_id.assert_not_called()
 
     def test_unknown_user_exits_with_a_clear_message(self, cq):
         cq[0].return_value = None
         with pytest.raises(SystemExit) as exc:
-            ma._find_user(None, 99, None)
+            ma._find_user(NO_CONNECTION, 99, None)
         assert "No user found with id=99" in str(exc.value)
 
     def test_unknown_username_message_names_the_username(self, cq):
         cq[1].return_value = None
         with pytest.raises(SystemExit) as exc:
-            ma._find_user(None, None, "ghost")
+            ma._find_user(NO_CONNECTION, None, "ghost")
         assert "username='ghost'" in str(exc.value)
 
     def test_neither_id_nor_username_exits_instead_of_guessing(self, cq):
         with pytest.raises(SystemExit) as exc:
-            ma._find_user(None, None, None)
+            ma._find_user(NO_CONNECTION, None, None)
         assert "--id or --username" in str(exc.value)
         cq[0].assert_not_called()
         cq[1].assert_not_called()
 
     def test_id_zero_is_a_real_id_not_falsy(self, cq):
-        ma._find_user(None, 0, None)
+        ma._find_user(NO_CONNECTION, 0, None)
         cq[0].assert_called_once()
 
 

@@ -14,6 +14,7 @@ def test_round_trip():
 def test_ciphertext_does_not_contain_the_plaintext():
     secret = "super-secret-session-string"
     token = encrypt_secret(secret)
+    assert token is not None
     assert secret not in token and token != secret
 
 
@@ -45,6 +46,7 @@ def test_wrong_key_raises_rather_than_returning_garbage(monkeypatch):
 
 def test_tampered_ciphertext_raises():
     token = encrypt_secret("value")
+    assert token is not None
     tampered = token[:-4] + ("AAAA" if not token.endswith("AAAA") else "BBBB")
     with pytest.raises(InvalidToken):
         decrypt_secret(tampered)

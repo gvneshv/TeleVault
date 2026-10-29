@@ -7,6 +7,7 @@ import pytest
 
 import api.server as server
 import control_db
+import control_db.connection  # the submodule itself: `control_db` only re-exports a few names, and the pool check below reads get_engine()
 from config import settings
 from control_db import queries as cq
 

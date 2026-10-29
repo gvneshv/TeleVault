@@ -44,6 +44,7 @@ def alice(client):
 class TestProvisioningStoresTheLogin:
     def test_the_account_records_the_role_and_an_encrypted_password(self, client, alice):
         row = control_scalar("SELECT archive_db_user || '|' || archive_db_password FROM users WHERE id = :i", i=alice["id"])
+        assert row is not None
         role, stored = row.split("|", 1)
         assert role == alice["ref"]  # role and database share a name
         assert stored.startswith("gAAAA")  # a Fernet token, not a password
@@ -58,7 +59,9 @@ class TestProvisioningStoresTheLogin:
         from db import provisioning
         from utils.archive_login import archive_login_from_row
 
-        login = archive_login_from_row(cq.get_archive_login_row(control_conn, alice["id"]))
+        row = cq.get_archive_login_row(control_conn, alice["id"])
+        assert row is not None
+        login = archive_login_from_row(row)
         assert login is not None
         provisioning.verify_archive_login(alice["ref"], login)
 
@@ -139,7 +142,8 @@ class TestControlQueries:
     def test_a_user_without_a_password_is_refused(self, client, alice, control_conn):
         with pytest.raises(ValueError):
             cq.set_archive_db_ref(control_conn, alice["id"], "x", archive_db_user="r")
-        assert cq.get_archive_login_row(control_conn, alice["id"])["archive_db_ref"] == alice["ref"]  # nothing was written
+        row = cq.get_archive_login_row(control_conn, alice["id"])
+        assert row is not None and row["archive_db_ref"] == alice["ref"]  # nothing was written
 
     def test_a_login_cannot_be_set_for_an_account_with_no_archive(self, client, control_conn):
         admin = make_admin(client)

@@ -11,7 +11,17 @@ from sqlalchemy.engine import make_url
 
 REPO = Path(__file__).resolve().parents[2]
 COMPOSE = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
-DEFAULT_CONTROL_DB = make_url(re.search(r'"(postgresql\+psycopg://[^"]+)"', (REPO / "config.py").read_text(encoding="utf-8")).group(1)).database
+
+
+def _default_control_url():
+    """The default CONTROL_DATABASE_URL written in config.py, parsed.
+    Fails with a clear message if config.py stops spelling one out."""
+    match = re.search(r'"(postgresql\+psycopg://[^"]+)"', (REPO / "config.py").read_text(encoding="utf-8"))
+    assert match is not None, "config.py no longer contains a default postgresql+psycopg:// URL"
+    return make_url(match.group(1))
+
+
+DEFAULT_CONTROL_DB = _default_control_url().database
 
 
 def _compose_value(key: str) -> str:
@@ -30,7 +40,7 @@ def test_the_healthcheck_probes_that_same_database():
 
 
 def test_the_user_matches_the_default_connection_url():
-    assert _compose_value("POSTGRES_USER") == make_url(re.search(r'"(postgresql\+psycopg://[^"]+)"', (REPO / "config.py").read_text(encoding="utf-8")).group(1)).username
+    assert _compose_value("POSTGRES_USER") == _default_control_url().username
 
 
 def test_no_init_script_creates_another_database():

@@ -83,6 +83,7 @@ class TestProvisionedArchiveLogin:
         """The control database holds password hashes and Telegram sessions."""
         a, _ = two
         control_name = sa.make_url(settings.control_database_url).database
+        assert control_name is not None
         with pytest.raises(OperationalError, match="permission denied|CONNECT"):
             connect_as(control_name, a.login).connect()
 
@@ -242,7 +243,9 @@ class TestSecureArchivesScript:
         login = self.login_of(accounts, uid)
         assert login is not None
         provisioning.verify_archive_login(name, login)
-        stored = cq.get_archive_login_row(accounts, uid)["archive_db_password"]
+        row = cq.get_archive_login_row(accounts, uid)
+        assert row is not None
+        stored = row["archive_db_password"]
         assert stored != login.password and stored.startswith("gAAAA")  # a Fernet token, not the plaintext
         out = capsys.readouterr().out
         assert "secured" in out and login.password not in out and stored not in out

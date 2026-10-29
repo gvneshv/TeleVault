@@ -126,10 +126,17 @@ class TestDeletionInference:
         assert q.flag_deleted(archive.conn, tg_message_id=999, chat_id=10) is False
 
 
+def message_detail(conn, message_id: int) -> dict:
+    """rq.get_message_detail() that fails the test with a clear message (and satisfies the type checker) when the message is missing."""
+    detail = rq.get_message_detail(conn, message_id)
+    assert detail is not None, f"message {message_id} not found"
+    return detail
+
+
 class TestEdits:
     def test_edit_keeps_the_previous_text(self, archive):
         seed_chat(archive.conn, 1, "c", messages=[(1, None, "first draft")], edited={1: "second draft"})
-        detail = rq.get_message_detail(archive.conn, 1)
+        detail = message_detail(archive.conn, 1)
         assert detail["text"] == "second draft" and detail["is_edited"] is True
         assert [(e["old_text"], e["new_text"]) for e in detail["edits"]] == [("first draft", "second draft")]
 
@@ -137,12 +144,12 @@ class TestEdits:
         seed_chat(archive.conn, 1, "c", messages=[(1, None, "v1")])
         q.record_edit(archive.conn, 1, 1, "v2")
         q.record_edit(archive.conn, 1, 1, "v3")
-        assert [e["new_text"] for e in rq.get_message_detail(archive.conn, 1)["edits"]] == ["v2", "v3"]
+        assert [e["new_text"] for e in message_detail(archive.conn, 1)["edits"]] == ["v2", "v3"]
 
     def test_an_unchanged_text_is_not_logged_as_an_edit(self, archive):
         seed_chat(archive.conn, 1, "c", messages=[(1, None, "same")])
         assert q.record_edit(archive.conn, 1, 1, "same") is True
-        assert rq.get_message_detail(archive.conn, 1)["edits"] == []
+        assert message_detail(archive.conn, 1)["edits"] == []
 
     def test_editing_an_unknown_message_returns_false(self, archive):
         q.upsert_chat(archive.conn, chat_id=1, name="c", chat_type="private")
@@ -270,7 +277,7 @@ class TestReadQueries:
 
     def test_message_detail_includes_the_deletion_record(self, populated):
         mid = scalar(populated, "SELECT id FROM messages WHERE text = '100% sure'")
-        detail = rq.get_message_detail(populated, mid)
+        detail = message_detail(populated, mid)
         assert detail["deletion"]["text_snapshot"] == "100% sure" and detail["is_deleted"] is True
 
     def test_message_detail_unknown_returns_none(self, populated):

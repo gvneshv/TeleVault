@@ -25,7 +25,9 @@ def world(client, control_engine):
     resp = client.post("/api/telegram/credentials", headers=auth(token), json={"api_id": API_ID, "api_hash": API_HASH})
     assert resp.status_code == 200, resp.text
     with control_engine.connect() as conn:
-        cq.set_telegram_session(conn, user_id, encrypt_secret(SESSION))
+        encrypted = encrypt_secret(SESSION)
+        assert encrypted is not None
+        cq.set_telegram_session(conn, user_id, encrypted)
     return {"admin": admin, "token": token, "user_id": user_id, "engine": control_engine}
 
 

@@ -215,10 +215,18 @@ def test_an_attempt_past_its_time_limit_expires(client, account, monkeypatch):
     assert user_id not in route._pending_links
 
 
+def pending_task(user_id: int) -> asyncio.Task:
+    """The background task of this user's pending QR login (only a QR login has one - a code handshake is not a _PendingQrLink)."""
+    link = route._pending_links[user_id]
+    assert isinstance(link, route._PendingQrLink)
+    assert link.task is not None, "the QR wait loop should have been started"
+    return link.task
+
+
 def test_cancel_stops_the_task_and_drops_the_client(client, account):
     token, user_id = account
     start(client, token)
-    task = route._pending_links[user_id].task
+    task = pending_task(user_id)
     assert client.delete("/api/telegram/qr", headers=auth(token)).status_code == 200
     assert user_id not in route._pending_links and FakeClient.instances[-1].disconnected
     deadline = time.monotonic() + 2
@@ -241,10 +249,10 @@ def test_a_failing_wait_reports_error_and_cleans_up(client, account, caplog):
 def test_starting_again_replaces_and_cancels_the_previous_attempt(client, account):
     token, user_id = account
     start(client, token)
-    old_task = route._pending_links[user_id].task
+    old_task = pending_task(user_id)
     start(client, token)
     assert len(FakeClient.instances) == 2 and FakeClient.instances[0].disconnected
-    assert route._pending_links[user_id].task is not old_task
+    assert pending_task(user_id) is not old_task
     deadline = time.monotonic() + 2
     while not old_task.done() and time.monotonic() < deadline:
         time.sleep(0.01)

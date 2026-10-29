@@ -1,6 +1,7 @@
 """utils/security.py - password hashing and JWT issue/verify."""
 
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -80,7 +81,7 @@ class TestAccessTokens:
             decode_access_token(refresh)
 
     def test_unsigned_alg_none_token_is_rejected(self):
-        token = jwt.encode(_claims("access", is_admin=True), key=None, algorithm="none")
+        token = jwt.encode(_claims("access", is_admin=True), key=cast(Any, None), algorithm="none")  # the "none" algorithm takes no key; the stubs do not say so
         with pytest.raises(jwt.InvalidTokenError):
             decode_access_token(token)
 
