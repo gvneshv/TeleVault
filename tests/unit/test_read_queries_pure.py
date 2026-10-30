@@ -61,7 +61,7 @@ class TestShapeMessageRow:
     ROW = {
         "id": 7, "tg_message_id": 70, "chat_id": -100, "chat_name": "Team", "chat_type": "supergroup",
         "sender_id": 5, "sender_username": "bob", "sender_first_name": "Bob", "sender_last_name": None,
-        "text": "hi", "date": "D", "archived_at": "A", "is_edited": False, "edited_at": None, "is_deleted": True, "deleted_at": "X",
+        "text": "hi", "date": "D", "archived_at": "A", "is_edited": False, "edited_at": None, "edit_count": 3, "is_deleted": True, "deleted_at": "X",
     }
 
     def test_nests_sender_and_chat(self):
@@ -69,6 +69,7 @@ class TestShapeMessageRow:
         assert shaped["sender"] == {"sender_id": 5, "username": "bob", "first_name": "Bob", "last_name": None, "display_name": None}
         assert shaped["chat"] == {"chat_id": -100, "name": "Team", "chat_type": "supergroup"}
         assert shaped["is_deleted"] is True and shaped["id"] == 7
+        assert shaped["edit_count"] == 3
 
     def test_no_sender_gives_none(self):
         row = dict(self.ROW, sender_id=None)

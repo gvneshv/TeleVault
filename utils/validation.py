@@ -62,6 +62,17 @@ TELEGRAM_CHAT_ID_MAX = 2**63 - 1
 # (a very large account is in a few thousand chats at most); it exists so that "no upper bound" is never true of a write endpoint.
 INGEST_BLOCKLIST_MAX_COUNT = 2000
 
+# --- Chat view (api/routes/chats.py) ----------------------------------------------------------------------------------
+
+# How many messages one window of a conversation may hold (GET /api/chats/{chat_id}/window).
+# Same ceiling as the page size of the older list endpoints: a window is rendered into the DOM in one go, so it must stay small enough for a phone.
+CHAT_WINDOW_DEFAULT = 50
+CHAT_WINDOW_MAX = 200
+# Internal message ids (messages.id, a BIGINT identity column starting at 1) used as cursors and anchors.
+# Bounded for the same reason as the chat ids above: a value outside the column's range would make Postgres raise an overflow error, and that must be a 422.
+MESSAGE_ID_MIN = 1
+MESSAGE_ID_MAX = 2**63 - 1
+
 # --- Search ------------------------------------------------------------------------------------------------------------
 
 SEARCH_QUERY_MAX_LENGTH = 200  # message-text substring search; the pg_trgm scan cost grows with the pattern

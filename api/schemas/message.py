@@ -7,6 +7,7 @@ Model hierarchy:
     DeletionOut         - deletion record with inference metadata
     MessageOut          - one row in a paginated message list
     MessageDetail       - full message with edit history + deletion record, returned by GET /api/messages/{id}
+    ChatWindowOut       - one window of a conversation (oldest first) with has_older/has_newer, returned by GET /api/chats/{id}/window
 """
 
 from typing import Literal
@@ -129,6 +130,11 @@ class MessageOut(BaseModel):
     archived_at: datetime | None = Field(..., description="ISO 8601 timestamp when the app first stored this message")
     is_edited: bool = False
     edited_at: datetime | None = None
+    edit_count: int = Field(
+        0,
+        description="How many times the message was edited while archived (rows in its edit history). "
+        "Lists use it for an 'Edited N times' label; the history itself is GET /api/messages/{id}.",
+    )
     is_deleted: bool = False
     deleted_at: datetime | None = None
 
@@ -148,3 +154,19 @@ class MessageDetail(MessageOut):
         description="Full edit history, ordered oldest -> newest.",
     )
     deletion: DeletionOut | None = Field(None, description="Deletion record. None if the message has not been deleted")
+
+
+class ChatWindowOut(BaseModel):
+    """
+    One window of a single chat's conversation, returned by GET /api/chats/{chat_id}/window.
+
+    `items` are ordered OLDEST FIRST - the order a conversation is drawn in - whichever direction the client was scrolling.
+    `has_older` / `has_newer` say whether more messages exist beyond the first / last row,
+    so the client knows when to stop asking (`before=<id of items[0]>` for older, `after=<id of items[-1]>` for newer).
+    `anchor_id` is the message the window was built around (for `around` / `around_date`), so the view can scroll to and highlight it; null otherwise.
+    """
+
+    items: list[MessageOut]
+    has_older: bool
+    has_newer: bool
+    anchor_id: int | None = Field(None, description="Internal id of the message the window is centred on, if it was requested around one.")

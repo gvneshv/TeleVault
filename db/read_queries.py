@@ -17,7 +17,8 @@ returned as Python datetime objects
 """
 
 import re
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import Connection
@@ -96,6 +97,7 @@ def _shape_message_row(row: dict[str, Any], has_chat_columns: bool) -> dict[str,
         "edited_at": row["edited_at"],
         "is_deleted": row["is_deleted"],
         "deleted_at": row["deleted_at"],
+        "edit_count": row["edit_count"],
     }
 
 
@@ -182,13 +184,13 @@ def get_chats(
     and surfacing empty chats first on an asc sort would be more confusing than helpful. (NULLS LAST works identically in Postgres and SQLite here.)
 
     Columns returned:
-        chat_id, name, username, chat_type, first_seen, message_count, deleted_count, last_message_at, last_message_preview
+        chat_id, name, username, chat_type, first_seen, message_count, deleted_count, edited_count, last_message_at, last_message_preview
     """
     direction = "ASC" if order == "asc" else "DESC"
     sql = f"""
         SELECT
             chat_id, name, username, chat_type, first_seen,
-            message_count, deleted_count, last_message_at, last_message_preview
+            message_count, deleted_count, edited_count, last_message_at, last_message_preview
         FROM chats
         ORDER BY last_message_at {direction} NULLS LAST
     """
@@ -238,7 +240,7 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
     sql = """
         SELECT
             chat_id, name, username, chat_type, first_seen,
-            message_count, deleted_count, last_message_at, last_message_preview
+            message_count, deleted_count, edited_count, last_message_at, last_message_preview
         FROM chats
         WHERE chat_id = :chat_id
     """
@@ -271,6 +273,9 @@ def _base_message_select() -> str:
             m.edited_at,
             m.is_deleted,
             m.deleted_at,
+            -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
+            -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
+            (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
             -- sender fields prefixed to avoid collision with message columns
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
@@ -337,6 +342,9 @@ def get_messages(
             m.edited_at,
             m.is_deleted,
             m.deleted_at,
+            -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
+            -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
+            (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
             s.first_name   AS sender_first_name,
@@ -455,6 +463,149 @@ def get_chat_messages(
     return result
 
 
+def _window_anchor(conn: Connection, chat_id: int, message_id: int) -> tuple[datetime, int] | None:
+    """
+    The (date, id) sort key of one message of THIS chat, or None.
+
+    The chat filter is part of the lookup on purpose: a message id belonging to another chat is "not found" here,
+    so a cursor can never be used to read, or even to probe the existence of, a message outside the chat the request names.
+    """
+    row = conn.execute(
+        sql_text("SELECT date, id FROM messages WHERE chat_id = :chat_id AND id = :message_id"),
+        {"chat_id": chat_id, "message_id": message_id},
+    ).first()
+    return (row[0], row[1]) if row else None
+
+
+def _window_side(
+    conn: Connection,
+    chat_id: int,
+    key: tuple[datetime, int] | None,
+    side: Literal["older", "newer"],
+    n: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Up to `n` messages of the chat strictly older (or newer) than `key`, returned oldest-first, plus whether even more exist beyond them.
+
+    `key=None` means "no bound on that side" (the newest page of a chat, where nothing is newer to exclude).
+
+    Keyset ("seek") pagination: the bound is the row value (date, id), compared as a PAIR.
+    The id is the tie-breaker that makes the order total - backfill stores whole bursts of messages with an identical timestamp,
+    and comparing the date alone would then skip or repeat rows at a page boundary.
+    Unlike OFFSET it also stays correct when rows appear or disappear between two requests, and costs the same at any depth.
+
+    One extra row is requested and thrown away: that is how "is there more?" is answered without a second COUNT query.
+    """
+    select = _base_message_select()
+    where = "WHERE m.chat_id = :chat_id"
+    params: dict[str, Any] = {"chat_id": chat_id, "fetch": n + 1}
+    if key is not None:
+        op = "<" if side == "older" else ">"
+        where += f" AND (m.date, m.id) {op} (:key_date, :key_id)"
+        params["key_date"], params["key_id"] = key
+    direction = "DESC" if side == "older" else "ASC"
+    sql = f"{select} {where} ORDER BY m.date {direction}, m.id {direction} LIMIT :fetch"
+    rows = _rows_to_dicts(conn.execute(sql_text(sql), params))
+    has_more = len(rows) > n
+    rows = rows[:n]
+    if side == "older":
+        rows.reverse()  # fetched nearest-first (descending); the conversation reads oldest-first
+    return [_shape_message_row(r, has_chat_columns=False) for r in rows], has_more
+
+
+def get_chat_window(
+    conn: Connection,
+    chat_id: int,
+    *,
+    limit: int,
+    around: int | None = None,
+    around_date: datetime | None = None,
+    before: int | None = None,
+    after: int | None = None,
+) -> dict[str, Any] | None:
+    """
+    One chat's messages as a WINDOW of a conversation, oldest first - what the chat view renders - addressed by a message instead of a page number.
+
+    Used by GET /api/chats/{chat_id}/window. Page numbers do not fit a conversation: the view opens at the newest message or at a search hit,
+    and then grows in both directions, so the client needs "the rows just older than this one", not "page 7".
+    At most ONE anchor may be given:
+
+        none         the newest `limit` messages (the normal way to open a chat).
+        around       window containing that message (an internal message id), roughly half of it on each side.
+                     This is what opens a search hit or a deleted message in context.
+        around_date  like `around`, anchored on the first message at or after that moment;
+                     if the date is later than every message, on the chat's last one. (Jump-to-date.)
+        before       the `limit` messages just older than that message (scrolling up).
+        after        the `limit` messages just newer than that message (scrolling down).
+
+    Returns {"items", "has_older", "has_newer", "anchor_id"}, or None when `around`/`before`/`after` names a message that is not in THIS chat.
+    The client keeps asking `before=<id of its first row>` while has_older is true, and `after=<id of its last row>` while has_newer is true.
+    `anchor_id` is the message the window was built around (None without an anchor, or for an empty chat) so the view knows what to scroll to.
+
+    A window around a message near either end of the chat is shorter than `limit` on that side - the unused room is not given to the other side.
+    That keeps the rule simple (a window is exactly the neighbours on each side, never a different set depending on distance to the ends),
+    and the view fills the gap by asking for the older/newer rows anyway.
+
+    Filters (search text, edited/deleted only) are deliberately not part of this function yet;
+    they belong to later steps of the chat view and will be added as optional parameters that apply to all three reads below at once.
+    """
+    if sum(a is not None for a in (around, around_date, before, after)) > 1:
+        raise ValueError("get_chat_window() takes at most one of: around, around_date, before, after")
+
+    def window(items: list[dict[str, Any]], has_older: bool, has_newer: bool, anchor_id: int | None) -> dict[str, Any]:
+        return {"items": items, "has_older": has_older, "has_newer": has_newer, "anchor_id": anchor_id}
+
+    # Scrolling up / down from a message the client already has.
+    if before is not None or after is not None:
+        cursor = before if before is not None else after
+        assert cursor is not None
+        key = _window_anchor(conn, chat_id, cursor)
+        if key is None:
+            return None
+        if before is not None:
+            items, has_older = _window_side(conn, chat_id, key, "older", limit)
+            return window(items, has_older, True, None)  # the cursor message itself is newer
+        items, has_newer = _window_side(conn, chat_id, key, "newer", limit)
+        return window(items, True, has_newer, None)
+
+    # Anchored on a message, or on a moment in time.
+    anchor_id = around
+    if around_date is not None:
+        # "First message at or after the date", else the newest one before it.
+        # Two cheap index-ordered LIMIT 1 reads.
+        row = conn.execute(
+            sql_text("SELECT id FROM messages WHERE chat_id = :chat_id AND date >= :moment ORDER BY date, id LIMIT 1"),
+            {"chat_id": chat_id, "moment": around_date},
+        ).first() or conn.execute(
+            sql_text("SELECT id FROM messages WHERE chat_id = :chat_id ORDER BY date DESC, id DESC LIMIT 1"),
+            {"chat_id": chat_id},
+        ).first()
+        if row is None:
+            return window([], False, False, None)  # nothing archived in this chat at all
+        anchor_id = row[0]
+
+    if anchor_id is not None:
+        key = _window_anchor(conn, chat_id, anchor_id)
+        if key is None:
+            return None
+        anchor_rows = _rows_to_dicts(
+            conn.execute(
+                sql_text(f"{_base_message_select()} WHERE m.chat_id = :chat_id AND m.id = :message_id"),
+                {"chat_id": chat_id, "message_id": anchor_id},
+            )
+        )
+        older_n = limit // 2
+        newer_n = max(limit - 1 - older_n, 0)
+        older, has_older = _window_side(conn, chat_id, key, "older", older_n)
+        newer, has_newer = _window_side(conn, chat_id, key, "newer", newer_n)
+        anchor = [_shape_message_row(r, has_chat_columns=False) for r in anchor_rows]
+        return window(older + anchor + newer, has_older, has_newer, anchor_id)
+
+    # No anchor: the newest page.
+    items, has_older = _window_side(conn, chat_id, None, "older", limit)
+    return window(items, has_older, False, None)
+
+
 def get_message_detail(
     conn: Connection,
     message_id: int,
@@ -486,6 +637,9 @@ def get_message_detail(
             m.edited_at,
             m.is_deleted,
             m.deleted_at,
+            -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
+            -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
+            (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
             s.first_name   AS sender_first_name,
