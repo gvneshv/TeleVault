@@ -146,7 +146,10 @@ async def backfill_chat(
     - not distinguished further, since this is just a progress summary, not an audit log.
     """
     chat_type = get_chat_type(chat)
-    chat_name = getattr(chat, "title", None) or getattr(chat, "first_name", None)
+    # `or None` at the end matters: Telegram sends an EMPTY first name for a deleted account, and "" (unlike None) is a real value to upsert_chat(),
+    # which would overwrite the name the archive already knows.
+    # None means "could not resolve the name" and changes nothing.
+    chat_name = getattr(chat, "title", None) or getattr(chat, "first_name", None) or None
     chat_username = (getattr(chat, "username", None) or "").lstrip("@") or None
 
     # Detect a completed group->supergroup migration before archiving history, so any messages stored below go under the canonical (new) chat_id,
