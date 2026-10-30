@@ -107,6 +107,24 @@ Needs an invite: create one in the web UI (admin -> Invites), with `scripts/mana
 | Account with `archive_db_ref = NULL` | Same endpoints → **409** `"Your archive database hasn't been created yet..."` (reason `archive_unattached`) - **not** 403. The message must not mention linking Telegram (that is a separate step). |
 | `archive_db_ref` pointing at a database that doesn't actually exist | **503** `"...currently unavailable..."` |
 
+### C6b. Chat view backend (`/api/chats/{id}/window`, `DELETE /api/chats/{id}`)
+
+Needs a Bearer token of an account with an archive that holds a chat. Use `/docs` (Swagger) if curl is awkward.
+
+| Test | Expected outcome |
+|---|---|
+| `GET /api/chats/<id>/window?limit=5` | **200**, the 5 newest messages **oldest first**, `has_older: true`, `has_newer: false`, each row has `edit_count`. |
+| Take the first row's `id`, call again with `before=<that id>` | The 5 messages just before it, no overlap, no gap. Repeat until `has_older` is `false`. |
+| `...window?around=<id of any message>&limit=7` | That message in the middle, `anchor_id` = its id. |
+| `...window?around_date=2025-06-01` (a day inside your history) | Window around the first message on or after that day. |
+| `...window?around=1&before=2` | **422**, reason `too_many_anchors`. `limit=0` or `limit=500` → **422**. |
+| Window with a message id that belongs to ANOTHER chat | **404** `message_not_found`. |
+| `DELETE /api/chats/<id>` on a chat you can spare, archiver running | **200** with counts; the chat is gone from `/api/chats`, `/api/chats/options` and the Stats table. Messages from it no longer appear in the feed. |
+| Same chat, then someone writes to you again (or send yourself a message in that chat) | The chat reappears with only the new message. |
+| `DELETE` on a chat that is on "Chats not archived" | **200**, `block_rule_kept: true`; the Settings list still shows it. |
+| `DELETE` while a backfill is running | **409** `backfill_running`, nothing deleted. |
+| `DELETE` on an id that does not exist | **404** `chat_not_found`. |
+
 ### C7. Per-account workers - `telethon.py`/`backfill.py`
 
 | Test | Expected outcome |

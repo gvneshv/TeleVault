@@ -9,6 +9,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - chat view backend (step A) and "delete everything stored for a chat"
+First step of the chat view (the design is in `claude/chat-view-spec.md`); nothing in the web UI changes yet - these are the API pieces the new panel will stand on.
+- **`edit_count` on every message row** (feed, per-chat list, detail) and **`edited_count` on chats**, so a list can say "Edited 3 times" without one request per message. The per-message
+  count is a correlated count over `idx_message_edits_message_id`; a page is at most 200 rows. `edited_count` already existed as a trigger-maintained column - it is now simply exposed.
+- **`GET /api/chats/{chat_id}/window`** - one chat's conversation as a window addressed by message instead of page number: no anchor = the newest messages, `around=<message id>`,
+  `around_date=<ISO 8601>`, `before=<id>` (scroll up), `after=<id>` (scroll down). Rows come oldest-first with `has_older` / `has_newer` / `anchor_id`. It is keyset pagination on `(date, id)`:
+  the id breaks ties between messages with an identical timestamp (a backfill stores whole bursts of them), and unlike `OFFSET` it stays correct when rows appear between two requests.
+  At most one anchor (422 `too_many_anchors`), every number bounded (limit 1-200, ids 1..2^63-1, 422 not a Postgres overflow), a bad date is 422 `invalid_date` (no offset = UTC).
+  A message id from another chat or another account is indistinguishable from a missing one (404 `message_not_found`). Read-only connection. The old page-number endpoints stay until the panel replaces them.
+- **`DELETE /api/chats/{chat_id}`** - removes everything stored for a chat, **irreversibly**, in one transaction: messages, edit history, deletion snapshots (their text goes too), the `chats` row,
+  group-migration records that mention it, backfill runs aimed only at that chat (by id or `@username`; a run over every chat stays), and every sender who appears in no other chat.
+  Meant for chats whose Telegram account no longer exists (they show as a bare number and clutter every picker).
+  - **An ingest-blocklist rule is kept** (`block_rule_kept` in the response) - the rule has no foreign key to `chats` for exactly this reason; "forget and keep ignoring" must not quietly stop ignoring.
+  - **The archiver may keep running.** The chat row is locked first, so a message being written at that moment waits for the purge and is removed with the rest. If the chat receives a new message
+    afterwards it is created again, empty, from that message on. One message already past its chat upsert and waiting on the lock can fail its foreign key and is lost (a few-millisecond window per purge).
+  - **Refused while this account's backfill runs** (409 `backfill_running`): it could store the removed history again. A stale status file from a crashed backfill does not block it.
+  - Only the caller's own archive is reachable; another account's chat id is "not found". It is the one write route in `api/routes/chats.py`; the test suite pins that no GET uses the write connection.
+  - Not done yet: the button and confirmation dialog (they arrive with the chat view), and automatic detection of deleted Telegram accounts.
+- Tests: 100+ new ones in `tests/integration/test_chat_view_queries.py` and `tests/api/test_chat_view_api.py`, including a real two-connection test of the lock and a rollback test using a trigger that makes the last step fail.
+  Each rule was broken on purpose once (no id tie-break, no chat filter on the anchor, a shared sender deleted, the block rule removed, no backfill guard, no row lock) and a test went red every time.
+
 ### Security - every archive has its own Postgres login
 Until now all archives were reached with the one login in `CONTROL_DATABASE_URL`, so Postgres could not stop a connection meant for one account from opening another's archive - only the
 application's care kept them apart. The isolation tests showed the application itself never mixes them up (each request resolves the caller's own archive from their account row), but
@@ -42,13 +63,13 @@ nothing below the application enforced it. Now:
   disagree with the Settings page, and no invalidation to get wrong. If an account's traffic ever makes it show up in a profile, a cache is a small change inside `should_skip()`.
 - **When the rules cannot be read, the event is skipped, not archived.** A lost message is the ordinary cost of the database being down (the insert would have failed too); guessing
   "not blocked" could store a chat you asked never to store. The one exception is an archive without the table (below).
-- **Blocking only stops FUTURE archiving.** Messages already archived stay and remain visible; removing them is a separate destructive action that does not exist yet (planned).
+- **Blocking only stops FUTURE archiving.** Messages already archived stay and remain visible; removing them is a separate destructive action: `DELETE /api/chats/{chat_id}` (see "chat view backend" above).
   Deletion events are deliberately *not* filtered: a deletion adds no content, only flags a row already stored, and for private chats and legacy groups Telegram does not say which
   chat it came from. What arrives while a chat is blocked is never stored and cannot be recovered by unblocking.
 - **A blocked group stays blocked when it is upgraded to a supergroup.** The upgrade gives the chat a new id; `record_chat_migration()` now *moves* the rule to the new id, and the
   lookup canonicalizes through `chat_migrations` first, so "is this blocked?" and "which chat would this be stored under?" cannot disagree. The migration service message itself is
   still processed for a blocked chat (it holds no text; it is what carries the rule over).
-- **A rule has no foreign key to `chats`** and keeps its own copy of the chat's name, so the planned "delete everything stored for this chat" can leave the block (and a readable list
+- **A rule has no foreign key to `chats`** and keeps its own copy of the chat's name, so "delete everything stored for this chat" can leave the block (and a readable list
   entry) in place instead of silently lifting it.
 - API: `GET /api/ingest/blocklist`, `PUT` and `DELETE /api/ingest/blocklist/{chat_id}` (both idempotent). Only chats the archive already knows can be blocked (404 `chat_not_found`),
   so the client never sends free text. Bounded: the chat id must fit 64 bits (422 otherwise, not a database overflow error), at most 2000 rules per account (409 `blocklist_full`).
@@ -67,7 +88,7 @@ nothing below the application enforced it. Now:
   never read and Telegram is never asked about it), the failure policy, a full `backfill.run()` against a real archive with a fake Telegram, and the API (limits, cap, isolation, outdated
   archive). Each rule was shown to fail when its code was reverted once. Not covered by automated tests: real Telegram events and the UI in a real browser - see TESTING.md.
 - Not done, by design: allowlist mode (it needs "seen but not archived" metadata about chats you chose not to store), blocking from inside a chat's own view, and
-  per-chat data removal (planned next to this).
+  per-chat data removal (the backend shipped afterwards, see above; its button comes with the chat view).
 
 ### Changed - roadmap and legal texts brought up to date
 
@@ -599,16 +620,15 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 - Ingestion-time chat allowlist (the blocklist half shipped, see "Unreleased"): archive *only*
   chosen chats. Needs a way to see chats that are not archived yet, which means storing
   metadata about chats the person chose not to keep - undecided
-- Chat view: a Telegram-like page for one chat showing every archived message, deleted ones
-  (marked) and edited ones included; clicking an edited message expands its edit history with the
-  date of each version. Layout idea (not final): a second, narrow (resizable) panel listing chats
-  next to the conversation, with the main navigation collapsed to icons (icons not chosen yet).
-  The "Block this chat" button lives in this view's header. Needs a design pass first
+- Chat view: a Telegram-like view of one chat showing every archived message, deleted ones
+  (marked) and edited ones included; clicking an edited message expands its edit history with the date of each version. A chat-list panel next to the conversation REPLACES the
+  Chats, Messages and Deleted pages; the main navigation becomes Chats, Stats, Health, Backfill, Settings (+ Admin) and can collapse to icons. The header holds "Block this chat" and
+  "Delete this chat's data". Remaining: shell, panel + conversation, polish
 - Storage mode: `all` (default) vs `deletions_only`
 - Display name overrides: map a friendly label to a sender ID
 - Username change tracking (`username_history` table)
 - Auto-read policies: mark selected chats as read on a schedule
-- Data management: clear all data, clear per-chat data (with irreversibility warning)
+- Data management: clear all data (per-chat data removal: backend shipped, button comes with the chat view)
 - Message ignore rules: filter by text pattern before archiving (filtering by chat shipped
   as the ingest blocklist)
 - TTL / retention policy: auto-delete archived messages older than N months
