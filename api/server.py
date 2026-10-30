@@ -5,7 +5,8 @@ Process topology reminder:
     Each account's userbot (main.py --user-id N) and this API server are separate processes; every account has its OWN archive database.
     The userbots write to the archives; this server only reads them (db.get_tenant_readonly_connection(), via api/dependencies.py's get_archive_connection()).
     Never open a write connection to an archive here.
-    The only exception is cancel_backfill() marking a killed backfill's history row (see api/routes/backfill.py).
+    The exceptions are cancel_backfill() marking a killed backfill's history row (see api/routes/backfill.py),
+    the ingest blocklist's add/remove (api/routes/ingest.py) and DELETE /api/chats/{chat_id} (api/routes/chats.py), the owner's "forget this chat".
     Exception:
     the CONTROL database (accounts/invites/refresh tokens/audit log, api/routes/auth.py) - this server is that database's only writer, by design.
     See control_db/connection.py's module docstring for the full reasoning; the rule above is about the ARCHIVE databases specifically.

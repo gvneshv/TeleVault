@@ -11,7 +11,8 @@ Why read-only?
     The workers (main.py, backfill.py) and the API server are separate processes that can touch the same archive database,
     and a route handler has no business writing to it.
     The deliberate exceptions are few and each one is explicit: cancel_backfill() opens its own write connection,
-    and the ingest blocklist's add/remove routes (api/routes/ingest.py) use get_archive_write_connection() below -
+    and the ingest blocklist's add/remove routes (api/routes/ingest.py)
+    and the "delete this chat's data" route (DELETE /api/chats/{chat_id}) use get_archive_write_connection() below -
     the same account-resolution and error mapping as get_archive_connection(), but read-write.
     Everything that merely READS an archive keeps using the read-only dependency, so a bug in a read route still cannot modify archived data.
 """
@@ -208,7 +209,7 @@ def get_archive_write_connection(
 ) -> Generator[Connection, None, None]:
     """
     Like get_archive_connection(), but READ-WRITE:
-    for the few routes that legitimately change an archive (today only the ingest blocklist's add/remove, api/routes/ingest.py).
+    for the few routes that legitimately change an archive (today the ingest blocklist's add/remove, api/routes/ingest.py, and purging a chat, api/routes/chats.py).
     Same account resolution (the caller's own archive, never another's, admin or not) and the same 409/503 errors.
 
     Use it only where a route must write - every route that merely reads keeps the read-only dependency,

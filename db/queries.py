@@ -901,3 +901,124 @@ def get_deletion_record(
     )
     deletion = cursor.mappings().first()
     return dict(deletion) if deletion is not None else None
+
+# ---------------------------------------------------------------------------
+# Removing a chat
+# ---------------------------------------------------------------------------
+
+
+def purge_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
+    """
+    Remove every message-derived trace of one chat from the archive, in ONE transaction.
+    Returns what was removed, or None if the chat is not in the archive.
+
+    This is the owner's "forget this conversation" action (DELETE /api/chats/{chat_id}).
+    It exists because an archive otherwise only grows:
+    the chat of a Telegram account that was deleted keeps its name as a bare number, clutters every chat picker and can never be tidied up.
+    There is NO undo, and nothing here asks for confirmation - that belongs to the caller (the UI's dialog).
+
+    What is removed
+        the chat's messages, their edit history and deletion snapshots
+        (the old/new/snapshot TEXT goes too - a purge that kept a deleted message's snapshot would defeat its purpose),
+        the `chats` row, the group-migration records that mention the chat,
+        the backfill history of runs aimed ONLY at this chat (selector = its id or its @username; a run over every chat is a global log entry and stays),
+        and every sender who has no message left anywhere in the archive.
+    What is deliberately kept
+        - An ingest-blocklist rule for the chat (`block_rule_kept` in the result).
+          The rule has no foreign key to `chats` precisely so this works (db/schema.py):
+          "delete what is stored AND keep ignoring the chat" must not silently stop ignoring it.
+          The rule keeps its own copy of the chat's NAME, so that name is the one thing about the chat that survives - the owner removes it by unblocking the chat.
+        - Senders who also wrote in another chat, and any sender row that was already unreferenced before this call
+          (only senders seen in THIS chat are candidates, so a purge never tidies up behind other chats).
+
+    Concurrency (the live archiver keeps running while this executes)
+        The `chats` row is locked first (SELECT ... FOR UPDATE).
+        The archiver's insert_message() needs a share lock on that same row for its foreign key,
+        so while a purge runs a new message for this chat WAITS instead of landing half-way.
+        Once the purge commits:
+        - if the message's own chat upsert came after the commit, the chat is created again, empty, from that message on (the behaviour the owner asked for);
+        - the one message that was already past its upsert but still waiting on the lock fails its foreign-key check and is lost.
+          That window is a few milliseconds wide per purge and the archiver logs the failure; it is not worth a retry loop in a handler that must never block.
+        A running BACKFILL is the caller's concern, not this function's: it could re-insert the very history being removed, so the API refuses a purge while one runs.
+
+    Cost: deleting messages fires the per-row counter trigger (chats_counters_ad), which updates the chat row once per message.
+    That is linear and fine for a normal chat; a chat of hundreds of thousands of messages takes a noticeable while but stays one consistent transaction.
+
+    Any failure rolls the whole thing back, so a purge is all-or-nothing and the connection stays usable.
+    """
+    params = {"chat_id": chat_id}
+    try:
+        chat = conn.execute(sql_text("SELECT username FROM chats WHERE chat_id = :chat_id FOR UPDATE"), params).first()
+        if chat is None:
+            conn.rollback()
+            return None
+        username = chat[0]
+
+        # The blocklist table is missing on archives that predate it; look the rule up only if the table exists
+        # (querying a missing table would abort this whole transaction - see is_chat_blocked() for the same hazard).
+        block_rule_kept = False
+        if conn.execute(sql_text("SELECT to_regclass('ingest_blocked_chats') IS NOT NULL")).scalar():
+            block_rule_kept = conn.execute(sql_text("SELECT 1 FROM ingest_blocked_chats WHERE chat_id = :chat_id"), params).first() is not None
+
+        messages_deleted = int(conn.execute(sql_text("SELECT COUNT(*) FROM messages WHERE chat_id = :chat_id"), params).scalar() or 0)
+
+        # Children first: message_edits and message_deletions point at messages.id with no ON DELETE CASCADE.
+        deletions_deleted = conn.execute(
+            sql_text("DELETE FROM message_deletions d USING messages m WHERE d.message_id = m.id AND m.chat_id = :chat_id"), params
+        ).rowcount
+        edits_deleted = conn.execute(
+            sql_text("DELETE FROM message_edits e USING messages m WHERE e.message_id = m.id AND m.chat_id = :chat_id"), params
+        ).rowcount
+
+        # Messages and the senders that become unreferenced, in ONE statement: the messages.sender_id foreign key is checked at the end of the statement,
+        # when the messages are already gone, so a sender can be deleted together with the last message that mentioned it.
+        # `m.chat_id <> :chat_id` is needed because the NOT EXISTS subquery still sees the messages this very statement deletes.
+        senders_deleted = conn.execute(
+            sql_text(
+                """
+                WITH gone AS (
+                    DELETE FROM messages WHERE chat_id = :chat_id RETURNING sender_id
+                ),
+                candidates AS (
+                    SELECT DISTINCT sender_id FROM gone WHERE sender_id IS NOT NULL
+                )
+                DELETE FROM senders s USING candidates c
+                WHERE s.sender_id = c.sender_id
+                  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.sender_id = s.sender_id AND m.chat_id <> :chat_id)
+                """
+            ),
+            params,
+        ).rowcount
+
+        conn.execute(sql_text("DELETE FROM chat_migrations WHERE old_chat_id = :chat_id OR new_chat_id = :chat_id"), params)
+
+        # A backfill started for one chat stores that chat as its selector: a numeric id, or an @username (any case, "@" optional).
+        # LTRIM(.., '@') + LOWER mirror how Telegram treats handles. CAST: a NULL username must not leave the parameter's type undecidable.
+        backfill_runs_deleted = conn.execute(
+            sql_text(
+                "DELETE FROM backfill_runs WHERE chat_selector = :chat_id_text "
+                "OR LOWER(LTRIM(chat_selector, '@')) = LOWER(CAST(:username AS text))"
+            ),
+            {"chat_id_text": str(chat_id), "username": username},
+        ).rowcount
+
+        conn.execute(sql_text("DELETE FROM chats WHERE chat_id = :chat_id"), params)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    # Counts only - never a name or any text (see the logging rules in the project docs).
+    logger.info(
+        "Purged chat %s: %d messages, %d edits, %d deletion records, %d senders, %d backfill runs.",
+        chat_id, messages_deleted, edits_deleted, deletions_deleted, senders_deleted, backfill_runs_deleted,
+    )
+    return {
+        "chat_id": chat_id,
+        "messages_deleted": messages_deleted,
+        "edits_deleted": edits_deleted,
+        "deletions_deleted": deletions_deleted,
+        "senders_deleted": senders_deleted,
+        "backfill_runs_deleted": backfill_runs_deleted,
+        "block_rule_kept": block_rule_kept,
+    }
