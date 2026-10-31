@@ -18,6 +18,9 @@ export const en = {
   "nav.health": "Health",
   "nav.settings": "Settings",
   "nav.admin": "Admin",
+  "nav.ariaLabel": "Main navigation",
+  "nav.collapse": "Collapse the sidebar",
+  "nav.expand": "Expand the sidebar",
 
   "common.comingSoon": "This view isn't built yet.",
   "common.loading": "Loading…",
@@ -95,6 +98,7 @@ export const en = {
 
   "theme.toggleLabel": "Toggle theme",
   "lang.selectLabel": "Language",
+  "lang.toggleLabel": "Change language",
 
   // Backfill additions
   "nav.backfill": "Backfill",

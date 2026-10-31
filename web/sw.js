@@ -52,10 +52,13 @@
  * v38 bumps for the relink bar (views/telegram-setup.js, css/base.css, i18n/{en,uk}.js: Cancel moved to a prominent bar above every relink step).
  * v39 bumps for the setup page layout (css/base.css: wider, equal-width cards; centered QR code).
  * v40 bumps for the "Chats not archived" blocklist card (views/settings.js, lib/errors.js, css/base.css, i18n/{en,uk}.js).
+ * v41 bumps for the new navigation rail (index.html, css/base.css, css/variables.css, app.js, i18n.js, archiver-toggle.js, i18n/{en,uk}.js):
+ * icons, a rail that collapses to icons, and a one-button language toggle.
+ * Adds the new lib/icons.js to SHELL_FILES.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v40";
+const CACHE_NAME = "televault-shell-v41";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -81,6 +84,7 @@ const SHELL_FILES = [
   "/js/lib/chat-filter.js",
   "/js/lib/archive-error.js",
   "/js/lib/refresh.js",
+  "/js/lib/icons.js",
   "/js/archiver-toggle.js",
   "/js/app.js",
   "/js/views/chats.js",

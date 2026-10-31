@@ -27,35 +27,48 @@
   <div class="auth-loading" aria-hidden="true"></div>
 
   <div class="app-shell">
-    <nav class="app-nav" aria-label="Main navigation">
-      <a href="/index.html" class="app-nav__wordmark-link">
-        <span class="app-nav__wordmark" data-i18n="app.wordmark">TeleVault</span>
-        <span id="admin-badge" class="info-badge" data-i18n="app.adminBadge" hidden>Admin</span>
-      </a>
+    <nav class="app-nav" data-i18n-aria-label="nav.ariaLabel" aria-label="Main navigation">
+      <div class="app-nav__head">
+        <a href="/index.html" class="app-nav__wordmark-link">
+          <span class="app-nav__wordmark" data-i18n="app.wordmark">TeleVault</span>
+          <!-- Two-letter mark shown instead of the wordmark when the rail is collapsed (and on phones); decoration only, the wordmark above keeps the link's accessible name. -->
+          <span class="app-nav__wordmark-short" aria-hidden="true">TV</span>
+          <span id="admin-badge" class="info-badge" data-i18n="app.adminBadge" hidden>Admin</span>
+        </a>
+        <!-- Collapses the rail to icons and back (app.js: initNavCollapse). Icon, label and aria-expanded follow the state. -->
+        <button id="nav-collapse-toggle" class="app-nav__collapse" type="button" aria-expanded="true"
+                data-i18n-aria-label="nav.collapse" data-i18n-title="nav.collapse" aria-label="Collapse the sidebar" title="Collapse the sidebar">
+          <span class="nav-icon" data-icon="collapse"></span>
+        </button>
+      </div>
       <!-- Not a link, not a button - see app.js's own comment on #current-username for why this is deliberately inert. -->
       <div id="current-username" class="app-nav__username"></div>
 
       <ul class="app-nav__list">
-        <li><button class="app-nav__link" data-view="chats" aria-current="page">
-          <span data-i18n="nav.chats">Chats</span>
+        <!-- Every tab: an icon (js/lib/icons.js, filled in by renderIcons) and a text label. The label is visually hidden when the rail is collapsed
+             but stays in the DOM, so it remains the button's accessible name; data-i18n-title gives sighted users the same words as a tooltip. -->
+        <li><button class="app-nav__link" data-view="chats" aria-current="page" data-i18n-title="nav.chats">
+          <span class="nav-icon" data-icon="chats"></span><span class="nav-label" data-i18n="nav.chats">Chats</span>
         </button></li>
-        <li><button class="app-nav__link" data-view="messages">
-          <span data-i18n="nav.messages">Messages</span>
+        <!-- Messages and Deleted are the OLD pages, kept reachable until the new chat view replaces them (step C of claude/chat-view-spec.md);
+             then these two entries go, together with their sections below. -->
+        <li><button class="app-nav__link" data-view="messages" data-i18n-title="nav.messages">
+          <span class="nav-icon" data-icon="messages"></span><span class="nav-label" data-i18n="nav.messages">Messages</span>
         </button></li>
-        <li><button class="app-nav__link" data-view="deleted">
-          <span data-i18n="nav.deleted">Deleted</span>
+        <li><button class="app-nav__link" data-view="deleted" data-i18n-title="nav.deleted">
+          <span class="nav-icon" data-icon="deleted"></span><span class="nav-label" data-i18n="nav.deleted">Deleted</span>
         </button></li>
-        <li><button class="app-nav__link" data-view="stats">
-          <span data-i18n="nav.stats">Stats</span>
+        <li><button class="app-nav__link" data-view="stats" data-i18n-title="nav.stats">
+          <span class="nav-icon" data-icon="stats"></span><span class="nav-label" data-i18n="nav.stats">Stats</span>
         </button></li>
-        <li><button class="app-nav__link" data-view="health">
-          <span data-i18n="nav.health">Health</span>
+        <li><button class="app-nav__link" data-view="health" data-i18n-title="nav.health">
+          <span class="nav-icon" data-icon="health"></span><span class="nav-label" data-i18n="nav.health">Health</span>
         </button></li>
-        <li><button class="app-nav__link" data-view="backfill">
-          <span data-i18n="nav.backfill">Backfill</span>
+        <li><button class="app-nav__link" data-view="backfill" data-i18n-title="nav.backfill">
+          <span class="nav-icon" data-icon="backfill"></span><span class="nav-label" data-i18n="nav.backfill">Backfill</span>
         </button></li>
-        <li><button class="app-nav__link" data-view="settings">
-          <span data-i18n="nav.settings">Settings</span>
+        <li><button class="app-nav__link" data-view="settings" data-i18n-title="nav.settings">
+          <span class="nav-icon" data-icon="settings"></span><span class="nav-label" data-i18n="nav.settings">Settings</span>
         </button></li>
         <!-- The Admin tab is deliberately NOT in this file: app.js creates it (mountAdminTab) only once the signed-in account is confirmed to be the admin,
              so a non-admin's DOM never contains it.
@@ -65,17 +78,23 @@
       <div class="app-nav__spacer"></div>
 
       <div class="app-nav__controls">
-        <button id="archiver-toggle" class="archiver-toggle" data-state="unknown">
+        <!-- archiver-toggle.js owns this button's state and label; the two icons are shown by CSS according to its data-state. -->
+        <button id="archiver-toggle" class="archiver-toggle" type="button" data-state="unknown">
+          <span class="nav-icon archiver-toggle__icon archiver-toggle__icon--stopped" data-icon="archiver-stopped"></span>
+          <span class="nav-icon archiver-toggle__icon archiver-toggle__icon--running" data-icon="archiver-running"></span>
           <span class="archiver-toggle__dot" aria-hidden="true"></span>
           <span class="archiver-toggle__label"></span>
         </button>
-        <button id="logout-button" data-i18n="nav.logout">Log out</button>
         <div class="app-nav__controls-row">
-          <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
-          <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
-            <option value="en">EN</option>
-            <option value="uk">UK</option>
-          </select>
+          <button id="logout-button" type="button" data-i18n-title="nav.logout">
+            <span class="nav-icon" data-icon="logout"></span><span class="nav-label" data-i18n="nav.logout">Log out</span>
+          </button>
+          <!-- The icon (sun/moon) is set by theme.js and is unchanged by the new rail. -->
+          <button id="theme-toggle" type="button" data-i18n-aria-label="theme.toggleLabel" data-i18n-title="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+          <!-- One button that switches to the next language (i18n.js); its label names the CURRENT language, the visible code is the same in short. -->
+          <button id="lang-toggle" type="button" aria-label="Change language">
+            <span class="nav-icon" data-icon="language"></span><span class="lang-code" aria-hidden="true">EN</span>
+          </button>
         </div>
       </div>
     </nav>

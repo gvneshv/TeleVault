@@ -54,6 +54,9 @@ function render(button) {
     label.textContent = "";
   }
   // Dot color comes from the [data-state] CSS rule, driven by button.dataset.state.
+
+  // The same words as a tooltip: in the collapsed rail the label is visually hidden, and a sighted user would otherwise get a bare icon.
+  button.title = label.textContent ?? "";
 }
 
 /** @param {HTMLElement} button */

@@ -18,6 +18,9 @@ const LANG_KEY = "televault:lang";
 const DEFAULT_LANG = "en";
 const SUPPORTED_LANGS = ["en", "uk"];
 
+// Each language's name in ITS OWN language, so a speaker can find theirs whatever the app is currently showing.
+const LANG_NAMES = { en: "English", uk: "Українська" };
+
 function detectBrowserLang() {
   const nav = (navigator.language || DEFAULT_LANG).slice(0, 2).toLowerCase();
   return SUPPORTED_LANGS.includes(nav) ? nav : DEFAULT_LANG;
@@ -61,6 +64,28 @@ function applyTranslations() {
   });
 }
 
+/** The language the one-button toggle (#lang-toggle) would switch to: the next one in SUPPORTED_LANGS, wrapping around. */
+function nextLang() {
+  const index = SUPPORTED_LANGS.indexOf(getCurrentLang());
+  return SUPPORTED_LANGS[(index + 1) % SUPPORTED_LANGS.length];
+}
+
+/**
+ * Keep the one-button language toggle (index.html's rail) in sync: its visible code shows the CURRENT language,
+ * its accessible name and tooltip say what it does and which language comes next.
+ * Pages that still use the <select> have no such button and are unaffected.
+ */
+function renderLangToggle() {
+  const button = document.getElementById("lang-toggle");
+  if (!button) return;
+  const current = getCurrentLang();
+  const label = `${t("lang.toggleLabel")}: ${LANG_NAMES[current]} → ${LANG_NAMES[nextLang()]}`;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  const code = button.querySelector(".lang-code");
+  if (code) code.textContent = current.toUpperCase();
+}
+
 /**
  * Switches the active language, re-applies static (data-i18n) translations, and notifies the rest of the app.
  *
@@ -72,6 +97,7 @@ function setLang(lang) {
   if (!SUPPORTED_LANGS.includes(lang)) return;
   localStorage.setItem(LANG_KEY, lang);
   applyTranslations();
+  renderLangToggle();
   document.dispatchEvent(new CustomEvent("televault:langchange"));
 }
 
@@ -81,6 +107,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (select) {
     select.value = getCurrentLang();
     select.addEventListener("change", (e) => setLang(e.target.value));
+  }
+  const toggle = document.getElementById("lang-toggle");
+  if (toggle) {
+    renderLangToggle();
+    toggle.addEventListener("click", () => setLang(nextLang()));
   }
 });
 

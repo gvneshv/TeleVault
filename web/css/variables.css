@@ -75,5 +75,6 @@
   --radius-md: 8px;
 
   --nav-width: 220px;
+  --nav-width-collapsed: 64px; /* the icon-only rail (app.js sets data-nav="collapsed" on .app-shell) */
   --transition-theme: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }

@@ -14,6 +14,9 @@ export const uk = {
   "nav.health": "Стан системи",
   "nav.settings": "Налаштування",
   "nav.admin": "Адміністрування",
+  "nav.ariaLabel": "Головна навігація",
+  "nav.collapse": "Згорнути бічну панель",
+  "nav.expand": "Розгорнути бічну панель",
 
   "common.comingSoon": "Цей розділ ще не готовий.",
   "common.loading": "Завантаження…",
@@ -91,6 +94,7 @@ export const uk = {
 
   "theme.toggleLabel": "Змінити тему",
   "lang.selectLabel": "Мова",
+  "lang.toggleLabel": "Змінити мову",
 
   // Backfill additions
   "nav.backfill": "Імпорт історії",

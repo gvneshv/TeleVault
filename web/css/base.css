@@ -218,6 +218,33 @@ input:focus-visible {
   grid-template-columns: var(--nav-width) 1fr;
   grid-template-rows: 100%;
   height: 100vh;
+  /* The rail animates between its two widths (the global reduced-motion rule above zeroes this for people who ask for less motion). */
+  transition: grid-template-columns 0.18s ease;
+}
+
+/* Collapsed rail: icons only. app.js sets data-nav="collapsed" on .app-shell and remembers it (localStorage).
+   Everything that is TEXT in the expanded rail is visually hidden, never display:none, so each button keeps its accessible name. */
+.app-shell[data-nav="collapsed"] {
+  --nav-width: var(--nav-width-collapsed);
+}
+
+/* Visually hidden but still read by screen readers - the usual clip technique.
+Shared by the collapsed rail and the phone top bar below. */
+.app-shell[data-nav="collapsed"] .nav-label,
+.app-shell[data-nav="collapsed"] .app-nav__wordmark,
+.app-shell[data-nav="collapsed"] .app-nav__username,
+.app-shell[data-nav="collapsed"] .app-nav__wordmark-link .info-badge,
+.app-shell[data-nav="collapsed"] .archiver-toggle__label,
+.app-shell[data-nav="collapsed"] .lang-code {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .app-nav {
@@ -227,6 +254,17 @@ input:focus-visible {
   flex-direction: column;
   padding: 20px 12px;
   transition: var(--transition-theme);
+  /* A hidden label is absolutely positioned (above); this keeps it from escaping the rail. */
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-nav__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .app-nav__wordmark-link {
@@ -235,6 +273,7 @@ input:focus-visible {
   gap: 8px;
   padding: 0 8px 2px;
   text-decoration: none;
+  min-width: 0;
 }
 
 /* Optical nudge for the Admin pill beside the wordmark: flex centering aligns BOX centers, but capital letters sit above their line box's center
@@ -250,6 +289,77 @@ input:focus-visible {
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--color-ink);
+}
+
+/* The short mark replaces the wordmark when there is no room for it (collapsed rail, phone top bar). */
+.app-nav__wordmark-short {
+  display: none;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-focus);
+}
+
+.app-shell[data-nav="collapsed"] .app-nav__wordmark-short {
+  display: inline;
+}
+
+/* Collapse / expand button: a quiet icon button, not a primary control. */
+.app-nav__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  transition: var(--transition-theme);
+}
+
+.app-nav__collapse:hover {
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+}
+
+.app-nav__collapse:focus-visible,
+.app-nav__link:focus-visible,
+.app-nav__controls button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.app-shell[data-nav="collapsed"] .app-nav {
+  padding: 14px 8px;
+  align-items: center;
+}
+
+.app-shell[data-nav="collapsed"] .app-nav__head {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-shell[data-nav="collapsed"] .app-nav__wordmark-link {
+  padding: 0;
+}
+
+/* Inline icon: sized by its holder, coloured by the text colour of whatever it sits in (see js/lib/icons.js). */
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+.nav-icon .icon {
+  width: 100%;
+  height: 100%;
 }
 
 /* Current username (app.js) - a quiet reminder of who's logged in while testing multiple accounts,
@@ -276,6 +386,11 @@ input:focus-visible {
   gap: 2px;
 }
 
+.app-shell[data-nav="collapsed"] .app-nav__list {
+  width: 100%;
+  margin-top: 14px;
+}
+
 .app-nav__link {
   display: flex;
   align-items: center;
@@ -290,6 +405,11 @@ input:focus-visible {
   width: 100%;
   text-align: left;
   transition: var(--transition-theme), box-shadow 0.2s ease;
+}
+
+.app-shell[data-nav="collapsed"] .app-nav__link {
+  justify-content: center;
+  padding: 10px 0;
 }
 
 .app-nav__link:hover {
@@ -318,9 +438,18 @@ input:focus-visible {
   padding: 0 8px;
 }
 
+.app-shell[data-nav="collapsed"] .app-nav__controls {
+  padding: 0;
+  width: 100%;
+}
+
 .app-nav__controls-row {
   display: flex;
   gap: 6px;
+}
+
+.app-shell[data-nav="collapsed"] .app-nav__controls-row {
+  flex-direction: column;
 }
 
 .app-nav__controls button,
@@ -329,14 +458,52 @@ input:focus-visible {
 .app-nav__controls-row select {
   flex: 1;
   min-width: 0;
+  min-height: 34px;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg-raised);
   color: var(--color-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.app-nav__controls button:hover:not(:disabled) {
+  border-color: var(--color-focus);
+}
+
+.app-shell[data-nav="collapsed"] .app-nav__controls button {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 40px;
+}
+
+/* The three small buttons (log out, theme, language) are icon-only in every mode - a text label would not fit three to a row.
+   Same visually-hidden technique as above, so "Log out" stays the button's accessible name; the tooltip (data-i18n-title) gives sighted users the words. */
+.app-nav__controls-row .nav-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The language button's short code (EN / UK) sits beside its icon. */
+.lang-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .archiver-toggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -355,12 +522,40 @@ input:focus-visible {
   opacity: 0.7;
 }
 
+/* The package icon follows the archiver's state: "box with an x" when stopped, "box with a plus" when running.
+   Busy and unknown show the stopped one, in the muted colour.
+   Colour is NOT the only signal: the two icons differ in shape, as do the dot and ring below. */
+.archiver-toggle__icon--running {
+  display: none;
+}
+
+.archiver-toggle[data-state="running"] .archiver-toggle__icon--stopped {
+  display: none;
+}
+
+.archiver-toggle[data-state="running"] .archiver-toggle__icon--running {
+  display: inline-flex;
+  color: var(--color-ok);
+}
+
+.archiver-toggle__icon {
+  width: 18px;
+  height: 18px;
+}
+
 .archiver-toggle__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--color-ink-muted);
+}
+
+/* Collapsed: no room for the label, so the status dot moves onto the icon's corner. */
+.app-shell[data-nav="collapsed"] .archiver-toggle__dot {
+  position: absolute;
+  top: 6px;
+  right: 8px;
 }
 
 /* Running = a filled green dot (--color-ok, the same green as the health-check marks).
@@ -2015,20 +2210,58 @@ mark.legal-placeholder {
    ------------------------------------------------------------------- */
 
 @media (max-width: 640px) {
-  .app-shell {
+  .app-shell,
+  .app-shell[data-nav="collapsed"] {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
   }
 
-  .app-nav {
+  /* Two rows: brand, username and the bottom controls on top, then every tab spread across the full width (they all fit as icons). */
+  .app-nav,
+  .app-shell[data-nav="collapsed"] .app-nav {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
     padding: 10px 12px;
   }
 
-  .app-nav__wordmark-link {
+  /* A phone has no room for labels: the top bar is icons only, with the same visually-hidden text as the collapsed rail
+     (and the collapse button has nothing to do there, so it goes).
+     A phone ignores a remembered "expanded" state for the same reason. */
+  .app-nav__collapse {
+    display: none;
+  }
+
+  .app-nav .nav-label,
+  .app-nav .app-nav__wordmark,
+  .app-nav .app-nav__wordmark-link .info-badge,
+  .app-nav .archiver-toggle__label,
+  .app-nav .lang-code {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .app-nav__wordmark-short,
+  .app-shell[data-nav="collapsed"] .app-nav__wordmark-short {
+    display: inline;
+  }
+
+  .app-nav__head,
+  .app-shell[data-nav="collapsed"] .app-nav__head {
+    flex-direction: row;
+  }
+
+  .app-nav__wordmark-link,
+  .app-shell[data-nav="collapsed"] .app-nav__wordmark-link {
     padding: 0 12px 0 0;
   }
 
@@ -2037,17 +2270,55 @@ mark.legal-placeholder {
     max-width: 120px;
   }
 
-  .app-nav__list {
+  .app-nav__list,
+  .app-shell[data-nav="collapsed"] .app-nav__list {
+    order: 3;
+    flex: 1 0 100%;
     flex-direction: row;
-    overflow-x: auto;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .app-nav__list > li {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .app-nav__link,
+  .app-shell[data-nav="collapsed"] .app-nav__link {
+    justify-content: center;
+    padding: 9px 0;
   }
 
   .app-nav__spacer {
     display: none;
   }
 
-  .app-nav__controls {
+  .app-nav__controls,
+  .app-shell[data-nav="collapsed"] .app-nav__controls {
+    margin-left: auto;
     padding: 0;
+    flex-direction: row;
+    width: auto;
+  }
+
+  .app-nav__controls-row,
+  .app-shell[data-nav="collapsed"] .app-nav__controls-row {
+    flex-direction: row;
+  }
+
+  .app-nav__controls button,
+  .app-shell[data-nav="collapsed"] .app-nav__controls button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 36px;
+  }
+
+  .app-shell[data-nav="collapsed"] .archiver-toggle__dot,
+  .archiver-toggle__dot {
+    position: absolute;
+    top: 5px;
+    right: 6px;
   }
 }
 

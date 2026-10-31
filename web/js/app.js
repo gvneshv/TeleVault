@@ -17,6 +17,8 @@
  * The Admin tab is the exception to both:
  * its nav button, its section, AND its module (views/admin.js, loaded via dynamic import()) only come into existence for the admin account - see mountAdminTab() below.
  *
+ * The nav rail can be collapsed to icons (initNavCollapse below); that choice is remembered per browser.
+ *
  * No client-side router or URL hash handling yet.
  * Adding one is a reasonable future step once there are per-item views (e.g. a single chat or message) that benefit from being linkable/bookmarkable
  * - not needed for the nav-only shell.
@@ -32,6 +34,7 @@ import { initBackfillView } from "./views/backfill.js";
 import { initSettingsView } from "./views/settings.js";
 import { t } from "./i18n.js";
 import { logout, isAdmin, fetchCurrentUser } from "./lib/auth.js";
+import { renderIcons, setIcon } from "./lib/icons.js";
 
 // Tabs that re-fetch their data on every visit after the first (the first visit is each view's own init/self-load).
 const VIEW_REFRESHERS = {
@@ -42,7 +45,66 @@ const VIEW_REFRESHERS = {
   health: refreshHealthView,
 };
 
+// Where the collapsed/expanded choice is remembered.
+// Only a per-browser convenience: storage can be missing or throw (private windows, blocked site data),
+// so every access is wrapped and the rail simply starts expanded when it cannot be read.
+const NAV_COLLAPSED_KEY = "televault:nav-collapsed";
+
+function readNavCollapsed() {
+  try {
+    return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeNavCollapsed(collapsed) {
+  try {
+    localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch {
+    // Not remembered; the rail still works for this visit.
+  }
+}
+
+/**
+ * Wire the rail's collapse/expand button.
+ *
+ * State lives in one place, data-nav="collapsed" on .app-shell (the CSS reads it); the button's icon,
+ * its aria-expanded and its label/tooltip are all derived from it by applyNavState(), which also re-runs on a language change so the words follow the app language.
+ * The button names the ACTION ("Collapse the sidebar" while expanded), the usual convention for a toggle whose icon changes with its state;
+ * aria-expanded carries the state itself.
+ */
+function initNavCollapse() {
+  const shell = document.querySelector(".app-shell");
+  const button = document.getElementById("nav-collapse-toggle");
+  if (!shell || !button) return;
+
+  function applyNavState() {
+    const collapsed = shell.dataset.nav === "collapsed";
+    const label = t(collapsed ? "nav.expand" : "nav.collapse");
+    button.setAttribute("aria-expanded", String(!collapsed));
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    const holder = button.querySelector(".nav-icon");
+    if (holder) setIcon(holder, collapsed ? "expand" : "collapse");
+  }
+
+  if (readNavCollapsed()) shell.dataset.nav = "collapsed";
+  applyNavState();
+
+  button.addEventListener("click", () => {
+    const collapsed = shell.dataset.nav !== "collapsed";
+    if (collapsed) shell.dataset.nav = "collapsed";
+    else delete shell.dataset.nav;
+    writeNavCollapsed(collapsed);
+    applyNavState();
+  });
+  document.addEventListener("televault:langchange", applyNavState);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  renderIcons();
+  initNavCollapse();
   const navList = document.querySelector(".app-nav__list");
   const visitedViews = new Set();
 
@@ -108,10 +170,17 @@ document.addEventListener("DOMContentLoaded", () => {
     button.id = "admin-nav-link";
     button.className = "app-nav__link";
     button.dataset.view = "admin";
+    button.setAttribute("data-i18n-title", "nav.admin");
+    button.title = t("nav.admin");
+    const icon = document.createElement("span");
+    icon.className = "nav-icon";
+    icon.dataset.icon = "admin";
     const label = document.createElement("span");
+    label.className = "nav-label";
     label.setAttribute("data-i18n", "nav.admin");
     label.textContent = t("nav.admin");
-    button.append(label);
+    button.append(icon, label);
+    renderIcons(button);
     item.append(button);
     navList.append(item);
 
