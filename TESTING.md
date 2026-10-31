@@ -122,6 +122,7 @@ Needs a Bearer token of an account with an archive that holds a chat. Use `/docs
 | `DELETE /api/chats/<id>` on a chat you can spare, archiver running | **200** with counts; the chat is gone from `/api/chats`, `/api/chats/options` and the Stats table. Messages from it no longer appear in the feed. |
 | Same chat, then someone writes to you again (or send yourself a message in that chat) | The chat reappears with only the new message. |
 | `DELETE` on a chat that is on "Chats not archived" | **200**, `block_rule_kept: true`; the Settings list still shows it. |
+| Same, with `?also_unblock=true` | **200**, `block_rule_kept: false`; the chat is gone from the Settings list too. `?also_unblock=maybe` → **422**. |
 | `DELETE` while a backfill is running | **409** `backfill_running`, nothing deleted. |
 | `DELETE` on an id that does not exist | **404** `chat_not_found`. |
 
@@ -180,4 +181,11 @@ Needs a Bearer token of an account with an archive that holds a chat. Use `/docs
 | Settings -> Telegram setup, enter api_id + api_hash and submit | Moves on to the phone-number step. A wrong pair is only reported at the next step (send code), not here. |
 | Register with a username like `a b` or `ab`, or a 129-character password | The browser refuses the field before sending; if the request does go out, a generic "values are not valid" message appears (never a bare "Something went wrong"). |
 | Register with mismatched password/confirm fields | Inline "Passwords don't match" - no request sent. |
+| Main page, desktop: look at the left rail | Wordmark + collapse button at the top, then Chats, Messages, Deleted, Stats, Health, Backfill, Settings (+ Admin for the admin), each with an icon and a label. At the bottom: the archiver button, then log out, theme and language as icon buttons. Nothing wraps onto two lines. |
+| Click the collapse button (top right of the rail) | The rail shrinks to icons (~64px), "TV" replaces the wordmark, the tabs stay clickable and show their name on hover. Click again: back to full width. Reload the page: it keeps the last state. |
+| Collapsed rail, hover the archiver button | A tooltip like "Archiver running · Stop"; the status dot sits on the icon's corner (filled green = running, hollow ring = stopped), and the icon is a box with a plus (running) or an x (stopped). |
+| Language button: click it | The app switches EN <-> UK at once (tabs, tooltips, the collapse button's tooltip); the button shows the current code; hover says which language comes next. Pages that still have a language drop-down (login, register, setup) are unchanged. |
+| Tab through the rail with the keyboard, collapsed and expanded | Focus is clearly visible on every button; Enter/Space activates it. With a screen reader the collapsed buttons are announced by name ("Stats", "Log out"), not as "button". **Not covered by automated tests; I checked names programmatically only.** |
+| Make the window narrow (< 640 px) or use a phone | Two-row top bar: brand + username + four control buttons on top, all tabs as icons below; no horizontal scroll; no collapse button. |
+| Look at the theme button | Still the sun/moon glyph, same behaviour as before. |
 | Open two tabs, log in on one, then load `/index.html` in the other | Second tab silently refreshes using the shared cookie and loads normally - expected, not a bug (access token is per-tab in memory; the cookie is shared). |

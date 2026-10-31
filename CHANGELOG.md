@@ -9,6 +9,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed - navigation rail: icons, collapsing, one-button language (chat view, step B)
+Second step of the chat view (`claude/chat-view-spec.md`): the shell around the future chat panel. The pages themselves are unchanged.
+- **Every tab has an icon** and a text label (`web/js/lib/icons.js`, inline SVG - no CDN, no icon font). Chats, Messages, Deleted, Stats and Health use the paths drawn in the approved mockup
+  (the owner asked to keep the stats and health ones); Settings, Backfill, Admin, the archiver states, log out, language and collapse/expand are Lucide icons, first candidate of each shortlist
+  (cog, rotate-ccw-clock, user-star, package-x / package-plus, log-out, earth, fold-horizontal / unfold-horizontal). Lucide is ISC-licensed and the icons it took from Feather (log-out is one) are MIT-licensed:
+  both notices are kept in `web/icons/LICENSE-lucide.txt`. The theme button keeps its sun/moon glyph.
+- **The rail collapses to a 64px icon strip and back** (button beside the wordmark; the choice is remembered per browser in `localStorage`, which may be unavailable - then it simply starts expanded).
+  In the collapsed rail every label is *visually* hidden, not removed, so each button keeps its accessible name, and each tab shows its name as a tooltip in the app language.
+  The collapse button names the action ("Collapse the sidebar" / "Expand the sidebar", `aria-expanded` carries the state).
+- **Bottom controls**: the archiver button (state icon + the existing dot/ring + label; in the collapsed rail the dot moves onto the icon and the label becomes the tooltip), then log out, theme and language as icon buttons.
+  **Language is now one button** that switches to the next language (shows `EN` / `UK`; its label names the current and the next language). The other pages keep their `<select>`; `i18n.js` supports both.
+- **Phones**: the rail is a two-row top bar (brand, username and the four controls on top, all tabs as icons below); no collapse button there. New strings in `en.js` and `uk.js`; web shell cache v41.
+- Messages and Deleted stay in the rail for now - they are the old pages and go when the new chat view replaces them (step C).
+- Checked in a real browser (Chromium, mocked API, throwaway script - the repo still has no browser tests): collapse/expand, persistence across a reload, language and theme switching, every tab opening, accessible names while collapsed, archiver icon per state,
+  the non-admin DOM, no horizontal scroll, no console errors, in dark and light and at 390px. Not checked: Safari/Firefox, a real touch device, a screen reader.
+
 ### Added - chat view backend (step A) and "delete everything stored for a chat"
 First step of the chat view (the design is in `claude/chat-view-spec.md`); nothing in the web UI changes yet - these are the API pieces the new panel will stand on.
 - **`edit_count` on every message row** (feed, per-chat list, detail) and **`edited_count` on chats**, so a list can say "Edited 3 times" without one request per message. The per-message
@@ -21,7 +37,9 @@ First step of the chat view (the design is in `claude/chat-view-spec.md`); nothi
 - **`DELETE /api/chats/{chat_id}`** - removes everything stored for a chat, **irreversibly**, in one transaction: messages, edit history, deletion snapshots (their text goes too), the `chats` row,
   group-migration records that mention it, backfill runs aimed only at that chat (by id or `@username`; a run over every chat stays), and every sender who appears in no other chat.
   Meant for chats whose Telegram account no longer exists (they show as a bare number and clutter every picker).
-  - **An ingest-blocklist rule is kept** (`block_rule_kept` in the response) - the rule has no foreign key to `chats` for exactly this reason; "forget and keep ignoring" must not quietly stop ignoring.
+  - **An ingest-blocklist rule is kept by default** (`block_rule_kept` in the response) - the rule has no foreign key to `chats` for exactly this reason; "forget and keep ignoring" must not quietly stop ignoring.
+    **`?also_unblock=true` removes it in the same transaction** - the owner's explicit choice at purge time (the confirmation dialog will offer it as a tick box, default off):
+    forget the chat AND archive it again if it writes to you. Only that chat's rule goes, and a failed purge leaves the rule in place (never "unblocked but not purged").
   - **The archiver may keep running.** The chat row is locked first, so a message being written at that moment waits for the purge and is removed with the rest. If the chat receives a new message
     afterwards it is created again, empty, from that message on. One message already past its chat upsert and waiting on the lock can fail its foreign key and is lost (a few-millisecond window per purge).
   - **Refused while this account's backfill runs** (409 `backfill_running`): it could store the removed history again. A stale status file from a crashed backfill does not block it.
@@ -620,7 +638,7 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 - Ingestion-time chat allowlist (the blocklist half shipped, see "Unreleased"): archive *only*
   chosen chats. Needs a way to see chats that are not archived yet, which means storing
   metadata about chats the person chose not to keep - undecided
-- Chat view: a Telegram-like view of one chat showing every archived message, deleted ones
+- Chat view (design approved, see `claude/chat-view-spec.md`; backend step A shipped, see "Unreleased"): a Telegram-like view of one chat showing every archived message, deleted ones
   (marked) and edited ones included; clicking an edited message expands its edit history with the date of each version. A chat-list panel next to the conversation REPLACES the
   Chats, Messages and Deleted pages; the main navigation becomes Chats, Stats, Health, Backfill, Settings (+ Admin) and can collapse to icons. The header holds "Block this chat" and
   "Delete this chat's data". Remaining: shell, panel + conversation, polish
