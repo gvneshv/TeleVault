@@ -907,7 +907,7 @@ def get_deletion_record(
 # ---------------------------------------------------------------------------
 
 
-def purge_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
+def purge_chat(conn: Connection, chat_id: int, *, also_unblock: bool = False) -> dict[str, Any] | None:
     """
     Remove every message-derived trace of one chat from the archive, in ONE transaction.
     Returns what was removed, or None if the chat is not in the archive.
@@ -924,10 +924,12 @@ def purge_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
         the backfill history of runs aimed ONLY at this chat (selector = its id or its @username; a run over every chat is a global log entry and stays),
         and every sender who has no message left anywhere in the archive.
     What is deliberately kept
-        - An ingest-blocklist rule for the chat (`block_rule_kept` in the result).
+        - An ingest-blocklist rule for the chat (`block_rule_kept` in the result), UNLESS the caller passes `also_unblock=True`.
           The rule has no foreign key to `chats` precisely so this works (db/schema.py):
-          "delete what is stored AND keep ignoring the chat" must not silently stop ignoring it.
-          The rule keeps its own copy of the chat's NAME, so that name is the one thing about the chat that survives - the owner removes it by unblocking the chat.
+          "delete what is stored AND keep ignoring the chat" must not silently stop ignoring it,
+          so keeping is the default and lifting the block is always the owner's explicit, per-purge choice (a tick box in the confirmation dialog).
+          The rule keeps its own copy of the chat's NAME, so that name is the one thing about the chat that survives a purge that keeps the rule.
+          The rule is removed in the same transaction as everything else, so a failed purge never leaves "unblocked but not purged" behind.
         - Senders who also wrote in another chat, and any sender row that was already unreferenced before this call
           (only senders seen in THIS chat are candidates, so a purge never tidies up behind other chats).
 
@@ -958,7 +960,10 @@ def purge_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
         # (querying a missing table would abort this whole transaction - see is_chat_blocked() for the same hazard).
         block_rule_kept = False
         if conn.execute(sql_text("SELECT to_regclass('ingest_blocked_chats') IS NOT NULL")).scalar():
-            block_rule_kept = conn.execute(sql_text("SELECT 1 FROM ingest_blocked_chats WHERE chat_id = :chat_id"), params).first() is not None
+            if also_unblock:
+                conn.execute(sql_text("DELETE FROM ingest_blocked_chats WHERE chat_id = :chat_id"), params)
+            else:
+                block_rule_kept = conn.execute(sql_text("SELECT 1 FROM ingest_blocked_chats WHERE chat_id = :chat_id"), params).first() is not None
 
         messages_deleted = int(conn.execute(sql_text("SELECT COUNT(*) FROM messages WHERE chat_id = :chat_id"), params).scalar() or 0)
 

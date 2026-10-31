@@ -76,10 +76,10 @@ class ChatOut(BaseModel):
 
 class ChatPurgedOut(BaseModel):
     """
-    What was removed by DELETE /api/chats/{chat_id}.
-    Counts only - the response never repeats any of the removed content.
+    What was removed by DELETE /api/chats/{chat_id}. Counts only - the response never repeats any of the removed content.
 
-    `block_rule_kept` is true when the chat is on the ingest blocklist: that rule is deliberately NOT removed (see db.queries.purge_chat),
+    `block_rule_kept` is true when the chat was on the ingest blocklist and the rule is still there:
+    that rule is NOT removed unless the request asked for it (`also_unblock`, see db.queries.purge_chat),
     so the UI can say "still not archived" instead of implying the chat is simply gone.
     `senders_deleted` counts only people who wrote in no other chat of the archive.
     """

@@ -250,6 +250,10 @@ def get_chat_window_route(
 )
 def purge_chat(
     chat_id: int = _ChatId,
+    also_unblock: bool = Query(
+        False,
+        description="Also remove the chat's 'Chats not archived' rule, so it is archived again if it writes to you. Default: keep the rule.",
+    ),
     current: DecodedAccessToken = Depends(get_current_user),
     conn: Connection = Depends(get_archive_write_connection),
 ) -> dict[str, Any]:
@@ -258,7 +262,8 @@ def purge_chat(
 
     This is the owner's "forget this conversation" action, for example for the chat of a Telegram account that no longer exists.
     The caller is expected to have asked for confirmation first; there is no undo and no soft delete.
-    What stays: an ingest-blocklist rule for the chat, if there is one (`block_rule_kept`) - see db.queries.purge_chat for why.
+    What stays: an ingest-blocklist rule for the chat, if there is one (`block_rule_kept`) - unless `also_unblock=true` is passed,
+    the owner's explicit choice to forget the chat AND archive it again; see db.queries.purge_chat for why keeping is the default.
     The live archiver may keep running: if the chat receives a new message afterwards it is created again, empty, from that message on.
 
     Errors: 404 "chat_not_found"; 409 "backfill_running" while this account's backfill runs
@@ -274,7 +279,7 @@ def purge_chat(
             },
         )
 
-    result = purge_chat_data(conn, chat_id)
+    result = purge_chat_data(conn, chat_id, also_unblock=also_unblock)
     if result is None:
         raise HTTPException(
             status_code=404,
