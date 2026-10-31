@@ -89,8 +89,12 @@
           <button id="logout-button" type="button" data-i18n-title="nav.logout">
             <span class="nav-icon" data-icon="logout"></span><span class="nav-label" data-i18n="nav.logout">Log out</span>
           </button>
-          <!-- The icon (sun/moon) is set by theme.js and is unchanged by the new rail. -->
-          <button id="theme-toggle" type="button" data-i18n-aria-label="theme.toggleLabel" data-i18n-title="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+          <!-- Both icons are always in the DOM; CSS shows the one for the current theme from <html data-theme> (set by theme.js before first paint),
+               so no script has to swap an icon. The button shows the CURRENT theme (sun = light, moon = dark). -->
+          <button id="theme-toggle" type="button" data-i18n-aria-label="theme.toggleLabel" data-i18n-title="theme.toggleLabel" aria-label="Toggle theme">
+            <span class="nav-icon theme-toggle__icon theme-toggle__icon--light" data-icon="theme-light"></span>
+            <span class="nav-icon theme-toggle__icon theme-toggle__icon--dark" data-icon="theme-dark"></span>
+          </button>
           <!-- One button that switches to the next language (i18n.js); its label names the CURRENT language, the visible code is the same in short. -->
           <button id="lang-toggle" type="button" aria-label="Change language">
             <span class="nav-icon" data-icon="language"></span><span class="lang-code" aria-hidden="true">EN</span>

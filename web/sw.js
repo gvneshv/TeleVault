@@ -55,10 +55,11 @@
  * v41 bumps for the new navigation rail (index.html, css/base.css, css/variables.css, app.js, i18n.js, archiver-toggle.js, i18n/{en,uk}.js):
  * icons, a rail that collapses to icons, and a one-button language toggle.
  * Adds the new lib/icons.js to SHELL_FILES.
+ * v42 bumps for the theme button's SVG sun/moon icons (index.html, css/base.css, js/theme.js, js/lib/icons.js).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v41";
+const CACHE_NAME = "televault-shell-v42";
 const SHELL_FILES = [
   "/",
   "/index.html",

@@ -495,6 +495,12 @@ Shared by the collapsed rail and the phone top bar below. */
   border: 0;
 }
 
+/* Theme button: both SVGs are present, the one matching <html data-theme> is shown (the button displays the CURRENT theme).
+   Keyed on data-theme, which theme.js sets before first paint, so there is no flash of the wrong icon and no script swap. */
+.theme-toggle__icon--dark { display: none; }
+:root[data-theme="dark"] .theme-toggle__icon--light { display: none; }
+:root[data-theme="dark"] .theme-toggle__icon--dark { display: inline-flex; }
+
 /* The language button's short code (EN / UK) sits beside its icon. */
 .lang-code {
   font-family: var(--font-mono);

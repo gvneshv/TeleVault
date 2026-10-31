@@ -27,7 +27,11 @@ function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   const toggle = document.getElementById("theme-toggle");
   if (toggle) {
-    toggle.textContent = theme === "dark" ? "☾" : "☀";
+    // Pages with SVG icon spans inside the button (index.html) get the right icon from CSS keyed on data-theme;
+    // the other pages still have a plain text button, so they keep the glyph.
+    if (!toggle.querySelector("[data-icon]")) {
+      toggle.textContent = theme === "dark" ? "☾" : "☀";
+    }
     toggle.setAttribute(
       "aria-label",
       theme === "dark" ? "Switch to light theme" : "Switch to dark theme",

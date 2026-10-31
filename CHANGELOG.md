@@ -14,13 +14,14 @@ Second step of the chat view (`claude/chat-view-spec.md`): the shell around the 
 - **Every tab has an icon** and a text label (`web/js/lib/icons.js`, inline SVG - no CDN, no icon font). Chats, Messages, Deleted, Stats and Health use the paths drawn in the approved mockup
   (the owner asked to keep the stats and health ones); Settings, Backfill, Admin, the archiver states, log out, language and collapse/expand are Lucide icons, first candidate of each shortlist
   (cog, rotate-ccw-clock, user-star, package-x / package-plus, log-out, earth, fold-horizontal / unfold-horizontal). Lucide is ISC-licensed and the icons it took from Feather (log-out is one) are MIT-licensed:
-  both notices are kept in `web/icons/LICENSE-lucide.txt`. The theme button keeps its sun/moon glyph.
+  both notices are kept in `web/icons/LICENSE-lucide.txt`. The theme button shows Lucide `sun` (light theme) or `moon` (dark theme): both SVGs sit in the button and CSS shows the one matching `<html data-theme>`,
+  so there is no flash and no script swap; the other pages keep the text glyph.
 - **The rail collapses to a 64px icon strip and back** (button beside the wordmark; the choice is remembered per browser in `localStorage`, which may be unavailable - then it simply starts expanded).
   In the collapsed rail every label is *visually* hidden, not removed, so each button keeps its accessible name, and each tab shows its name as a tooltip in the app language.
   The collapse button names the action ("Collapse the sidebar" / "Expand the sidebar", `aria-expanded` carries the state).
 - **Bottom controls**: the archiver button (state icon + the existing dot/ring + label; in the collapsed rail the dot moves onto the icon and the label becomes the tooltip), then log out, theme and language as icon buttons.
   **Language is now one button** that switches to the next language (shows `EN` / `UK`; its label names the current and the next language). The other pages keep their `<select>`; `i18n.js` supports both.
-- **Phones**: the rail is a two-row top bar (brand, username and the four controls on top, all tabs as icons below); no collapse button there. New strings in `en.js` and `uk.js`; web shell cache v41.
+- **Phones**: the rail is a two-row top bar (brand, username and the four controls on top, all tabs as icons below); no collapse button there. New strings in `en.js` and `uk.js`; web shell cache v42.
 - Messages and Deleted stay in the rail for now - they are the old pages and go when the new chat view replaces them (step C).
 - Checked in a real browser (Chromium, mocked API, throwaway script - the repo still has no browser tests): collapse/expand, persistence across a reload, language and theme switching, every tab opening, accessible names while collapsed, archiver icon per state,
   the non-admin DOM, no horizontal scroll, no console errors, in dark and light and at 390px. Not checked: Safari/Firefox, a real touch device, a screen reader.
