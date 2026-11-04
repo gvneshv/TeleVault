@@ -315,17 +315,14 @@ televault/
 │   │   │   ├── en.js
 │   │   │   └── uk.js
 │   │   ├── lib/               # Shared helpers
-│   │   │   ├── chat-filter.js
 │   │   │   ├── dom.js
 │   │   │   ├── errors.js
-│   │   │   ├── order-toggle.js
-│   │   │   └── pagination.js
+│   │   │   ├── pagination.js
+│   │   │   └── router.js        # Hash routes of the chat view (#/chats/<id>[/m/<messageId>]), ids only
 │   │   ├── views/              # One controller per nav tab
 │   │   │   ├── backfill.js
-│   │   │   ├── chats.js
-│   │   │   ├── deleted.js
+│   │   │   ├── chat-view.js     # Chats tab: panel (chats / messages / deleted + search) and the read-only conversation
 │   │   │   ├── health.js
-│   │   │   ├── messages.js
 │   │   │   └── stats.js
 │   │   ├── app.js              # Entry point, loaded as an ES module - routes between views
 │   │   ├── archiver-toggle.js   # Start/stop control + status polling, shared by the nav rail and Backfill page

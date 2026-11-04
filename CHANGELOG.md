@@ -9,6 +9,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - the chat view: panel, conversation, edit history, block and delete (chat view, step C)
+Third step of the chat view (`claude/chat-view-spec.md`). The Chats tab is now a panel beside a read-only conversation, and it replaces the old Chats, Messages and Deleted pages.
+- **Panel** (`web/js/views/chat-view.js`): a switch between *Chats*, *Messages* and *Deleted* and one search box. Chats are listed by recent activity with their edited/deleted counts (`edited_count` and `deleted_count` from `GET /api/chats`);
+  the chat search is a name filter in the browser (the chats endpoint has no search), so while it is active the remaining pages are fetched too. Messages and Deleted are the cross-chat lists (`GET /api/messages`, `GET /api/deleted`) searched with
+  the same text search as before, 30 per "Load more"; a result opens its chat at that message.
+- **Conversation**: `GET /api/chats/{id}/window` drives it. It opens on the newest messages (or around one message), loads older ones when scrolling up (`before=<first id>`, the reader's place is kept) and newer ones when scrolling down (`after=<last id>`);
+  a "Latest messages" button appears while newer messages exist beyond what is loaded. Day headings follow the browser's local day. Deleted messages keep their place with a seal-tinted bubble and a chip "Deleted <time> - preserved"
+  (date and time when the deletion was another day than the message); edited ones carry a patina edge and a chip "Edited N times" (Ukrainian plural forms included). Clicking a chip fetches `GET /api/messages/{id}` **once** and shows the version history
+  (current on top, original at the bottom) or the deletion note; the answer is cached, a failed fetch is retried on the next click.
+- **Routes**: `#/chats`, `#/chats/<chatId>` and `#/chats/<chatId>/m/<messageId>` (`web/js/lib/router.js`). Hash, not path: the app is static files, so a path would be a 404 on reload. A route holds internal ids only, never text or a search term,
+  because URLs end up in history and bookmarks. A route in the address bar brings the Chats tab forward. Unknown chat or message: a translated message (`chat_not_found`, new `message_not_found`) and a way back.
+- **Block this chat** (`PUT /api/ingest/blocklist/{id}`, after a confirmation that says what it does and does not do - nothing already archived is removed, nothing arriving meanwhile is saved) and **Delete stored data**
+  (`DELETE /api/chats/{id}`, a danger dialog: irreversible, Telegram untouched, the chat is archived again from its next message unless blocked). When the chat is blocked the dialog shows a tick box
+  "Also stop blocking this chat", **off by default**, which sends `?also_unblock=true`; the result dialog says when the block rule was kept. A running backfill answers 409 `backfill_running`, shown translated.
+  `lib/dialog.js` gained `showConfirmWithCheckbox()` for this (the tick only counts when the action is confirmed).
+- Switching back to the Chats tab quietly re-fetches the panel (only redrawn when the answer differs) and merges new messages into the open chat when it is at its newest end; messages that became deleted or edited are updated in place.
+- **Not in this step** (step D): jump-to-date, search inside a chat, the All/Edited/Deleted filter in the header, the resizable panel, the final phone layout (for now a phone shows one pane at a time with a back arrow), final icons.
+  The old pages' "whole word", "edited only", sort-order and chat-filter controls are not carried over.
+- New strings in `en.js` and `uk.js` (`cv.*`, `error.messageNotFound`), new Lucide icons (`ban`, `trash`, `search`, `arrow-left`, `chevrons-down`); web shell cache v43.
+
+### Removed - the old Chats, Messages and Deleted pages
+- `web/js/views/chats.js`, `messages.js`, `deleted.js` and the helpers only they used, `web/js/lib/chat-filter.js` and `web/js/lib/order-toggle.js`; the Messages and Deleted entries of the navigation rail; their CSS rules and 17 i18n keys
+  (`nav.messages`, `nav.deleted`, `chatFilter.*`, `common.newestFirst`/`oldestFirst`, `chats.messagesLabel`/`deletedLabel`/`mostRecentFirst`/`leastRecentFirst`, `messages.editedLabel`/`onlyEditedLabel`/`wholeWordLabel`, `deleted.viewDetails`/`hideDetails`).
+  The API endpoints they used are unchanged and still serve the new panel.
+- Checked in a real browser (Chrome, mocked API, throwaway script - the repo still has no browser tests): 64 checks covering the panel, scrolling both ways, anchored windows, chips and lazy history, search, unknown chat/message, block, delete with and without the tick box,
+  language switch, both themes and a 400px phone. **Not checked**: Safari/Firefox, a real touch device, a screen reader, the live API (the mock follows the response models by hand), a very long chat (thousands of loaded messages are all kept in the DOM - no virtual scrolling yet).
+
 ### Changed - navigation rail: icons, collapsing, one-button language (chat view, step B)
 Second step of the chat view (`claude/chat-view-spec.md`): the shell around the future chat panel. The pages themselves are unchanged.
 - **Every tab has an icon** and a text label (`web/js/lib/icons.js`, inline SVG - no CDN, no icon font). Chats, Messages, Deleted, Stats and Health use the paths drawn in the approved mockup
@@ -22,7 +49,7 @@ Second step of the chat view (`claude/chat-view-spec.md`): the shell around the 
 - **Bottom controls**: the archiver button (state icon + the existing dot/ring + label; in the collapsed rail the dot moves onto the icon and the label becomes the tooltip), then log out, theme and language as icon buttons.
   **Language is now one button** that switches to the next language (shows `EN` / `UK`; its label names the current and the next language). The other pages keep their `<select>`; `i18n.js` supports both.
 - **Phones**: the rail is a two-row top bar (brand, username and the four controls on top, all tabs as icons below); no collapse button there. New strings in `en.js` and `uk.js`; web shell cache v42.
-- Messages and Deleted stay in the rail for now - they are the old pages and go when the new chat view replaces them (step C).
+- Messages and Deleted stayed in the rail in this step - they were the old pages; they went with step C (see above).
 - Checked in a real browser (Chromium, mocked API, throwaway script - the repo still has no browser tests): collapse/expand, persistence across a reload, language and theme switching, every tab opening, accessible names while collapsed, archiver icon per state,
   the non-admin DOM, no horizontal scroll, no console errors, in dark and light and at 390px. Not checked: Safari/Firefox, a real touch device, a screen reader.
 
