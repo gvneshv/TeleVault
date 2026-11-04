@@ -12,8 +12,6 @@ export const en = {
   "app.adminBadge": "Admin",
 
   "nav.chats": "Chats",
-  "nav.messages": "Messages",
-  "nav.deleted": "Deleted",
   "nav.stats": "Stats",
   "nav.health": "Health",
   "nav.settings": "Settings",
@@ -34,8 +32,6 @@ export const en = {
   "common.last": "Last",
   "common.prev": "Previous",
   "common.next": "Next",
-  "common.newestFirst": "Newest first",
-  "common.oldestFirst": "Oldest first",
   "common.type.private": "Private",
   "common.type.group": "Group",
   "common.type.supergroup": "Supergroup",
@@ -43,21 +39,13 @@ export const en = {
 
   "chats.empty": "No chats archived yet.",
   "chats.noPreview": "No messages yet",
-  "chats.messagesLabel": "messages",
-  "chats.deletedLabel": "deleted",
-  "chats.mostRecentFirst": "Most recently active",
-  "chats.leastRecentFirst": "Least recently active",
 
   "messages.empty": "No messages found.",
   "messages.noText": "(no text)",
-  "messages.editedLabel": "edited",
   "messages.searchPlaceholder": "Search message text…",
-  "messages.onlyEditedLabel": "Edited only",
 
   "deleted.empty": "No deleted messages found.",
   "deleted.searchPlaceholder": "Search deleted message text…",
-  "deleted.viewDetails": "View details",
-  "deleted.hideDetails": "Hide details",
   "deleted.noRecord": "No deletion record found.",
   "deleted.actor.channel_admin": "Deleted by a channel admin",
   "deleted.actor.self": "Deleted by you",
@@ -150,7 +138,6 @@ export const en = {
   "backfill.unitMinute": "m",
   "backfill.unitSecond": "s",
 
-  "messages.wholeWordLabel": "Whole word",
   "common.cancel": "Cancel",
 
   "archiver.running": "Archiver running",
@@ -178,11 +165,6 @@ export const en = {
   "error.notAdmin": "This action requires admin privileges.",
   "error.dbUnavailable":
     "The database is currently unavailable. Try again shortly, or contact your administrator.",
-
-  "chatFilter.allChats": "All chats",
-  "chatFilter.nChatsSelected": "{n} chats selected",
-  "chatFilter.searchPlaceholder": "Search chats…",
-  "chatFilter.noMatches": "No chats match your search.",
 
   // Auth additions
   "nav.logout": "Log out",
@@ -482,4 +464,50 @@ export const en = {
     "That invite token is invalid, expired, or already used.",
   "error.termsNotAccepted":
     "You must agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
+
+  // Chat view (web/js/views/chat-view.js) - the .one/.few/.many/.other families are picked by the language's plural rules (plural() in that file)
+  "cv.panelLabel": "Chats panel",
+  "cv.switchLabel": "What to list",
+  "cv.modeChats": "Chats",
+  "cv.modeMessages": "Messages",
+  "cv.modeDeleted": "Deleted",
+  "cv.searchLabel": "Search",
+  "cv.searchChats": "Search chats…",
+  "cv.conversationLabel": "Conversation",
+  "cv.noChatMatch": "No chat matches your search.",
+  "cv.loadMore": "Load more",
+  "cv.deletedShort": "Deleted",
+  "cv.editedCount": "{n} edited",
+  "cv.deletedCount": "{n} deleted",
+  "cv.messagesCount.one": "{n} message",
+  "cv.messagesCount.other": "{n} messages",
+  "cv.editedTimes.one": "Edited once",
+  "cv.editedTimes.other": "Edited {n} times",
+  "cv.editedUnknown": "Edited",
+  "cv.deletedPreserved": "Deleted {time} - preserved",
+  "cv.versionCurrent": "Current",
+  "cv.versionOriginal": "Original",
+  "cv.noHistory": "No earlier versions were stored.",
+  "cv.selectChat": "Select a chat to read its archive.",
+  "cv.back": "Back to chats",
+  "cv.jumpLatest": "Latest messages",
+  "cv.readOnly": "Archive view - read-only",
+  "cv.blockedBadge": "Not archived",
+  "cv.block": "Block this chat",
+  "cv.blockTitle": "Block “{name}”?",
+  "cv.blockMessage":
+    "From now on nothing new from this chat is saved. Messages that are already archived stay.\n\nAnything that arrives while the chat is blocked is never saved, and unblocking it later cannot bring that back.\n\nYou can undo this under Settings → Chats not archived.",
+  "cv.blockConfirm": "Stop archiving this chat",
+  "cv.purge": "Delete stored data",
+  "cv.purgeTitle": "Delete everything stored for “{name}”?",
+  "cv.purgeMessage":
+    "This removes everything TeleVault stored for this chat, for good: its messages, edit history, saved copies of deleted messages and backfill history. It cannot be undone.\n\nYour Telegram account is not touched. If the chat is not blocked and writes to you again, it is archived again from that message on.",
+  "cv.purgeConfirm": "Delete for good",
+  "cv.purgeAlsoUnblock":
+    "Also stop blocking this chat (archive it again if it writes to me)",
+  "cv.purgeDone":
+    "Deleted. Messages removed: {messages}. Edits removed: {edits}.",
+  "cv.purgeRuleKept":
+    "The chat is still on the “Chats not archived” list, so new messages from it are not saved.",
+  "error.messageNotFound": "That message isn't in this chat.",
 };

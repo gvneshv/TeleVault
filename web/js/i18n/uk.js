@@ -8,8 +8,6 @@ export const uk = {
   "app.adminBadge": "Адмін",
 
   "nav.chats": "Чати",
-  "nav.messages": "Повідомлення",
-  "nav.deleted": "Видалені",
   "nav.stats": "Статистика",
   "nav.health": "Стан системи",
   "nav.settings": "Налаштування",
@@ -30,8 +28,6 @@ export const uk = {
   "common.last": "Остання",
   "common.prev": "Назад",
   "common.next": "Далі",
-  "common.newestFirst": "Спочатку новіші",
-  "common.oldestFirst": "Спочатку старіші",
   "common.type.private": "Приватний",
   "common.type.group": "Група",
   "common.type.supergroup": "Супергрупа",
@@ -39,21 +35,13 @@ export const uk = {
 
   "chats.empty": "Ще немає архівованих чатів.",
   "chats.noPreview": "Повідомлень ще немає",
-  "chats.messagesLabel": "повідомлень",
-  "chats.deletedLabel": "видалено",
-  "chats.mostRecentFirst": "Нещодавно активні",
-  "chats.leastRecentFirst": "Давно активні",
 
   "messages.empty": "Повідомлень не знайдено.",
   "messages.noText": "(без тексту)",
-  "messages.editedLabel": "змінено",
   "messages.searchPlaceholder": "Пошук у тексті повідомлень…",
-  "messages.onlyEditedLabel": "Лише змінені",
 
   "deleted.empty": "Видалених повідомлень не знайдено.",
   "deleted.searchPlaceholder": "Пошук у тексті видалених повідомлень…",
-  "deleted.viewDetails": "Показати деталі",
-  "deleted.hideDetails": "Сховати деталі",
   "deleted.noRecord": "Запис про видалення не знайдено.",
   "deleted.actor.channel_admin": "Видалено адміністратором каналу",
   "deleted.actor.self": "Видалили ви",
@@ -146,7 +134,6 @@ export const uk = {
   "backfill.unitMinute": "хв",
   "backfill.unitSecond": "с",
 
-  "messages.wholeWordLabel": "Ціле слово",
   "common.cancel": "Скасувати",
 
   "archiver.running": "Архіватор працює",
@@ -174,11 +161,6 @@ export const uk = {
   "error.notAdmin": "Ця дія потребує прав адміністратора.",
   "error.dbUnavailable":
     "База даних тимчасово недоступна. Спробуйте пізніше або зверніться до адміністратора.",
-
-  "chatFilter.allChats": "Усі чати",
-  "chatFilter.nChatsSelected": "Вибрано чатів: {n}",
-  "chatFilter.searchPlaceholder": "Пошук чатів…",
-  "chatFilter.noMatches": "Немає чатів, що відповідають пошуку.",
 
   // Auth additions
   "nav.logout": "Вийти",
@@ -474,4 +456,53 @@ export const uk = {
     "Цей токен запрошення недійсний, прострочений або вже використаний.",
   "error.termsNotAccepted":
     "Щоб створити обліковий запис, потрібно погодитися з Умовами користування та підтвердити ознайомлення з Політикою конфіденційності.",
+
+  // Chat view (web/js/views/chat-view.js) - Ukrainian needs all four plural forms (one/few/many/other)
+  "cv.panelLabel": "Панель чатів",
+  "cv.switchLabel": "Що показувати",
+  "cv.modeChats": "Чати",
+  "cv.modeMessages": "Повідомлення",
+  "cv.modeDeleted": "Видалені",
+  "cv.searchLabel": "Пошук",
+  "cv.searchChats": "Пошук чатів…",
+  "cv.conversationLabel": "Розмова",
+  "cv.noChatMatch": "Жоден чат не відповідає пошуку.",
+  "cv.loadMore": "Показати ще",
+  "cv.deletedShort": "Видалено",
+  "cv.editedCount": "змінено: {n}",
+  "cv.deletedCount": "видалено: {n}",
+  "cv.messagesCount.one": "{n} повідомлення",
+  "cv.messagesCount.few": "{n} повідомлення",
+  "cv.messagesCount.many": "{n} повідомлень",
+  "cv.messagesCount.other": "{n} повідомлення",
+  "cv.editedTimes.one": "Змінено {n} раз",
+  "cv.editedTimes.few": "Змінено {n} рази",
+  "cv.editedTimes.many": "Змінено {n} разів",
+  "cv.editedTimes.other": "Змінено {n} раза",
+  "cv.editedUnknown": "Змінено",
+  "cv.deletedPreserved": "Видалено {time} - збережено",
+  "cv.versionCurrent": "Поточна",
+  "cv.versionOriginal": "Оригінал",
+  "cv.noHistory": "Попередніх версій не збережено.",
+  "cv.selectChat": "Оберіть чат, щоб переглянути його архів.",
+  "cv.back": "Назад до чатів",
+  "cv.jumpLatest": "До останніх повідомлень",
+  "cv.readOnly": "Перегляд архіву - лише читання",
+  "cv.blockedBadge": "Не архівується",
+  "cv.block": "Заблокувати чат",
+  "cv.blockTitle": "Заблокувати «{name}»?",
+  "cv.blockMessage":
+    "Відтепер нічого нового з цього чату не зберігається. Уже заархівовані повідомлення залишаються.\n\nУсе, що надійде, поки чат заблоковано, не зберігається ніколи, і розблокування пізніше цього не поверне.\n\nСкасувати можна в Налаштуваннях → Чати без архівування.",
+  "cv.blockConfirm": "Припинити архівування чату",
+  "cv.purge": "Видалити збережене",
+  "cv.purgeTitle": "Видалити все, що збережено для «{name}»?",
+  "cv.purgeMessage":
+    "Це назавжди видалить усе, що TeleVault зберіг для цього чату: повідомлення, історію змін, збережені копії видалених повідомлень та історію backfill. Скасувати це неможливо.\n\nВаш обліковий запис Telegram не змінюється. Якщо чат не заблоковано і він знову напише вам, архівування почнеться знову з того повідомлення.",
+  "cv.purgeConfirm": "Видалити назавжди",
+  "cv.purgeAlsoUnblock":
+    "Також припинити блокування цього чату (архівувати його знову, якщо він напише мені)",
+  "cv.purgeDone": "Видалено. Повідомлень: {messages}. Змін: {edits}.",
+  "cv.purgeRuleKept":
+    "Чат досі в списку «Чати без архівування», тому нові повідомлення з нього не зберігаються.",
+  "error.messageNotFound": "Цього повідомлення немає в цьому чаті.",
 };

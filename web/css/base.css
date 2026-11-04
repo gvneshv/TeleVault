@@ -674,64 +674,10 @@ Shared by the collapsed rail and the phone top bar below. */
 }
 
 /* ---------------------------------------------------------------------
-   Chats list view
+   Shared pills
    ------------------------------------------------------------------- */
 
-.chat-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 8px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.chat-row:first-child {
-  border-top: 1px solid var(--color-border);
-}
-
-.chat-row__avatar {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  font-family: var(--font-ui);
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--color-ink-muted);
-}
-
-.chat-row__body {
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-row__top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chat-row__name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Generic neutral pill - chat-type labels (Chats, Messages) and deletion actor-inference labels (Deleted).
+/* Generic neutral pill - chat-type labels (Stats), deletion actor-inference labels and the version labels of the chat view.
    Was chat-type-badge; renamed once a second, unrelated use needed the same neutral style. */
 .info-badge {
   flex-shrink: 0;
@@ -749,50 +695,9 @@ Shared by the collapsed rail and the phone top bar below. */
   color: var(--color-ink-muted);
 }
 
-.chat-row__preview {
-  margin-top: 2px;
-  font-size: 13px;
-  color: var(--color-ink-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-row__preview--empty {
-  font-style: italic;
-}
-
-.chat-row__stats {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-}
-
-.chat-row__count {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--color-ink-muted);
-}
-
-.chat-row__timestamp {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--color-ink-muted);
-}
-
-/* The seal-badge's signature tilt (see variables.css) works well as an isolated accent,
-   but here several badges of varying width (count text differs per chat) stack in a column.
-   A fixed rotation angle shifts wider badges higher than narrower ones - see chat above with dev tools open - which reads as misalignment rather than character.
-   Disabled in this context only;
-   the tilt stays everywhere else it's used in isolation. */
-.chat-row__stats .seal-badge {
-  transform: none;
-}
 
 /* ---------------------------------------------------------------------
-   Pagination - shared across every paginated view (Chats, Messages, ...).
+   Pagination - shared across every paginated view (Stats, Backfill history, Admin).
    Was chat-pagination*;
    renamed once a second view needed it verbatim.
    ------------------------------------------------------------------- */
@@ -846,173 +751,6 @@ Shared by the collapsed rail and the phone top bar below. */
   margin: 0;
 }
 
-/* Rows stack more loosely on narrow viewports - stats move under the name instead of competing for horizontal space next to a long chat name. */
-@media (max-width: 640px) {
-  .chat-row {
-    flex-wrap: wrap;
-  }
-
-  .chat-row__stats {
-    flex-direction: row;
-    align-items: center;
-    width: 100%;
-    padding-left: 50px;
-  }
-}
-
-/* ---------------------------------------------------------------------
-   Messages view
-   ------------------------------------------------------------------- */
-
-.messages-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.messages-filter__search {
-  flex: 1;
-  max-width: 360px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-raised);
-}
-
-.messages-filter__toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-ink-muted);
-  white-space: nowrap;
-}
-
-.messages-filter__order {
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-raised);
-  font-size: 13px;
-  color: inherit;
-}
-
-/* ---------------------------------------------------------------------
-   Chat filter dropdown (Messages/Deleted views)
-   Closed state matches .tv-select's chrome; the open panel is fully custom
-   (unlike .tv-select, which leaves the open state to the native browser/OS widget) since a checkbox list has no native <select> equivalent.
-   ------------------------------------------------------------------- */
-
-.chat-filter {
-  position: relative;
-  display: inline-flex;
-}
-
-.chat-filter__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 30px 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--color-border);
-  background: var(--color-bg-raised);
-  font-size: 13px;
-  color: inherit;
-  cursor: pointer;
-  position: relative;
-  max-width: 220px;
-  transition: border-color 0.15s ease;
-}
-
-.chat-filter__toggle:hover,
-.chat-filter__toggle[aria-expanded="true"] {
-  border-color: var(--color-focus);
-}
-
-.chat-filter__toggle:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
-}
-
-.chat-filter__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-filter__chevron {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border: solid var(--color-ink-muted);
-  border-width: 0 1.5px 1.5px 0;
-  transform: translateY(-65%) rotate(45deg);
-  pointer-events: none;
-}
-
-.chat-filter__panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  width: 260px;
-  padding: 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-raised);
-  box-shadow: 0 8px 24px var(--color-shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.chat-filter__search {
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  font-size: 13px;
-  color: inherit;
-}
-
-.chat-filter__option {
-  padding: 5px 4px;
-  border-radius: var(--radius-sm);
-}
-
-.chat-filter__option:hover {
-  background: var(--color-bg);
-}
-
-.chat-filter__option-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-filter__option--all {
-  font-weight: 600;
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
-  padding-bottom: 8px;
-  margin-bottom: 2px;
-}
-
-.chat-filter__list {
-  max-height: 260px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-filter__empty {
-  padding: 8px 4px;
-  font-size: 12.5px;
-  color: var(--color-ink-muted);
-}
 
 /* ---------------------------------------------------------------------
    Reusable custom form controls (checkbox, select)
@@ -1128,153 +866,6 @@ Shared by the collapsed rail and the phone top bar below. */
   outline-offset: 1px;
 }
 
-/* Order toggle: replaces the old 2-option <select> with a single button that flips state and relabels itself,
-   same look-and-feel as .tv-select but without the always-empty dropdown-panel affordance a 2-option select doesn't need. */
-.tv-order-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--color-border);
-  background: var(--color-bg-raised);
-  font-size: 13px;
-  color: inherit;
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-}
-
-.tv-order-toggle:hover {
-  border-color: var(--color-focus);
-}
-
-.tv-order-toggle:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
-}
-
-.tv-order-toggle__arrow {
-  color: var(--color-ink-muted);
-}
-
-.message-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.message-row {
-  padding: 12px 8px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.message-row:first-child {
-  border-top: 1px solid var(--color-border);
-}
-
-.message-row__meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--color-ink-muted);
-}
-
-.message-row__sender {
-  font-weight: 600;
-  color: var(--color-ink);
-}
-
-.message-row__chat {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.message-row__text {
-  font-size: 13.5px;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-.message-row__text--empty {
-  color: var(--color-ink-muted);
-  font-style: italic;
-}
-
-/* Search-term highlight - see TeleVaultDom.highlightMatches() in js/lib/dom.js, shared by Messages and Deleted.
-   Scoped to message text only;
-   color is left inherited (works in both themes against --color-highlight-bg without a paired ink token). */
-.message-row__text mark {
-  background: var(--color-highlight-bg);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
-}
-
-/* ---------------------------------------------------------------------
-   Deleted view
-   Reuses .message-list / .message-row from Messages (see base.css above)
-   for shared layout; the following extends it with deletion-specific bits.
-   ------------------------------------------------------------------- */
-
-/* Quieter nod to the seal meaning than a repeated badge - see deleted.js header comment for why the badge itself isn't repeated per row here. */
-.deleted-row__timestamp {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--color-seal);
-}
-
-.deleted-row__toggle {
-  margin-left: auto;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--color-focus);
-  background: none;
-  border: none;
-  padding: 0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.deleted-row__detail {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-panel);
-  border: 1px solid var(--color-border);
-}
-
-.deleted-row__detail-loading,
-.deleted-row__detail-error {
-  font-size: 12.5px;
-  color: var(--color-ink-muted);
-}
-
-.deleted-row__confidence {
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  color: var(--color-ink-muted);
-  font-style: italic;
-}
-
-/* Filter bar stacks on narrow viewports, same breakpoint as the rest of the app. */
-@media (max-width: 640px) {
-  .messages-filter-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .messages-filter__search {
-    max-width: none;
-  }
-}
 
 /* ---------------------------------------------------------------------
    Stats view
@@ -2580,4 +2171,618 @@ mark.legal-placeholder {
   font-weight: 600;
   font-size: 11.5px;
   text-transform: uppercase;
+}
+/* ---------------------------------------------------------------------
+   Chat view (web/js/views/chat-view.js; claude/chat-view-spec.md)
+   A panel (chats / messages / deleted) beside a read-only conversation.
+   Colours follow the product's one rule: seal = deleted, patina = edited; nothing else uses them.
+   ------------------------------------------------------------------- */
+
+/* Visually hidden, still read by screen readers (the h1 the chat view keeps for the page outline). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The chat view fills the whole pane: no padding, no footer (the ToS/Privacy links stay one tab away). app.js sets data-active-view. */
+.app-main[data-active-view="chats"] {
+  padding: 0;
+  overflow: hidden;
+}
+
+.app-main[data-active-view="chats"] > .site-footer {
+  display: none;
+}
+
+.app-view--chats {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.chatview {
+  --cv-panel-width: 320px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--cv-panel-width) minmax(0, 1fr);
+}
+
+/* ---- Panel ---- */
+
+.chatview__panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-panel);
+  border-right: 1px solid var(--color-border);
+}
+
+.chatview__panel-head {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cv-switch {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cv-switch__btn {
+  padding: 6px 4px;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cv-switch__btn:last-child {
+  border-right: 0;
+}
+
+.cv-switch__btn[aria-pressed="true"] {
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.cv-switch__btn:focus-visible,
+.cv-search input:focus-visible,
+.cv-row:focus-visible,
+.cv-more:focus-visible,
+.cv-btn:focus-visible,
+.cv-chip:focus-visible,
+.cv-latest:focus-visible,
+.cv-back:focus-visible,
+.cv-scroll:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.cv-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  color: var(--color-ink-muted);
+}
+
+.cv-search .nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.cv-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.cv-search input:focus-visible {
+  outline: none; /* the whole field shows focus instead, below */
+}
+
+.cv-search:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.chatview__panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chatview__panel-body > .empty-state {
+  margin: 12px;
+  padding: 24px 12px;
+}
+
+.cv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cv-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.cv-row:hover {
+  background: var(--color-bg-raised);
+}
+
+.cv-row[aria-current="true"] {
+  background: var(--color-bg-raised);
+  box-shadow: inset 3px 0 0 var(--color-focus);
+}
+
+.cv-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+
+.cv-avatar--lg {
+  width: 44px;
+  height: 44px;
+}
+
+.cv-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cv-row__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.cv-row__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-row__time {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-ink-muted);
+}
+
+.cv-row__preview {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Search results show two lines of the matching text instead of one. */
+.cv-row__preview--text {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.cv-row__preview mark,
+.cv-msg__text mark {
+  background: var(--color-highlight-bg);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.cv-row__empty {
+  font-style: italic;
+  color: var(--color-ink-muted);
+}
+
+.cv-row__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.cv-row__chips .seal-badge {
+  transform: none;
+}
+
+.cv-more {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 12px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cv-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---- Conversation ---- */
+
+.chatview__conversation {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+}
+
+.cv-placeholder {
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  color: var(--color-ink-muted);
+}
+
+.cv-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+}
+
+.cv-head__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.cv-head__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-head__sub {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-ink-muted);
+}
+
+.cv-head__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cv-btn .nav-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.cv-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Same outlined, seal-toned treatment as .modal__btn--danger: consequential without being a solid red fill. */
+.cv-btn--danger {
+  border-color: var(--color-seal);
+  color: var(--color-seal);
+}
+
+/* The way back to the panel exists for the one-pane phone layout only. */
+.cv-back {
+  display: none;
+  color: var(--color-ink);
+}
+
+.cv-back .nav-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.cv-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.cv-msgs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cv-edge {
+  margin: 8px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-ink-muted);
+}
+
+.cv-day {
+  align-self: center;
+  margin: 10px 0 4px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--color-bg-raised);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-ink-muted);
+}
+
+.cv-msg {
+  align-self: flex-start;
+  max-width: min(640px, 100%);
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-panel);
+}
+
+/* Deleted: the whole bubble takes the seal tint, so a preserved message is recognisable while scrolling, not only when its chip is read. */
+.cv-msg--deleted {
+  background: var(--color-seal-bg);
+  border-color: var(--color-seal);
+}
+
+/* Edited: a patina edge. */
+.cv-msg--edited:not(.cv-msg--deleted) {
+  border-left: 4px solid var(--color-patina);
+}
+
+.cv-msg--anchor {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.cv-msg__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 2px;
+}
+
+.cv-msg__sender {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.cv-msg__time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+
+.cv-msg__text {
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cv-msg__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cv-chip {
+  border: 0;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.cv-msg__chips .seal-badge {
+  transform: none;
+}
+
+.cv-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  font-size: 13px;
+}
+
+.cv-detail p {
+  margin: 0;
+}
+
+.cv-detail--error,
+.cv-detail__note {
+  color: var(--color-ink-muted);
+}
+
+.cv-detail__note {
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+
+.cv-versions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv-version {
+  padding-left: 10px;
+  border-left: 2px solid var(--color-border);
+}
+
+.cv-version--current {
+  border-left-color: var(--color-patina);
+}
+
+.cv-version__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+
+.cv-version__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cv-latest {
+  position: absolute;
+  right: 20px;
+  bottom: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  cursor: pointer;
+}
+
+.cv-latest .nav-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.cv-foot {
+  padding: 6px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-ink-muted);
+}
+
+/* The tick box of a confirmation dialog (lib/dialog.js, showConfirmWithCheckbox). */
+.modal__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.modal__check input {
+  margin-top: 3px;
+}
+
+/* Phones: one pane at a time (the panel, or the conversation with a back arrow).
+   The final phone layout is step D of the spec; this is the minimum that keeps the view usable until then. */
+@media (max-width: 640px) {
+  .chatview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chatview[data-pane="panel"] .chatview__conversation,
+  .chatview[data-pane="conversation"] .chatview__panel {
+    display: none;
+  }
+
+  .cv-back {
+    display: block;
+  }
+
+  /* Icons only on a phone; the words stay in the DOM (visually hidden) as the buttons' accessible names, and `title` shows them on hover. */
+  .cv-head__actions .cv-btn span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
 }

@@ -7,11 +7,11 @@
  *
  * This is the single ES module entry point for the app (see index.html's one <script type="module" src="/js/app.js">).
  * It imports every view module, which is what actually causes their code to run at all - an unimported ES module's top-level code
- * (e.g. chats.js's own DOMContentLoaded listener) never executes, unlike a classic <script> tag which always runs once loaded.
- * chats.js self-initializes as the landing view (it only exports a refresh function, see below);
- * the other five export an init() called lazily below, the first time their tab is opened.
+ * never executes, unlike a classic <script> tag which always runs once loaded.
+ * The chat view (views/chat-view.js) is the landing view: initChatView() is called once below, on DOMContentLoaded.
+ * The other views export an init() called lazily below, the first time their tab is opened.
  *
- * Switching BACK to a data tab (chats, messages, deleted, stats, health) re-fetches it quietly (each view's refresh*View(), see lib/refresh.js),
+ * Switching BACK to a data tab (chats, stats, health) re-fetches it quietly (each view's refresh*View(), see lib/refresh.js),
  * so what the live archiver stored in the meantime shows up without a page reload.
  * There is deliberately no timer: a list that rewrites itself while someone is reading it is worse than one that updates when they come back to it.
  * The Admin tab is the exception to both:
@@ -19,15 +19,14 @@
  *
  * The nav rail can be collapsed to icons (initNavCollapse below); that choice is remembered per browser.
  *
- * No client-side router or URL hash handling yet.
- * Adding one is a reasonable future step once there are per-item views (e.g. a single chat or message) that benefit from being linkable/bookmarkable
- * - not needed for the nav-only shell.
+ * Routing: only the chat view has addresses - hash routes #/chats/<id> and #/chats/<id>/m/<messageId> (lib/router.js), handled by chat-view.js itself.
+ * The other tabs are still plain nav clicks without a URL.
+ * The one thing this file adds is "a chat route in the address bar brings the Chats tab forward",
+ * so a link or a bookmark to a chat works from wherever the app was left open.
  */
 
-import { refreshChatsView } from "./views/chats.js";
+import { initChatView, refreshChatView } from "./views/chat-view.js";
 import "./archiver-toggle.js";
-import { initMessagesView, refreshMessagesView } from "./views/messages.js";
-import { initDeletedView, refreshDeletedView } from "./views/deleted.js";
 import { initStatsView, refreshStatsView } from "./views/stats.js";
 import { initHealthView, refreshHealthView } from "./views/health.js";
 import { initBackfillView } from "./views/backfill.js";
@@ -35,12 +34,11 @@ import { initSettingsView } from "./views/settings.js";
 import { t } from "./i18n.js";
 import { logout, isAdmin, fetchCurrentUser } from "./lib/auth.js";
 import { renderIcons, setIcon } from "./lib/icons.js";
+import { parseChatRoute } from "./lib/router.js";
 
 // Tabs that re-fetch their data on every visit after the first (the first visit is each view's own init/self-load).
 const VIEW_REFRESHERS = {
-  chats: refreshChatsView,
-  messages: refreshMessagesView,
-  deleted: refreshDeletedView,
+  chats: refreshChatView,
   stats: refreshStatsView,
   health: refreshHealthView,
 };
@@ -126,10 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
+    // The chat view pads and scrolls its own panes, so the pane around it drops its padding and footer (CSS reads this attribute).
+    const main = document.querySelector(".app-main");
+    if (main) main.dataset.activeView = viewName;
+
     // Views other than the landing "chats" tab don't self-initialize on DOMContentLoaded (no point fetching data for a hidden tab).
     // Each exports an init() that's safe to call more than once - the view itself guards against re-initializing.
-    if (viewName === "messages") initMessagesView();
-    if (viewName === "deleted") initDeletedView();
     if (viewName === "stats") initStatsView();
     if (viewName === "health") initHealthView();
     if (viewName === "backfill") initBackfillView();
@@ -208,7 +208,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Default view on load.
+  // The chat view is started first so a chat route already in the address bar is opened right away.
+  initChatView();
   showView("chats");
+
+  // A chat route (a pasted link, the Back button) while another tab is open brings the Chats tab forward.
+  // Guarded so a click inside the chat view itself - which also changes the hash - is not treated as a tab switch (and so does not trigger a refresh).
+  window.addEventListener("hashchange", () => {
+    const chatsSection = document.querySelector('.app-view[data-view="chats"]');
+    if (parseChatRoute(location.hash) && chatsSection?.hidden)
+      showView("chats");
+  });
 
   // Logout button lives in the nav rail (see #logout-button in index.html),
   // not inside a .app-view section - reachable regardless of which tab is open, same reasoning as #archiver-toggle above it.

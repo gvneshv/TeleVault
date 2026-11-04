@@ -56,10 +56,13 @@
  * icons, a rail that collapses to icons, and a one-button language toggle.
  * Adds the new lib/icons.js to SHELL_FILES.
  * v42 bumps for the theme button's SVG sun/moon icons (index.html, css/base.css, js/theme.js, js/lib/icons.js).
+ * v43 bumps for the chat view (step C of claude/chat-view-spec.md): new views/chat-view.js and lib/router.js (both added to SHELL_FILES),
+ * changed index.html, app.js, lib/dialog.js (tick box), lib/icons.js, lib/errors.js, css/base.css and i18n/{en,uk}.js;
+ * the old views/{chats,messages,deleted}.js and lib/{chat-filter,order-toggle}.js are gone and are REMOVED from SHELL_FILES.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v42";
+const CACHE_NAME = "televault-shell-v43";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -79,18 +82,15 @@ const SHELL_FILES = [
   "/js/lib/dom.js",
   "/js/lib/auth.js",
   "/js/lib/pagination.js",
-  "/js/lib/order-toggle.js",
   "/js/lib/errors.js",
   "/js/lib/dialog.js",
-  "/js/lib/chat-filter.js",
   "/js/lib/archive-error.js",
   "/js/lib/refresh.js",
   "/js/lib/icons.js",
+  "/js/lib/router.js",
   "/js/archiver-toggle.js",
   "/js/app.js",
-  "/js/views/chats.js",
-  "/js/views/messages.js",
-  "/js/views/deleted.js",
+  "/js/views/chat-view.js",
   "/js/views/stats.js",
   "/js/views/health.js",
   "/js/views/backfill.js",

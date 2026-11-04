@@ -34,7 +34,10 @@ import { t } from "../i18n.js";
  * @param {{ expected: string, label: string }} [opts.typed] - require the person to type `expected` exactly before confirming.
  * @param {{ href: string, label: string }} [opts.link] - a "go and fix it" link shown under the message.
  *   Built with DOM APIs like everything else here, so `label` is never parsed as HTML; `href` must be one of our own paths, never a value taken from a server response.
- * @returns {Promise<boolean>} true if confirmed, false if cancelled/dismissed.
+ * @param {{ label: string }} [opts.checkbox] - an extra tick box (always unticked at first) under the message.
+ *   With it the promise resolves to `{ confirmed, checked }` instead of a bare boolean, so a caller cannot read the box without also knowing the answer.
+ * @returns {Promise<boolean | { confirmed: boolean, checked: boolean }>}
+ *   true if confirmed, false if cancelled/dismissed; the object form only when `checkbox` was given.
  */
 function openDialog({
   message,
@@ -44,6 +47,7 @@ function openDialog({
   danger = false,
   typed,
   link,
+  checkbox,
 }) {
   return new Promise((resolve) => {
     const previouslyFocused = document.activeElement;
@@ -103,6 +107,19 @@ function openDialog({
       dialog.append(field, hint);
     }
 
+    /** @type {HTMLInputElement | null} */
+    let optionBox = null;
+    if (checkbox) {
+      const row = document.createElement("label");
+      row.className = "modal__check";
+      optionBox = document.createElement("input");
+      optionBox.type = "checkbox";
+      const text = document.createElement("span");
+      text.textContent = checkbox.label;
+      row.append(optionBox, text);
+      dialog.append(row);
+    }
+
     const actions = document.createElement("div");
     actions.className = "modal__actions";
 
@@ -129,7 +146,11 @@ function openDialog({
       overlay.remove();
       // The element may have been removed from the page while the dialog was open (e.g. a list re-render) - focus() on a detached node is a harmless no-op.
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
-      resolve(result);
+      resolve(
+        optionBox
+          ? { confirmed: result, checked: result && optionBox.checked }
+          : result,
+      );
     }
 
     /**
@@ -263,4 +284,28 @@ function showTypedConfirm(message, expected, { title, confirmLabel } = {}) {
   });
 }
 
-export { showAlert, showConfirm, showTypedConfirm };
+/**
+ * Confirmation with one extra, initially unticked option - e.g. "also stop blocking this chat" under a destructive action.
+ * The tick only counts when the action is confirmed (`checked` is false after Cancel/Escape), so callers can use it without re-checking `confirmed`.
+ *
+ * @param {string} message
+ * @param {{ title?: string, confirmLabel?: string, danger?: boolean, checkboxLabel: string }} options
+ * @returns {Promise<{ confirmed: boolean, checked: boolean }>}
+ */
+function showConfirmWithCheckbox(
+  message,
+  { title, confirmLabel, danger = false, checkboxLabel },
+) {
+  return /** @type {Promise<{ confirmed: boolean, checked: boolean }>} */ (
+    openDialog({
+      message,
+      title,
+      confirmLabel: confirmLabel ?? t("dialog.confirm"),
+      showCancel: true,
+      danger,
+      checkbox: { label: checkboxLabel },
+    })
+  );
+}
+
+export { showAlert, showConfirm, showConfirmWithCheckbox, showTypedConfirm };
