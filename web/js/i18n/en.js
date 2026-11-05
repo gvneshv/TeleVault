@@ -498,6 +498,12 @@ export const en = {
   "cv.blockMessage":
     "From now on nothing new from this chat is saved. Messages that are already archived stay.\n\nAnything that arrives while the chat is blocked is never saved, and unblocking it later cannot bring that back.\n\nYou can undo this under Settings → Chats not archived.",
   "cv.blockConfirm": "Stop archiving this chat",
+  "cv.unblock": "Archive this chat again",
+  "cv.unblockTitle": "Archive “{name}” again?",
+  "cv.unblockMessage":
+    "New messages from this chat are saved again, starting with the next one.\n\nNothing that arrived while the chat was blocked was stored, so those messages will not appear. Messages archived earlier are untouched.",
+  "cv.unblockConfirm": "Archive again",
+  "cv.you": "You",
   "cv.purge": "Delete stored data",
   "cv.purgeTitle": "Delete everything stored for “{name}”?",
   "cv.purgeMessage":

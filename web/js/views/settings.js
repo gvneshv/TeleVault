@@ -318,6 +318,8 @@ async function changeBlock(root, chatId, block) {
   }
   s.selected = "";
   await loadBlocklist(root);
+  // The chat view keeps its own copy of the list (its header badge and block button) - tell it to re-read.
+  document.dispatchEvent(new CustomEvent("televault:blocklistchanged"));
 }
 
 function attachBlocklistHandlers(root) {
@@ -429,6 +431,15 @@ function initSettingsView() {
 }
 
 export { initSettingsView };
+
+// A chat was blocked or unblocked from the chat view while this page was already loaded: re-read the list instead of showing a stale one.
+// Skipped while a request of this page is in flight - that request reloads the list itself, and its own event would otherwise cause a pointless second load.
+document.addEventListener("televault:blocklistchanged", () => {
+  if (!settingsViewState.initialized) return;
+  const root = document.getElementById("settings-root");
+  const s = settingsViewState.blocklist;
+  if (root && !s.busy && !s.loading) loadBlocklist(root);
+});
 
 // Re-render in the new language - same pattern as the other views (e.g. health.js).
 // The blocklist and the device list are redrawn from memory, not re-fetched.

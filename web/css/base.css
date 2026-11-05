@@ -2599,6 +2599,13 @@ mark.legal-placeholder {
   background: var(--color-bg-panel);
 }
 
+/* The owner's own messages sit on the right with a blue-grey tint.
+   Listed BEFORE the deleted/edited rules so that "deleted" (seal tint) still wins on a bubble that is both: what the archive preserved matters more than who wrote it. */
+.cv-msg--own {
+  align-self: flex-end;
+  background: var(--color-own-bg);
+}
+
 /* Deleted: the whole bubble takes the seal tint, so a preserved message is recognisable while scrolling, not only when its chip is read. */
 .cv-msg--deleted {
   background: var(--color-seal-bg);

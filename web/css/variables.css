@@ -1,7 +1,7 @@
 /*
  * Design tokens for TeleVault.
  *
- * Palette: lavender "ink on paper" (light) / midnight with an orange accent (dark).
+ * Palette: dimmed lavender-grey "ink on paper" (light) / midnight with an orange accent (dark).
  * Every text pair passes WCAG AA; checked with the colour & contrast lab.
  * The accent colors are deliberately tied to the product's subject matter:
  *   --color-seal    : red (light) / amber (dark) "wax seal", used ONLY for deleted/preserved messages - a literal callback to sealing a preserved document.
@@ -23,23 +23,27 @@
  */
 
 :root[data-theme="light"] {
-  --color-bg: #ede8fe;
-  --color-bg-panel: #e7e5fe;
-  --color-bg-raised: #dddefd;
-  --color-ink: #2f3a62;
-  --color-ink-muted: #2e2e2e;
-  --color-border: #111111;
-  --color-seal: #bb0000;
-  --color-seal-bg: #e8d1e5; /* faint tint of --color-seal (10% over --color-bg); contrast of seal on it 4.72:1 */
-  --color-patina: #260db9;
-  --color-patina-bg: #d9d2f7; /* faint tint of --color-patina (10% over --color-bg) */
-  --color-track: #e7e5fe; /* empty part of a progress bar; the fill (--color-focus) is 9.7:1 against it */
+  /* A deliberately DIM light theme: the page sits at ~62% relative luminance (the first version was ~83%, which hurt to look at for long),
+     panels are only a step lighter, and borders are a soft slate instead of near-black. Text pairs below were measured, not eyeballed:
+     ink 9.1-10.4:1 and muted 5.1-6.5:1 on bg/panel/raised, borders 3:1 against the panel (non-text minimum). */
+  --color-bg: #cfcdda;
+  --color-bg-panel: #dcdae6;
+  --color-bg-raised: #c3c1d2;
+  --color-ink: #232943;
+  --color-ink-muted: #454860;
+  --color-border: #74718a;
+  --color-seal: #a30000;
+  --color-seal-bg: #e3cbd0; /* faint red tint; seal on it 5.4:1 */
+  --color-patina: #2c1aa0;
+  --color-patina-bg: #c9c4e6; /* faint indigo tint; patina on it 7.1:1 */
+  --color-track: #bdbbcd; /* empty part of a progress bar; the fill (--color-focus) is 6.4:1 against it */
   --color-ok: #0b6b2f;
-  --color-ok-bg: #cdd6e5; /* faint tint of --color-ok (12% over --color-bg-panel) */
+  --color-ok-bg: #c9d9d0; /* faint tint of --color-ok */
+  --color-own-bg: #c6d2e4; /* the owner's own messages in the chat view: a calm blue-grey, clearly not the red (deleted) or indigo (edited) tints */
   --color-focus: #1a3c39;
   --color-focus-glow: rgba(26, 60, 57, 0.55);
-  --color-shadow: rgba(47, 58, 98, 0.12);
-  --color-highlight-bg: #f0cf6b;
+  --color-shadow: rgba(35, 41, 67, 0.16);
+  --color-highlight-bg: #e0c060;
 }
 
 :root[data-theme="dark"] {
@@ -59,6 +63,7 @@
   --color-focus: #ff7a00;
   --color-focus-glow: rgba(255, 122, 0, 0.65);
   --color-shadow: rgba(0, 0, 0, 0.45);
+  --color-own-bg: #1c2d42; /* the owner's own messages in the chat view: a blue-grey lift, distinct from the amber (deleted) tint */
   --color-highlight-bg: #5c4a1a;
 }
 

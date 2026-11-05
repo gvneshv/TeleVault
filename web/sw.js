@@ -56,15 +56,19 @@
  * icons, a rail that collapses to icons, and a one-button language toggle.
  * Adds the new lib/icons.js to SHELL_FILES.
  * v42 bumps for the theme button's SVG sun/moon icons (index.html, css/base.css, js/theme.js, js/lib/icons.js).
- * v44 (chat view step D): changed index.html (panel resizer, scrim, overlay state), css/base.css, js/views/chat-view.js, js/lib/icons.js and i18n/{en,uk}.js
- * for the All/Edited/Deleted switch, in-chat search, jump to date, the resizable panel and the tablet overlay; no file was added or removed.
  * v43 bumps for the chat view (step C of claude/chat-view-spec.md): new views/chat-view.js and lib/router.js (both added to SHELL_FILES),
  * changed index.html, app.js, lib/dialog.js (tick box), lib/icons.js, lib/errors.js, css/base.css and i18n/{en,uk}.js;
  * the old views/{chats,messages,deleted}.js and lib/{chat-filter,order-toggle}.js are gone and are REMOVED from SHELL_FILES.
+ * v44 (chat view step D): changed index.html (panel resizer, scrim, overlay state), css/base.css, js/views/chat-view.js, js/lib/icons.js and i18n/{en,uk}.js
+ * for the All/Edited/Deleted switch, in-chat search, jump to date, the resizable panel and the tablet overlay; no file was added or removed.
+ * v45 (chat view follow-ups): changed css/variables.css (softer, dimmer light theme + the --color-own-bg token), css/base.css (own messages on the right),
+ * js/views/chat-view.js (block/unblock toggle, owner lookup), js/views/settings.js (re-reads the blocklist when the chat view changes it),
+ * js/lib/icons.js and i18n/{en,uk}.js;
+ * no file was added or removed. 
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v44";
+const CACHE_NAME = "televault-shell-v45";
 const SHELL_FILES = [
   "/",
   "/index.html",

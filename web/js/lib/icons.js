@@ -149,6 +149,10 @@ const ICONS = {
     ["circle", { cx: "12", cy: "12", r: "10" }],
     ["path", { d: "M4.929 4.929 19.07 19.071" }],
   ], // lucide: ban
+  unblock: [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "m9 12 2 2 4-4" }],
+  ], // lucide: circle-check
   purge: [
     ["path", { d: "M10 11v6" }],
     ["path", { d: "M14 11v6" }],

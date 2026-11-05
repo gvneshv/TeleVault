@@ -104,6 +104,9 @@ const state = {
   /** Chat ids on the ingest blocklist ("Chats not archived"). */
   blocked: new Set(),
 
+  /** Telegram user id of the archive's owner (GET /api/archive/owner), or null while unknown: their messages are drawn on the right. */
+  ownerId: null,
+
   /** message id -> MessageDetail from GET /api/messages/{id}, or "error". */
   detailCache: new Map(),
   /** message ids whose edit-history / deletion note is open. */
@@ -524,6 +527,36 @@ async function loadBlocklist() {
   }
 }
 
+/**
+ * Fetch who the archive's owner is, so their own messages can be drawn on the right.
+ * Unknown (an archive not yet updated, or an archiver that has not recorded it) simply leaves every message on the left - same as before.
+ * If the conversation is already on screen when the answer arrives, its messages are redrawn one by one (no scroll jump).
+ */
+async function loadOwner() {
+  try {
+    const res = await apiFetch("/api/archive/owner");
+    if (!res.ok) return;
+    const data = await res.json();
+    const ownerId = typeof data.owner_id === "number" ? data.owner_id : null;
+    if (ownerId === state.ownerId) return;
+    state.ownerId = ownerId;
+    if (state.convStatus === "ready")
+      state.messages.forEach((m) => redrawMessage(m.id));
+  } catch {
+    // Decoration only; the conversation reads fine without it.
+  }
+}
+
+/** True when the archive's owner wrote this message.
+ *  Channel posts have no sender, so they are never "own". */
+function isOwnMessage(message) {
+  return (
+    state.ownerId !== null &&
+    message.sender?.sender_id !== undefined &&
+    message.sender?.sender_id === state.ownerId
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Conversation: drawing
 // ---------------------------------------------------------------------------
@@ -558,8 +591,8 @@ function renderConversationHeader() {
     </div>
     <div class="cv-head__actions">
       ${blocked ? `<span class="info-badge" id="cv-blocked-badge">${escapeHtml(t("cv.blockedBadge"))}</span>` : ""}
-      <button type="button" class="cv-btn" id="cv-block" title="${escapeHtml(t("cv.block"))}" ${blocked ? "disabled" : ""}>
-        <span class="nav-icon" data-icon="block"></span><span>${escapeHtml(t("cv.block"))}</span>
+      <button type="button" class="cv-btn" id="cv-block" title="${escapeHtml(t(blocked ? "cv.unblock" : "cv.block"))}">
+        <span class="nav-icon" data-icon="${blocked ? "unblock" : "block"}"></span><span>${escapeHtml(t(blocked ? "cv.unblock" : "cv.block"))}</span>
       </button>
       <button type="button" class="cv-btn cv-btn--danger" id="cv-purge" title="${escapeHtml(t("cv.purge"))}">
         <span class="nav-icon" data-icon="purge"></span><span>${escapeHtml(t("cv.purge"))}</span>
@@ -570,7 +603,7 @@ function renderConversationHeader() {
     setPanelOpen(!state.panelOpen);
     if (state.panelOpen) document.getElementById("cv-search")?.focus();
   });
-  document.getElementById("cv-block")?.addEventListener("click", onBlock);
+  document.getElementById("cv-block")?.addEventListener("click", onToggleBlock);
   document.getElementById("cv-purge")?.addEventListener("click", onPurge);
 }
 
@@ -672,6 +705,7 @@ function renderMessage(message) {
 
   const classes = [
     "cv-msg",
+    isOwnMessage(message) ? "cv-msg--own" : "",
     message.is_deleted ? "cv-msg--deleted" : "",
     isEdited ? "cv-msg--edited" : "",
     state.anchorId === message.id ? "cv-msg--anchor" : "",
@@ -695,7 +729,7 @@ function renderMessage(message) {
   return `
     <li class="${classes}" data-id="${message.id}">
       <div class="cv-msg__meta">
-        <span class="cv-msg__sender">${escapeHtml(message.sender?.resolved_name ?? "")}</span>
+        <span class="cv-msg__sender">${escapeHtml(isOwnMessage(message) ? t("cv.you") : (message.sender?.resolved_name ?? ""))}</span>
         <time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>
       </div>
       <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
@@ -1365,30 +1399,50 @@ async function onMessageClick(event) {
 // Actions: block this chat, delete its stored data
 // ---------------------------------------------------------------------------
 
-/** "Block this chat": stop archiving it from now on (PUT /api/ingest/blocklist/{id}).
- *  Already archived messages stay. */
-async function onBlock() {
+/**
+ * The header's block button is a toggle.
+ *   not blocked -> "Block this chat": stop archiving from now on (PUT /api/ingest/blocklist/{id}).
+ *   blocked     -> "Archive this chat again" (DELETE, idempotent): archiving resumes from the next message.
+ * Already archived messages stay either way;
+ * what arrived while the chat was blocked was never stored and cannot come back, which the unblock dialog says before the person commits.
+ */
+async function onToggleBlock() {
   const chat = state.chat;
   if (!chat) return;
-  const confirmed = await showConfirm(t("cv.blockMessage"), {
-    title: fill(t("cv.blockTitle"), { name: chatName(chat) }),
-    confirmLabel: t("cv.blockConfirm"),
-    danger: true,
-  });
+  const blocked = state.blocked.has(chat.chat_id);
+  const name = { name: chatName(chat) };
+  const confirmed = blocked
+    ? await showConfirm(t("cv.unblockMessage"), {
+        title: fill(t("cv.unblockTitle"), name),
+        confirmLabel: t("cv.unblockConfirm"),
+      })
+    : await showConfirm(t("cv.blockMessage"), {
+        title: fill(t("cv.blockTitle"), name),
+        confirmLabel: t("cv.blockConfirm"),
+        danger: true,
+      });
   if (!confirmed) return;
 
   try {
     const res = await apiFetch(`/api/ingest/blocklist/${chat.chat_id}`, {
-      method: "PUT",
+      method: blocked ? "DELETE" : "PUT",
     });
     if (!res.ok) {
       await showAlert(describeError(await readErrorDetail(res)));
       return;
     }
-    // The rule may be stored under the chat's CURRENT id (a group that became a supergroup), so trust the response.
-    const rule = await res.json();
-    state.blocked.add(rule.chat_id ?? chat.chat_id);
-    renderConversationHeader();
+    if (blocked) {
+      // The rule may sit under another id than the one in the URL (a group that became a supergroup); the server's list is the truth.
+      state.blocked.delete(chat.chat_id);
+      await loadBlocklist();
+    } else {
+      // The rule may be stored under the chat's CURRENT id, so trust the response.
+      const rule = await res.json();
+      state.blocked.add(rule.chat_id ?? chat.chat_id);
+      renderConversationHeader();
+    }
+    // Tell the Settings list (which only loads once) to re-read, so it never shows a stale "Chats not archived".
+    document.dispatchEvent(new CustomEvent("televault:blocklistchanged"));
   } catch {
     await showAlert(t("common.error"));
   }
@@ -1576,6 +1630,11 @@ function initChatView() {
   renderConversation();
   loadPanelPage({ reset: true });
   loadBlocklist();
+  loadOwner();
+  // Settings changed the list (or another tab did): re-read it so the header badge and button match.
+  document.addEventListener("televault:blocklistchanged", () => {
+    loadBlocklist();
+  });
 
   window.addEventListener("hashchange", syncFromHash);
   syncFromHash();

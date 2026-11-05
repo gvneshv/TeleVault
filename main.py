@@ -51,6 +51,12 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 20
 
 
+def _record_owner(owner_id: int) -> None:
+    """Blocking database half of the start-up "remember who I am" step - run via asyncio.to_thread() like every other worker-side database call."""
+    with db.get_connection() as conn:
+        db.queries.record_archive_owner(conn, owner_id)
+
+
 def _refuse_if_already_running(user_id: int) -> None:
     """
     Exit immediately if this account already has a live archiver or an active backfill holding its Telegram session.
@@ -199,6 +205,17 @@ async def main(user_id: int) -> None:
     # 4. Event handlers
     # ------------------------------------------------------------------ #
     register_handlers(client, self_id=me.id)
+
+    # Remember who "me" is, so the web UI can draw the owner's own messages on the right (db/schema.py's archive_owner).
+    # Best effort: a failure here (an archive not yet migrated, say) must never stop archiving - only the bubble alignment is lost.
+    try:
+        await asyncio.to_thread(_record_owner, me.id)
+    except Exception as exc:
+        logger.warning(
+            "Could not record this account's Telegram id in the archive (%s). Own messages stay on the left in the chat view; "
+            "if the archive predates the update, run `python scripts/migrate_archives.py` (RUNBOOK.md) and restart the archiver.",
+            type(exc).__name__,
+        )
 
     # ------------------------------------------------------------------ #
     # 5. Heartbeat loop
