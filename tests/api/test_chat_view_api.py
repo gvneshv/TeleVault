@@ -180,6 +180,47 @@ class TestWindowInputs:
         assert window(client, world["alice"], 2**63).status_code == 422
 
 
+@pytest.fixture
+def mixed_world(client, world):
+    """`world` plus Alice's chat 202: m1..m6 with m2 edited (text becomes "m2x") and m4 deleted."""
+    seed_archive_by_name(
+        world["archives"]["alice"], chat_id=202, name="alice-mixed", messages=[(i, 11, f"m{i}") for i in range(1, 7)], edited={2: "m2x"}, deleted=[4]
+    )
+    return world
+
+
+class TestWindowFilters:
+    def test_kind_narrows_the_conversation(self, client, mixed_world):
+        assert texts(window(client, mixed_world["alice"], 202, kind="edited")) == ["m2x"]
+        assert texts(window(client, mixed_world["alice"], 202, kind="deleted")) == ["m4"]
+        assert len(texts(window(client, mixed_world["alice"], 202, kind="all"))) == 6
+
+    def test_q_searches_the_text_of_this_chat_only(self, client, mixed_world):
+        assert texts(window(client, mixed_world["alice"], 202, q="m2")) == ["m2x"]
+        assert texts(window(client, mixed_world["alice"], 202, q="s1")) == []  # "s1" is in another chat of the same account
+
+    def test_a_filter_combines_with_an_anchor_and_a_cursor(self, client, mixed_world):
+        anchor = message_id(mixed_world, "alice", 202, "m3")
+        resp = window(client, mixed_world["alice"], 202, around=anchor, kind="deleted", limit=5)
+        assert resp.status_code == 200 and texts(resp) == ["m3", "m4"] and resp.json()["anchor_id"] == anchor
+        resp = window(client, mixed_world["alice"], 202, before=message_id(mixed_world, "alice", 202, "m6"), kind="deleted")
+        assert texts(resp) == ["m4"]
+
+    def test_an_empty_q_means_no_search(self, client, mixed_world):
+        assert len(texts(window(client, mixed_world["alice"], 202, q=""))) == 6
+
+    @pytest.mark.parametrize("kind", ["", "ALL", "deleted,edited", "everything", "1"])
+    def test_an_unknown_kind_is_a_client_error(self, client, mixed_world, kind):
+        assert window(client, mixed_world["alice"], 202, kind=kind).status_code == 422
+
+    def test_the_search_text_is_bounded(self, client, mixed_world):
+        assert window(client, mixed_world["alice"], 202, q="x" * chats_routes.SEARCH_QUERY_MAX_LENGTH).status_code == 200
+        assert window(client, mixed_world["alice"], 202, q="x" * (chats_routes.SEARCH_QUERY_MAX_LENGTH + 1)).status_code == 422
+
+    def test_a_filter_does_not_open_the_other_accounts_archive(self, client, mixed_world):
+        assert window(client, mixed_world["bob"], 202, q="m2").status_code == 404
+
+
 class TestWindowAccess:
     def test_an_unknown_chat_is_a_404(self, client, world):
         resp = window(client, world["alice"], 999)

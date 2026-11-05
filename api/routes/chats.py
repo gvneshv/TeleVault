@@ -207,6 +207,14 @@ def get_chat_window_route(
     after: int | None = Query(
         None, ge=MESSAGE_ID_MIN, le=MESSAGE_ID_MAX, description="Internal id of a message: return the messages just NEWER than it (scrolling down)."
     ),
+    kind: Literal["all", "edited", "deleted"] = Query(
+        "all", description="Only messages of this kind: edited (is_edited) or deleted (is_deleted). Applies to every anchor."
+    ),
+    q: str | None = Query(
+        None,
+        max_length=SEARCH_QUERY_MAX_LENGTH,
+        description="Only messages whose text contains this (case-insensitive, literal; % and _ search for themselves). Applies to every anchor.",
+    ),
     db: Connection = Depends(get_archive_connection),
 ) -> dict[str, Any]:
     """
@@ -215,6 +223,10 @@ def get_chat_window_route(
     At most ONE of `around`, `around_date`, `before`, `after` may be given (422 "too_many_anchors" otherwise).
     The cursors are internal message ids the client already holds from earlier responses - they carry no message text,
     so they can safely live in a URL such as `#/chats/<id>/m/<messageId>`.
+    `kind` and `q` narrow the conversation (a filtered view or an in-chat search) and combine with any one anchor - see db.read_queries.get_chat_window()
+    for how the anchor, a date jump and the cursors behave under a filter.
+    Unlike the cursors, `q` IS message-derived text, so a client must keep it out of URLs and logs it controls
+    (it travels in the query string of this GET, like the search of /api/messages).
     Errors: 404 "chat_not_found" for an unknown chat; 404 "message_not_found" when a cursor names a message that is not in THIS chat
     (a message of another chat is deliberately indistinguishable from a message that does not exist).
 
@@ -234,7 +246,7 @@ def get_chat_window_route(
             detail={"message": f"Chat {chat_id} not found.", "reason": "chat_not_found"},
         )
 
-    result = get_chat_window(db, chat_id, limit=limit, around=around, around_date=moment, before=before, after=after)
+    result = get_chat_window(db, chat_id, limit=limit, around=around, around_date=moment, before=before, after=after, kind=kind, q=q or None)
     if result is None:
         raise HTTPException(
             status_code=404,

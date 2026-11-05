@@ -477,12 +477,40 @@ def _window_anchor(conn: Connection, chat_id: int, message_id: int) -> tuple[dat
     return (row[0], row[1]) if row else None
 
 
+WindowKind = Literal["all", "edited", "deleted"]
+
+
+def _window_filter(kind: WindowKind, q: str | None) -> tuple[str, dict[str, Any]]:
+    """
+    The optional narrowing of a chat window as an SQL fragment ("" or " AND ...") plus its bind parameters.
+
+    One helper feeds every read of get_chat_window() (the newest page, both scroll directions, the anchor lookup of a date jump),
+    so a filtered conversation can never mix filtered and unfiltered rows - the failure mode of adding a condition to two of three queries.
+
+    kind  "edited" / "deleted" keep only messages with that flag (the same flags the old Messages / Deleted lists used); "all" adds nothing.
+    q     literal, case-insensitive substring of the message text (ILIKE, served by the pg_trgm index on messages.text);
+          % and _ are escaped by _like_pattern() so they search for themselves. Empty or None adds nothing.
+    """
+    sql = ""
+    params: dict[str, Any] = {}
+    if kind == "edited":
+        sql += " AND m.is_edited = true"
+    elif kind == "deleted":
+        sql += " AND m.is_deleted = true"
+    if q:
+        sql += " AND m.text ILIKE :q_pattern"
+        params["q_pattern"] = _like_pattern(q)
+    return sql, params
+
+
 def _window_side(
     conn: Connection,
     chat_id: int,
     key: tuple[datetime, int] | None,
     side: Literal["older", "newer"],
     n: int,
+    kind: WindowKind = "all",
+    q: str | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """
     Up to `n` messages of the chat strictly older (or newer) than `key`, returned oldest-first, plus whether even more exist beyond them.
@@ -495,10 +523,13 @@ def _window_side(
     Unlike OFFSET it also stays correct when rows appear or disappear between two requests, and costs the same at any depth.
 
     One extra row is requested and thrown away: that is how "is there more?" is answered without a second COUNT query.
+
+    `kind` / `q` narrow the rows (see _window_filter()); "is there more?" then means "more MATCHING rows", because the extra row is fetched with the same filter.
     """
     select = _base_message_select()
-    where = "WHERE m.chat_id = :chat_id"
-    params: dict[str, Any] = {"chat_id": chat_id, "fetch": n + 1}
+    filter_sql, filter_params = _window_filter(kind, q)
+    where = "WHERE m.chat_id = :chat_id" + filter_sql
+    params: dict[str, Any] = {"chat_id": chat_id, "fetch": n + 1, **filter_params}
     if key is not None:
         op = "<" if side == "older" else ">"
         where += f" AND (m.date, m.id) {op} (:key_date, :key_id)"
@@ -522,6 +553,8 @@ def get_chat_window(
     around_date: datetime | None = None,
     before: int | None = None,
     after: int | None = None,
+    kind: WindowKind = "all",
+    q: str | None = None,
 ) -> dict[str, Any] | None:
     """
     One chat's messages as a WINDOW of a conversation, oldest first - what the chat view renders - addressed by a message instead of a page number.
@@ -546,8 +579,18 @@ def get_chat_window(
     That keeps the rule simple (a window is exactly the neighbours on each side, never a different set depending on distance to the ends),
     and the view fills the gap by asking for the older/newer rows anyway.
 
-    Filters (search text, edited/deleted only) are deliberately not part of this function yet;
-    they belong to later steps of the chat view and will be added as optional parameters that apply to all three reads below at once.
+    Filters - `kind` ("all" / "edited" / "deleted") and `q` (a literal substring of the text) - narrow EVERY read below the same way (see _window_filter()),
+    so the window is a filtered conversation: the newest matches, the matches around a point, the matches just before / after a cursor.
+    Three rules decide the corner cases:
+
+      - The ANCHOR of `around` is always returned, even if it does not match: the caller asked for that very message (a search hit, a deleted message),
+        and hiding it behind a filter would leave the view with nothing to scroll to.
+        Its neighbours are filtered.
+      - `around_date` anchors on the first MATCHING message at or after the date (the last matching one if the date is later than all of them);
+        a chat with no match at all gives an empty window.
+      - A cursor (`before` / `after`) only needs to be a message of this chat, matching or not, so a client can keep walking after its filter changed.
+        The side that contains the cursor is reported as "has more" without checking,
+        which is exact for a cursor the client got from a filtered window and at worst one empty follow-up request for any other (clients stop on an empty answer).
     """
     if sum(a is not None for a in (around, around_date, before, after)) > 1:
         raise ValueError("get_chat_window() takes at most one of: around, around_date, before, after")
@@ -563,25 +606,26 @@ def get_chat_window(
         if key is None:
             return None
         if before is not None:
-            items, has_older = _window_side(conn, chat_id, key, "older", limit)
+            items, has_older = _window_side(conn, chat_id, key, "older", limit, kind, q)
             return window(items, has_older, True, None)  # the cursor message itself is newer
-        items, has_newer = _window_side(conn, chat_id, key, "newer", limit)
+        items, has_newer = _window_side(conn, chat_id, key, "newer", limit, kind, q)
         return window(items, True, has_newer, None)
 
     # Anchored on a message, or on a moment in time.
     anchor_id = around
     if around_date is not None:
-        # "First message at or after the date", else the newest one before it.
+        # "First message at or after the date", else the newest one before it - among the messages that match the filter, if any.
         # Two cheap index-ordered LIMIT 1 reads.
+        filter_sql, filter_params = _window_filter(kind, q)
         row = conn.execute(
-            sql_text("SELECT id FROM messages WHERE chat_id = :chat_id AND date >= :moment ORDER BY date, id LIMIT 1"),
-            {"chat_id": chat_id, "moment": around_date},
+            sql_text(f"SELECT m.id FROM messages m WHERE m.chat_id = :chat_id AND m.date >= :moment{filter_sql} ORDER BY m.date, m.id LIMIT 1"),
+            {"chat_id": chat_id, "moment": around_date, **filter_params},
         ).first() or conn.execute(
-            sql_text("SELECT id FROM messages WHERE chat_id = :chat_id ORDER BY date DESC, id DESC LIMIT 1"),
-            {"chat_id": chat_id},
+            sql_text(f"SELECT m.id FROM messages m WHERE m.chat_id = :chat_id{filter_sql} ORDER BY m.date DESC, m.id DESC LIMIT 1"),
+            {"chat_id": chat_id, **filter_params},
         ).first()
         if row is None:
-            return window([], False, False, None)  # nothing archived in this chat at all
+            return window([], False, False, None)  # nothing archived in this chat at all (or nothing matching the filter)
         anchor_id = row[0]
 
     if anchor_id is not None:
@@ -596,13 +640,13 @@ def get_chat_window(
         )
         older_n = limit // 2
         newer_n = max(limit - 1 - older_n, 0)
-        older, has_older = _window_side(conn, chat_id, key, "older", older_n)
-        newer, has_newer = _window_side(conn, chat_id, key, "newer", newer_n)
+        older, has_older = _window_side(conn, chat_id, key, "older", older_n, kind, q)
+        newer, has_newer = _window_side(conn, chat_id, key, "newer", newer_n, kind, q)
         anchor = [_shape_message_row(r, has_chat_columns=False) for r in anchor_rows]
         return window(older + anchor + newer, has_older, has_newer, anchor_id)
 
     # No anchor: the newest page.
-    items, has_older = _window_side(conn, chat_id, None, "older", limit)
+    items, has_older = _window_side(conn, chat_id, None, "older", limit, kind, q)
     return window(items, has_older, False, None)
 
 

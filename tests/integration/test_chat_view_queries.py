@@ -245,6 +245,84 @@ class TestWindowByDate:
         assert w == {"items": [], "has_older": False, "has_newer": False, "anchor_id": None}
 
 
+@pytest.fixture
+def mixed(archive):
+    """
+    Chat 1, one minute apart, oldest first: m1 m2 m3x m4 m5 m6x m7 m8 m9 m10 (m3 and m6 were edited, so their text is the new one; m5 and m8 are deleted).
+    Chat 2 holds "o1".."o3", one of them deleted.
+    """
+    seed_chat(archive.conn, 1, "Mixed", messages=[(i, 11, f"m{i}") for i in range(1, 11)], edited={3: "m3x", 6: "m6x"}, deleted=[5, 8])
+    seed_chat(archive.conn, 2, "Other", messages=[(i, 12, f"o{i}") for i in range(1, 4)], deleted=[1])
+    return archive.conn
+
+
+class TestWindowFilters:
+    """The All / Edited / Deleted filter and the in-chat search: one narrowing, applied to every read of the window."""
+
+    def test_edited_keeps_only_edited_messages_oldest_first(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=10, kind="edited")
+        assert w is not None and texts(w) == ["m3x", "m6x"]
+        assert (w["has_older"], w["has_newer"]) == (False, False)
+
+    def test_deleted_keeps_only_deleted_messages(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=10, kind="deleted")
+        assert w is not None and texts(w) == ["m5", "m8"]
+
+    def test_all_is_the_unfiltered_conversation(self, mixed):
+        everything = rq.get_chat_window(mixed, 1, limit=10)
+        assert everything == rq.get_chat_window(mixed, 1, limit=10, kind="all", q=None) == rq.get_chat_window(mixed, 1, limit=10, q="")
+        assert everything is not None and len(everything["items"]) == 10
+
+    def test_search_is_a_case_insensitive_substring_of_the_text(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=10, q="M1")
+        assert w is not None and texts(w) == ["m1", "m10"]
+
+    def test_search_and_kind_combine(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=10, kind="deleted", q="m8")
+        assert w is not None and texts(w) == ["m8"]
+        w = rq.get_chat_window(mixed, 1, limit=10, kind="edited", q="m8")
+        assert w is not None and w["items"] == []
+
+    def test_wildcards_in_the_search_text_search_for_themselves(self, archive):
+        seed_chat(archive.conn, 1, "W", messages=[(1, 11, "100% sure"), (2, 11, "a_b"), (3, 11, "axb"), (4, 11, "plain")])
+        percent = rq.get_chat_window(archive.conn, 1, limit=10, q="%")
+        underscore = rq.get_chat_window(archive.conn, 1, limit=10, q="a_b")
+        assert percent is not None and texts(percent) == ["100% sure"]
+        assert underscore is not None and texts(underscore) == ["a_b"]  # not "axb"
+
+    def test_no_match_is_an_empty_window_not_an_error(self, mixed):
+        assert rq.get_chat_window(mixed, 1, limit=10, q="nothing like this") == {"items": [], "has_older": False, "has_newer": False, "anchor_id": None}
+
+    def test_a_filter_never_reaches_into_another_chat(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=10, kind="deleted", q="o1")
+        assert w is not None and w["items"] == []  # chat 2's deleted "o1" is not chat 1's
+
+    def test_scrolling_up_and_down_stays_inside_the_filter(self, mixed):
+        newest = rq.get_chat_window(mixed, 1, limit=1, kind="deleted")
+        assert newest is not None and texts(newest) == ["m8"] and newest["has_older"] is True
+        up = rq.get_chat_window(mixed, 1, limit=1, kind="deleted", before=mid(mixed, 1, "m8"))
+        assert up is not None and texts(up) == ["m5"] and (up["has_older"], up["has_newer"]) == (False, True)
+        down = rq.get_chat_window(mixed, 1, limit=5, kind="deleted", after=mid(mixed, 1, "m5"))
+        assert down is not None and texts(down) == ["m8"] and (down["has_older"], down["has_newer"]) == (True, False)
+
+    def test_the_anchor_is_always_shown_but_its_neighbours_are_filtered(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=5, around=mid(mixed, 1, "m4"), kind="deleted")  # m4 is not deleted
+        assert w is not None
+        assert w["anchor_id"] == mid(mixed, 1, "m4") and texts(w) == ["m4", "m5", "m8"]
+
+    def test_a_date_jump_lands_on_the_first_matching_message_at_or_after_it(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=3, around_date=T0 + timedelta(minutes=5), kind="deleted")  # m6's minute; next deleted is m8
+        assert w is not None and w["anchor_id"] == mid(mixed, 1, "m8")
+
+    def test_a_date_jump_past_every_match_lands_on_the_last_match(self, mixed):
+        w = rq.get_chat_window(mixed, 1, limit=3, around_date=T0 + timedelta(days=30), kind="edited")
+        assert w is not None and w["anchor_id"] == mid(mixed, 1, "m6x") and w["has_newer"] is False
+
+    def test_a_date_jump_with_no_match_at_all_is_an_empty_window(self, ten):
+        w = rq.get_chat_window(ten, 1, limit=3, around_date=T0, kind="deleted")
+        assert w == {"items": [], "has_older": False, "has_newer": False, "anchor_id": None}
+
+
 # One entry per message-id anchor, spelled out (a **{param: id} spread would hide the keyword from the type checker).
 ANCHORS = {
     "around": lambda conn, message_id: rq.get_chat_window(conn, 1, limit=5, around=message_id),
