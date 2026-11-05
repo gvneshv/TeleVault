@@ -1,5 +1,6 @@
 """
 POST /archive/provision - automatic archive-database provisioning.
+GET  /archive/owner     - which Telegram account this archive belongs to (so the UI can draw the owner's own messages on the right).
 
 Turns the two manual steps every account previously needed after linking Telegram
 (an admin running `CREATE DATABASE` and `alembic upgrade head` by hand, per the README, then scripts/manage_admin.py set-archive) into one self-service call.
@@ -17,8 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
 
 import control_db
-from api.dependencies import get_control_db, get_current_user
-from api.schemas import ArchiveProvisionOut
+from api.dependencies import get_archive_connection, get_control_db, get_current_user
+from api.schemas import ArchiveOwnerOut, ArchiveProvisionOut
+from db.read_queries import get_archive_owner
 from db.provisioning import ArchiveProvisioningError, provision_archive_database
 from utils.archive_login import encrypt_archive_password
 from utils.security import DecodedAccessToken
@@ -63,3 +65,15 @@ def provision(
         encrypt_archive_password(provisioned.login.password),
     )
     return ArchiveProvisionOut(archive_db_ref=provisioned.db_name)
+
+
+@router.get("/owner", response_model=ArchiveOwnerOut, summary="Which Telegram account this archive belongs to")
+def get_owner(conn: Connection = Depends(get_archive_connection)) -> ArchiveOwnerOut:
+    """
+    The Telegram user id the archiver recorded for this account, or `owner_id: null` when it is not known yet.
+
+    The chat view compares it with each message's `sender.sender_id` to draw the owner's own messages on the right.
+    Read-only (get_archive_connection).
+    An id is not secret from its owner, and this only ever answers for the CALLING account's own archive.
+    """
+    return ArchiveOwnerOut(owner_id=get_archive_owner(conn))

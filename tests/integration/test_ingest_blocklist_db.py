@@ -33,10 +33,13 @@ def rules(conn):
 
 
 class TestSchema:
-    def test_the_migration_chain_has_exactly_one_head_and_it_is_this_revision(self):
+    def test_the_migration_chain_has_one_head_and_this_revision_follows_the_previous_one(self):
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         cfg.set_main_option("script_location", str(REPO_ROOT / "alembic"))
-        assert ScriptDirectory.from_config(cfg).get_heads() == [REVISION]
+        # Later migrations move the head; this revision must still be part of one linear chain that starts right after the previous one.
+        script = ScriptDirectory.from_config(cfg)
+        assert len(script.get_heads()) == 1
+        assert script.get_revision(REVISION).down_revision == PREVIOUS_REVISION
 
     def test_a_provisioned_archive_has_the_table(self, archive):
         columns = {

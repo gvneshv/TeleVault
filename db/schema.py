@@ -14,6 +14,7 @@ Table overview:
   - chat_migrations     : maps an old (pre-migration) chat_id to its canonical new one
   - backfill_runs       : records each time a backfill is run
   - ingest_blocked_chats: chats the account owner chose NOT to archive (the ingestion-time blocklist)
+  - archive_owner       : the Telegram user id of the account this archive belongs to (one row; lets the UI tell "my" messages from the rest)
 
 Schema history (SQLite era, db/migrations/001-005 - see that package for the full reasoning behind each;
 this file represents the END state of all of them, not the incremental steps):
@@ -301,6 +302,30 @@ ingest_blocked_chats = Table(
     Column("chat_id", BigInteger, primary_key=True, autoincrement=False),
     Column("name", Text),
     Column("blocked_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+# ---------------------------------------------------------------------------
+# archive_owner
+# ---------------------------------------------------------------------------
+# Who "me" is, in Telegram's own terms.
+# The archiver learns it from Telegram at start-up (get_me()) and records it here so that the web UI - which never talks to Telegram -
+# can tell the owner's messages from everybody else's (chat view: own messages on the right).
+# Nothing else in the archive says it: `messages` has no "outgoing" flag, and adding one would leave every already-stored message unflagged,
+# whereas comparing `messages.sender_id` with this id works for old and new messages alike.
+#
+# Exactly ONE row, enforced by the database: `singleton` is the primary key and the CHECK allows only TRUE,
+# so a second row cannot exist and the write is a plain "insert or replace".
+# The row is overwritten when the archiver starts with a different Telegram account (the account was re-linked);
+# messages from the earlier account then stop counting as "own" - an accepted edge case, since an archive belongs to one person.
+archive_owner = Table(
+    "archive_owner",
+    metadata,
+    Column("singleton", Boolean, primary_key=True, server_default=text("true")),
+    # autoincrement=False / BigInteger: Telegram's own id, supplied by the app - same reasoning as senders.sender_id.
+    Column("owner_id", BigInteger, nullable=False, autoincrement=False),
+    Column("recorded_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("singleton", name="ck_archive_owner_singleton"),
 )
 
 

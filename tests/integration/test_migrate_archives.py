@@ -24,10 +24,12 @@ def add_account(control_conn, username: str, archive: str | None) -> int:
 
 
 def make_old_archive(user_id: int) -> str:
-    """A real archive taken back to the revision before the blocklist - what every archive created before that release looks like."""
+    """A real archive taken back to the revision before the blocklist (and so before the owner table) - what every archive created before those releases looks like."""
     name = provisioning.provision_archive_database(user_id).db_name
     engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
     with engine.begin() as conn:
+        # Every table added by a revision AFTER PREVIOUS_REVISION must go too, or re-running those migrations would find them already there.
+        conn.execute(sa.text("DROP TABLE archive_owner"))
         conn.execute(sa.text("DROP TABLE ingest_blocked_chats"))
         conn.execute(sa.text("UPDATE alembic_version SET version_num = :v"), {"v": PREVIOUS_REVISION})
     engine.dispose()

@@ -385,6 +385,32 @@ def unblock_chat(conn: Connection, chat_id: int, commit: bool = True) -> bool:
     return row is not None
 
 
+def record_archive_owner(conn: Connection, owner_id: int, commit: bool = True) -> None:
+    """
+    Remember which Telegram account this archive belongs to (db/schema.py's archive_owner: one row, overwritten).
+
+    Called by the archiver at start-up with the id Telegram reported for the logged-in account.
+    It is what lets the web UI tell the owner's messages from everybody else's without any per-message flag (see the table's comment).
+    Idempotent: a restart with the same account only refreshes `recorded_at`.
+
+    Raises ProgrammingError (undefined table) on an archive that predates the migration - the caller decides whether that is fatal
+    (main.py logs a warning and carries on: archiving matters more than the colour of a bubble).
+    """
+    try:
+        conn.execute(
+            sql_text(
+                "INSERT INTO archive_owner (singleton, owner_id) VALUES (TRUE, :owner_id) "
+                "ON CONFLICT (singleton) DO UPDATE SET owner_id = EXCLUDED.owner_id, recorded_at = now()"
+            ),
+            {"owner_id": owner_id},
+        )
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def _move_blocklist_rule(conn: Connection, old_chat_id: int, new_chat_id: int) -> None:
     """
     Carry a blocklist rule over when a basic group becomes a supergroup (record_chat_migration()).

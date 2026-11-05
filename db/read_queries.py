@@ -22,6 +22,9 @@ from typing import Any, Literal
 
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import ProgrammingError
+
+from db.connection import is_undefined_table_error
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -228,6 +231,25 @@ def get_blocked_chats(conn: Connection) -> list[dict[str, Any]]:
         ORDER BY blocked_at DESC, chat_id ASC
     """
     return _rows_to_dicts(conn.execute(sql_text(sql)))
+
+
+def get_archive_owner(conn: Connection) -> int | None:
+    """
+    The Telegram user id of the account this archive belongs to, or None when it is not known (yet).
+
+    "Not known" covers two cases the UI treats the same way - draw everything on the left, as before:
+    the archiver has not recorded it yet (never started since the update), or the archive predates the migration and has no table.
+    The second is expected on an old archive, so it is answered with None instead of an error; any OTHER database error propagates.
+    """
+    try:
+        row = conn.execute(sql_text("SELECT owner_id FROM archive_owner WHERE singleton")).first()
+    except ProgrammingError as exc:
+        # A failed statement aborts the Postgres transaction - release it before the connection goes back to the pool.
+        conn.rollback()
+        if not is_undefined_table_error(exc):
+            raise
+        return None
+    return None if row is None else int(row[0])
 
 
 def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:

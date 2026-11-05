@@ -262,7 +262,7 @@ def pytest_sessionfinish(session, exitstatus):
 # ---------------------------------------------------------------------------
 
 # CASCADE reaches messages/edits/deletions; chat_migrations and ingest_blocked_chats have no FK (on purpose), so they are listed
-_ARCHIVE_TABLES = "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats"
+_ARCHIVE_TABLES = "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats, archive_owner"
 
 
 @pytest.fixture
