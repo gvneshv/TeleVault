@@ -9,6 +9,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - chat view step D: filter, in-chat search, jump to date, resizable and overlay panel
+Fourth step of the chat view (`claude/chat-view-spec.md`). Builds on step C (listed below in this same section until both are committed).
+- **API: `GET /api/chats/{id}/window` takes `kind` and `q`** (`api/routes/chats.py`, `db/read_queries.get_chat_window`). `kind` is `all` (default), `edited` or `deleted`; `q` is a case-insensitive literal substring of the text
+  (`%` and `_` search for themselves; at most `SEARCH_QUERY_MAX_LENGTH` characters; an unknown `kind` is a 422). One helper (`_window_filter`) feeds every read of the window - newest page, both scroll directions and the date jump -
+  so a narrowed conversation can never mix filtered and unfiltered rows. Rules for the corner cases, all covered by tests: the anchor of `around` is always returned even if it does not match (the caller asked for that very message);
+  `around_date` anchors on the first MATCHING message at or after the date (the last matching one when the date is later than all of them; an empty window when nothing matches); a cursor only has to be a message of the chat.
+  Jump-to-date itself needed no backend work: `around_date` has existed since step A. `q` is message-derived text, so it travels in the query string of a GET like the search of `/api/messages` and, like there, belongs in no URL the UI shows.
+- **All / Edited / Deleted switch** under the conversation header: the list becomes the matching messages in order (scrolled and paged like the full conversation), with a line saying what is shown and a "Show all messages" button.
+  Every bubble of a narrowed list has "Show in context", an ordinary `#/chats/<id>/m/<messageId>` route that also clears the narrowing. Opening another chat clears it too.
+- **Search in this chat**: the same narrowing by text (300 ms after typing stops), matches highlighted. Nothing typed ever reaches the address bar.
+- **Jump to date**: a date field in the same row. The picked day is sent as the start of THAT DAY IN THE BROWSER'S TIME ZONE (`around_date=<instant>`); a bare date would mean midnight UTC to the API and could land hours off the intended day.
+  The window centres on the first message at or after it, the address is rewritten to that message's id with `history.replaceState` (so the Back button does not collect one entry per jump), and "Latest messages" brings you back.
+- **Resizable panel**: drag the panel's right edge (or focus it and use the arrow keys, Home/End; double-click resets). 240-560 px, remembered in this browser (`localStorage`, wrapped in try/catch).
+  A saved width can never leave the conversation less than 40% of the view.
+- **Tablet layout (641-1100 px)**: the panel is an overlay, opened from a button in the conversation header, closed by Escape, a click outside it, or choosing a chat; while no chat is open it is shown on its own. On phones (up to 640 px)
+  it stays one pane at a time with a back arrow; the new controls wrap into the header's second row and the avatar is dropped to make room. Transitions respect `prefers-reduced-motion`.
+- New strings in `en.js` and `uk.js` (`cv.kind.*`, `cv.filter*`, `cv.chatSearch*`, `cv.dateLabel`, ...); new Lucide icons `calendar` and `panel-left`; web shell cache v44 (no file added or removed).
+- Tests: 13 new query tests (`TestWindowFilters` in `tests/integration/test_chat_view_queries.py`) and 7 HTTP tests (`tests/api/test_chat_view_api.py`), each shown to fail against the previous backend; full suite 1034 passed, `pyright` clean.
+  Browser check (Chrome, mocked API, throwaway script): 116 checks including the narrowing, search, both kinds of date jump, resizing, the tablet overlay and a 390px phone; four deliberate breakages of the UI (filter not sent, bare date sent,
+  narrowing not cleared, saved width clamped while hidden) were each caught - the last one was a real bug the check found in the first version.
+- **Not done**: the final icon decisions of the spec (the rail keeps the first shortlist candidate of each icon until the owner chooses), whole-word search and sort order of the old pages, a "N matches" count (the window API has none),
+  virtual scrolling for very long loaded lists. The date field is the browser's own control, so its format and picker text follow the BROWSER's language, not the app's (a native control cannot be translated from the page).
+  Not checked: Safari/Firefox, a real touch device (drag-resizing with a finger), a screen reader, Windows, the live API with a large archive.
+
 ### Added - the chat view: panel, conversation, edit history, block and delete (chat view, step C)
 Third step of the chat view (`claude/chat-view-spec.md`). The Chats tab is now a panel beside a read-only conversation, and it replaces the old Chats, Messages and Deleted pages.
 - **Panel** (`web/js/views/chat-view.js`): a switch between *Chats*, *Messages* and *Deleted* and one search box. Chats are listed by recent activity with their edited/deleted counts (`edited_count` and `deleted_count` from `GET /api/chats`);
