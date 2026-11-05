@@ -2213,7 +2213,8 @@ mark.legal-placeholder {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--cv-panel-width) minmax(0, 1fr);
+  /* min(): a width saved on a larger screen can never leave the conversation less than 40% of the view. */
+  grid-template-columns: min(var(--cv-panel-width), 60%) minmax(0, 1fr);
 }
 
 /* ---- Panel ---- */
@@ -2784,5 +2785,269 @@ mark.legal-placeholder {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
+  }
+}
+
+/* ---- Chat view, step D: narrowing, in-chat search, date jump, resizable panel, overlay panel ---- */
+
+.chatview__panel {
+  position: relative; /* the resizer handle sits on its right edge */
+}
+
+/* The drag handle: a thin strip over the panel's border.
+Its hit area is wider than what is drawn, so it is easy to grab. */
+.chatview__resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none; /* a touch drag must resize, not scroll the page */
+}
+
+.chatview__resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 0.12s;
+}
+
+.chatview__resizer:hover::after,
+.chatview__resizer:focus-visible::after,
+.chatview.is-resizing .chatview__resizer::after {
+  background: var(--color-focus);
+}
+
+.chatview__resizer:focus-visible {
+  outline: none; /* the highlighted edge is the focus indicator */
+}
+
+.chatview.is-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+.chatview__scrim {
+  display: none;
+}
+
+/* Overlay-only controls stay out of the way in the two-column layout. */
+.cv-panel-toggle {
+  display: none;
+}
+
+.cv-btn--icon {
+  padding: 6px;
+}
+
+.cv-btn--icon .nav-icon {
+  display: block;
+}
+
+/* The row under the header: kind switch, in-chat search, date. */
+.cv-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+}
+
+.cv-switch--kind {
+  min-width: 230px;
+}
+
+.cv-search--chat {
+  flex: 1;
+  min-width: 140px;
+}
+
+.cv-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  color: var(--color-ink-muted);
+}
+
+.cv-date:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.cv-date .nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.cv-date input {
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13px;
+  color-scheme: light dark; /* the browser's own date picker follows the theme */
+}
+
+.cv-date input:focus-visible {
+  outline: none;
+}
+
+[data-theme="light"] .cv-date input {
+  color-scheme: light;
+}
+
+[data-theme="dark"] .cv-date input {
+  color-scheme: dark;
+}
+
+.cv-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  font-size: 13px;
+}
+
+.cv-banner[hidden] {
+  display: none;
+}
+
+.cv-banner__clear {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-panel);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.cv-banner__clear:focus-visible,
+.cv-context:focus-visible,
+.cv-switch--kind .cv-switch__btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.cv-context {
+  align-self: center;
+  font-size: 12px;
+  color: var(--color-ink-muted);
+  text-decoration: underline;
+}
+
+.cv-empty {
+  align-self: center;
+  margin: 24px 0;
+  color: var(--color-ink-muted);
+}
+
+/* Tablets and narrow desktop windows: the panel is an overlay opened from the header (it is open on its own while no chat is). */
+@media (min-width: 641px) and (max-width: 1100px) {
+  .chatview {
+    grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+
+  .chatview__panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(var(--cv-panel-width), 85%);
+    box-shadow: 4px 0 16px var(--color-shadow);
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition:
+      transform 0.18s ease,
+      visibility 0s linear 0.18s;
+  }
+
+  .chatview[data-overlay="open"] .chatview__panel,
+  .chatview[data-pane="panel"] .chatview__panel {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.18s ease;
+  }
+
+  .chatview[data-overlay="open"] .chatview__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: var(--color-shadow);
+  }
+
+  .cv-panel-toggle {
+    display: inline-flex;
+  }
+
+  .chatview__resizer {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chatview__panel {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .chatview__resizer {
+    display: none;
+  }
+
+  .cv-tools {
+    padding: 8px 12px;
+  }
+
+  .cv-switch--kind {
+    flex: 1 1 100%;
+  }
+
+  .cv-search--chat {
+    flex: 1 1 0;
+  }
+
+  .cv-head {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .cv-head .cv-avatar--lg {
+    display: none; /* the name matters more than the initials on a narrow screen */
+  }
+
+  .cv-scroll {
+    padding: 10px 12px;
+  }
+
+  .cv-banner {
+    padding: 6px 12px;
+  }
+
+  .cv-latest {
+    right: 12px;
   }
 }

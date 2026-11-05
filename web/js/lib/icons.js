@@ -168,6 +168,16 @@ const ICONS = {
     ["path", { d: "m7 6 5 5 5-5" }],
     ["path", { d: "m7 13 5 5 5-5" }],
   ], // lucide: chevrons-down
+  calendar: [
+    ["path", { d: "M8 2v3" }],
+    ["path", { d: "M16 2v3" }],
+    ["rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }],
+    ["path", { d: "M3 9h18" }],
+  ], // lucide: calendar
+  panel: [
+    ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }],
+    ["path", { d: "M9 3v18" }],
+  ], // lucide: panel-left
 };
 
 /**

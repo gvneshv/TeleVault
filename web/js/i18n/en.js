@@ -510,4 +510,24 @@ export const en = {
   "cv.purgeRuleKept":
     "The chat is still on the “Chats not archived” list, so new messages from it are not saved.",
   "error.messageNotFound": "That message isn't in this chat.",
+
+  // Chat view, step D - narrowing, search, date jump, panel overlay and resizer
+  "cv.panelToggle": "Show the chats list",
+  "cv.resizeLabel": "Resize the chats panel",
+  "cv.filterLabel": "Which messages to show",
+  "cv.kind.all": "All",
+  "cv.kind.edited": "Edited",
+  "cv.kind.deleted": "Deleted",
+  "cv.chatSearchPlaceholder": "Search in this chat…",
+  "cv.chatSearchLabel": "Search in this chat",
+  "cv.dateLabel": "Jump to a date",
+  "cv.filterQuery": "Showing messages containing “{q}”.",
+  "cv.filterEdited": "Showing only edited messages.",
+  "cv.filterEditedQuery": "Showing only edited messages containing “{q}”.",
+  "cv.filterDeleted": "Showing only deleted messages.",
+  "cv.filterDeletedQuery": "Showing only deleted messages containing “{q}”.",
+  "cv.clearFilter": "Show all messages",
+  "cv.showInContext": "Show in context",
+  "cv.noMatch": "No messages match.",
+  "cv.emptyChat": "No messages are stored for this chat yet.",
 };

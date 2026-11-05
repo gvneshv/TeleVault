@@ -13,9 +13,17 @@
  *   The window API is cursor-based (keyset on date + id), not paged: the first request returns the newest messages, or the neighbours of an anchor;
  *   scrolling up asks for `before=<first id>`, scrolling down for `after=<last id>`, until has_older / has_newer say there is no more.
  *
- * What is deliberately not here yet (later steps of the spec): the All/Edited/Deleted filter, search inside a chat and jump-to-date in the header
- * (the window endpoint has no filters yet), the resizable panel, and the final phone layout.
- * The old pages' "whole word", "edited only", order and chat-filter controls are not carried over either.
+ * Narrowing and moving around a conversation (step D)
+ *   - The All / Edited / Deleted switch and the in-chat search both narrow the SAME window request (`kind=`, `q=`),
+ *     so a narrowed conversation is a list of matches in order, scrolled and paged exactly like the full one.
+ *     The text being searched for lives only in memory and in that request's query string - never in the address bar (a route is ids only).
+ *     Each bubble of a narrowed view offers "Show in context", a normal route that clears the narrowing.
+ *   - Jump to date asks for `around_date=<start of that local day>`; the window lands on the first message at or after it (on the first MATCHING one while narrowed).
+ *     The route is then rewritten to the id that was found (history.replaceState, so the Back button does not fill with date jumps).
+ *   - The panel can be dragged wider or narrower (width remembered per browser).
+ *     Below 1100px it becomes an overlay opened from the header, below 640px the view shows one pane at a time with a back arrow.
+ *
+ * What is deliberately not here: the old pages' "whole word" search and sort order, and a "N matches" counter (the window API has no count).
  *
  * Rendering style follows the other views: markup is built as strings, EVERYTHING that comes from Telegram or the archive goes through escapeHtml(),
  * and the last fetched state is kept so a language change redraws without a request.
@@ -46,6 +54,16 @@ const SEARCH_DEBOUNCE_MS = 300;
 const SCROLL_LOAD_MARGIN = 300;
 // How long the message a search hit opened is outlined.
 const ANCHOR_HIGHLIGHT_MS = 2500;
+// Mirrors SEARCH_QUERY_MAX_LENGTH in utils/validation.py (also the maxlength of the panel's search box in index.html).
+const CHAT_SEARCH_MAX_LENGTH = 200;
+// The chats panel's width: bounds, default, and where the person's choice is remembered.
+// The CSS default in base.css repeats DEFAULT.
+const PANEL_MIN_WIDTH = 240;
+const PANEL_MAX_WIDTH = 560;
+const PANEL_DEFAULT_WIDTH = 320;
+const PANEL_WIDTH_STORAGE_KEY = "televault.chatview.panelWidth";
+// Keep at least this much for the conversation when the panel is dragged wide.
+const CONVERSATION_MIN_WIDTH = 360;
 
 /** Everything the view remembers.
  *  Not persisted: a reload starts from the hash route alone. */
@@ -91,10 +109,20 @@ const state = {
   /** message ids whose edit-history / deletion note is open. */
   openEdits: new Set(),
   openDeletion: new Set(),
+
+  /** The conversation's narrowing: "all" | "edited" | "deleted", and the in-chat search text.
+   *  Reset whenever another chat or a message in context is opened. */
+  kind: "all",
+  cq: "",
+  /** Set when reloading the narrowed list failed, so an empty list is not mistaken for "nothing matches". */
+  listError: false,
+  /** Overlay layout (tablet): the chats panel is shown over the conversation. */
+  panelOpen: false,
 };
 
 let searchTimer = null;
 let anchorTimer = null;
+let chatSearchTimer = null;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -187,6 +215,34 @@ function fill(text, values) {
   return text.replace(/\{(\w+)\}/g, (whole, key) =>
     key in values ? String(values[key]) : whole,
   );
+}
+
+/** True while the conversation is narrowed by the kind switch or the in-chat search. */
+function filtersActive() {
+  return state.kind !== "all" || state.cq.trim() !== "";
+}
+
+function resetFilters() {
+  state.kind = "all";
+  state.cq = "";
+  state.listError = false;
+}
+
+/**
+ * The URL of one window request:
+ * the anchor / cursor parameters, plus the active narrowing, so every read of a conversation (first page, older, newer, date jump) is narrowed the same way.
+ *
+ * @param {number} chatId
+ * @param {Record<string, string | number>} [extra] e.g. { before: 12 } or { around_date: "2026-10-31T22:00:00.000Z" }
+ */
+function windowUrl(chatId, extra = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(extra))
+    params.set(key, String(value));
+  if (state.kind !== "all") params.set("kind", state.kind);
+  if (state.cq.trim()) params.set("q", state.cq.trim());
+  const query = params.toString();
+  return `/api/chats/${chatId}/window${query ? `?${query}` : ""}`;
 }
 
 /** @param {object} chat @returns {string} the chat's name, or its id for a chat Telegram never named. */
@@ -446,9 +502,11 @@ async function refetchPanel() {
 function setMode(mode) {
   if (mode === state.mode) return;
   state.mode = mode;
-  document.querySelectorAll(".cv-switch__btn").forEach((btn) => {
-    btn.setAttribute("aria-pressed", String(btn.dataset.mode === mode));
-  });
+  document
+    .querySelectorAll(".chatview__panel-head .cv-switch__btn")
+    .forEach((btn) => {
+      btn.setAttribute("aria-pressed", String(btn.dataset.mode === mode));
+    });
   renderSearchPlaceholder();
   loadPanelPage({ reset: true });
 }
@@ -490,6 +548,8 @@ function renderConversationHeader() {
   if (!head || !chat) return;
   const blocked = state.blocked.has(chat.chat_id);
   head.innerHTML = `
+    <button type="button" class="cv-btn cv-btn--icon cv-panel-toggle" id="cv-panel-toggle" aria-controls="cv-panel" aria-expanded="${state.panelOpen}"
+      aria-label="${escapeHtml(t("cv.panelToggle"))}" title="${escapeHtml(t("cv.panelToggle"))}"><span class="nav-icon" data-icon="panel"></span></button>
     <a class="cv-back" href="${chatRouteHash()}" aria-label="${escapeHtml(t("cv.back"))}" title="${escapeHtml(t("cv.back"))}"><span class="nav-icon" data-icon="back"></span></a>
     <span class="cv-avatar cv-avatar--lg" aria-hidden="true">${escapeHtml(initials(chat.name))}</span>
     <div class="cv-head__text">
@@ -506,6 +566,10 @@ function renderConversationHeader() {
       </button>
     </div>`;
   renderIcons(head);
+  document.getElementById("cv-panel-toggle")?.addEventListener("click", () => {
+    setPanelOpen(!state.panelOpen);
+    if (state.panelOpen) document.getElementById("cv-search")?.focus();
+  });
   document.getElementById("cv-block")?.addEventListener("click", onBlock);
   document.getElementById("cv-purge")?.addEventListener("click", onPurge);
 }
@@ -622,20 +686,34 @@ function renderMessage(message) {
     ? `<button type="button" class="seal-badge cv-chip" data-action="deletion" aria-expanded="${deletionOpen}">${escapeHtml(fill(t("cv.deletedPreserved"), { time: deletedWhen }))}</button>`
     : "";
 
+  // A narrowed list shows matches without their surroundings; this is the way back to them (a normal route, which also clears the narrowing).
+  const contextLink =
+    filtersActive() && state.chat
+      ? `<a class="cv-context" href="${chatRouteHash(state.chat.chat_id, message.id)}">${escapeHtml(t("cv.showInContext"))}</a>`
+      : "";
+
   return `
     <li class="${classes}" data-id="${message.id}">
       <div class="cv-msg__meta">
         <span class="cv-msg__sender">${escapeHtml(message.sender?.resolved_name ?? "")}</span>
         <time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>
       </div>
-      <div class="cv-msg__text">${message.text ? escapeHtml(message.text) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
-      ${editedChip || deletedChip ? `<div class="cv-msg__chips">${editedChip}${deletedChip}</div>` : ""}
+      <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
+      ${editedChip || deletedChip || contextLink ? `<div class="cv-msg__chips">${editedChip}${deletedChip}${contextLink}</div>` : ""}
       ${renderDetail(message)}
     </li>`;
 }
 
 /** All loaded messages with a day heading wherever the (local) day changes. */
 function renderMessageList() {
+  if (state.messages.length === 0) {
+    const key = state.listError
+      ? "common.error"
+      : filtersActive()
+        ? "cv.noMatch"
+        : "cv.emptyChat";
+    return `<li class="cv-empty">${escapeHtml(t(key))}</li>`;
+  }
   let previousDay = "";
   const parts = [];
   for (const message of state.messages) {
@@ -682,6 +760,26 @@ function renderConversation() {
 
   root.innerHTML = `
     <header class="cv-head" id="cv-head"></header>
+    <div class="cv-tools" id="cv-tools">
+      <div class="cv-switch cv-switch--kind" role="group" aria-label="${escapeHtml(t("cv.filterLabel"))}">
+        ${["all", "edited", "deleted"]
+          .map(
+            (kind) =>
+              `<button type="button" class="cv-switch__btn" data-kind="${kind}" aria-pressed="${state.kind === kind}">${escapeHtml(t(`cv.kind.${kind}`))}</button>`,
+          )
+          .join("")}
+      </div>
+      <label class="cv-search cv-search--chat">
+        <span class="nav-icon" data-icon="search"></span>
+        <input id="cv-chat-search" type="search" maxlength="${CHAT_SEARCH_MAX_LENGTH}" autocomplete="off" spellcheck="false"
+          value="${escapeHtml(state.cq)}" placeholder="${escapeHtml(t("cv.chatSearchPlaceholder"))}" aria-label="${escapeHtml(t("cv.chatSearchLabel"))}" />
+      </label>
+      <label class="cv-date" title="${escapeHtml(t("cv.dateLabel"))}">
+        <span class="nav-icon" data-icon="calendar"></span>
+        <input id="cv-date" type="date" aria-label="${escapeHtml(t("cv.dateLabel"))}" />
+      </label>
+    </div>
+    <div class="cv-banner" id="cv-banner" role="status" hidden></div>
     <div class="cv-scroll" id="cv-scroll" tabindex="0">
       <p class="cv-edge" id="cv-edge-top" hidden>${escapeHtml(t("common.loading"))}</p>
       <ol class="cv-msgs" id="cv-msgs">${renderMessageList()}</ol>
@@ -693,6 +791,17 @@ function renderConversation() {
     <footer class="cv-foot">${escapeHtml(t("cv.readOnly"))}</footer>`;
   renderConversationHeader();
   renderIcons(root);
+
+  document.querySelectorAll("#cv-tools [data-kind]").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      setKind(/** @type {HTMLElement} */ (btn).dataset.kind),
+    );
+  });
+  document
+    .getElementById("cv-chat-search")
+    ?.addEventListener("input", onChatSearchInput);
+  document.getElementById("cv-date")?.addEventListener("change", onDateChange);
+  updateBanner();
 
   const el = scroller();
   el?.addEventListener("scroll", onScroll, { passive: true });
@@ -725,6 +834,256 @@ function redrawMessage(id) {
       fresh.querySelector(`[data-action="${focused}"]`)
     )?.focus();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Conversation: narrowing and jumping
+// ---------------------------------------------------------------------------
+
+/** Show or hide the line that says the list is narrowed, with its way out. */
+function updateBanner() {
+  const banner = document.getElementById("cv-banner");
+  if (!banner) return;
+  if (!filtersActive()) {
+    banner.hidden = true;
+    banner.textContent = "";
+    return;
+  }
+  const hasText = state.cq.trim() !== "";
+  const key =
+    state.kind === "all"
+      ? "cv.filterQuery"
+      : `cv.filter${state.kind === "edited" ? "Edited" : "Deleted"}${hasText ? "Query" : ""}`;
+  banner.innerHTML = `<span>${escapeHtml(fill(t(key), { q: state.cq.trim() }))}</span>
+    <button type="button" class="cv-banner__clear">${escapeHtml(t("cv.clearFilter"))}</button>`;
+  banner
+    .querySelector(".cv-banner__clear")
+    ?.addEventListener("click", clearFilters);
+  banner.hidden = false;
+}
+
+/** Reflect `state.kind` on the switch's buttons. */
+function syncKindButtons() {
+  document.querySelectorAll("#cv-tools [data-kind]").forEach((btn) => {
+    btn.setAttribute(
+      "aria-pressed",
+      String(/** @type {HTMLElement} */ (btn).dataset.kind === state.kind),
+    );
+  });
+}
+
+function setKind(kind) {
+  if (!kind || kind === state.kind) return;
+  state.kind = kind;
+  syncKindButtons();
+  reloadConversation();
+}
+
+function onChatSearchInput(event) {
+  state.cq = event.target.value;
+  clearTimeout(chatSearchTimer);
+  chatSearchTimer = setTimeout(reloadConversation, SEARCH_DEBOUNCE_MS);
+}
+
+/** "Show all messages": drop the narrowing and go back to the newest end. */
+function clearFilters() {
+  resetFilters();
+  const input = /** @type {HTMLInputElement | null} */ (
+    document.getElementById("cv-chat-search")
+  );
+  if (input) input.value = "";
+  syncKindButtons();
+  reloadConversation();
+}
+
+/**
+ * Re-read the open chat from its newest end with the current narrowing, in place:
+ * the header, the tools row and the typed text stay where they are, only the list is replaced.
+ * A late answer for a state the person has already moved on from is dropped (convSeq).
+ */
+async function reloadConversation() {
+  const chat = state.chat;
+  if (!chat || state.convStatus !== "ready") return;
+  const seq = ++state.convSeq;
+  state.loadingOlder = false;
+  state.loadingNewer = false;
+  setEdgeLoading("top", false);
+  setEdgeLoading("bottom", false);
+  updateBanner();
+  try {
+    const res = await apiFetch(windowUrl(chat.chat_id));
+    if (seq !== state.convSeq) return;
+    if (!res.ok) throw new Error(`window ${res.status}`);
+    const data = await res.json();
+    if (seq !== state.convSeq) return;
+    state.messages = data.items;
+    state.hasOlder = data.has_older;
+    state.hasNewer = data.has_newer;
+    state.anchorId = null;
+    state.listError = false;
+  } catch {
+    if (seq !== state.convSeq) return;
+    state.messages = [];
+    state.hasOlder = false;
+    state.hasNewer = false;
+    state.listError = true;
+  }
+  const list = document.getElementById("cv-msgs");
+  if (list) list.innerHTML = renderMessageList();
+  updateLatestButton();
+  positionScroll();
+  fillIfShort();
+}
+
+/**
+ * Jump to a calendar date picked in the header.
+ * The date is the START OF THAT DAY IN THE PERSON'S OWN TIME ZONE, sent as an instant;
+ * a bare "2026-10-31" would mean midnight UTC to the API and could land hours off the day that was meant.
+ * The window then centres on the first message at or after it (the first matching one while the list is narrowed).
+ */
+async function onDateChange(event) {
+  const chat = state.chat;
+  const value = event.target.value; // "YYYY-MM-DD", or "" when the field was cleared
+  if (!chat || !value) return;
+  const [year, month, day] = value.split("-").map(Number);
+  const start = new Date(year, month - 1, day);
+  if (Number.isNaN(start.getTime())) return;
+
+  const seq = ++state.convSeq;
+  state.loadingOlder = false;
+  state.loadingNewer = false;
+  try {
+    const res = await apiFetch(
+      windowUrl(chat.chat_id, { around_date: start.toISOString() }),
+    );
+    if (seq !== state.convSeq) return;
+    if (!res.ok) {
+      await showAlert(describeError(await readErrorDetail(res)));
+      return;
+    }
+    const data = await res.json();
+    if (seq !== state.convSeq) return;
+    state.messages = data.items;
+    state.hasOlder = data.has_older;
+    state.hasNewer = data.has_newer;
+    state.anchorId = data.anchor_id;
+    state.listError = false;
+    const list = document.getElementById("cv-msgs");
+    if (list) list.innerHTML = renderMessageList();
+    updateLatestButton();
+    // Make the address say where we are (ids only) without a history entry per jump, and without openRoute() running again for it.
+    if (data.anchor_id !== null) {
+      state.route = { chatId: chat.chat_id, messageId: data.anchor_id };
+      history.replaceState(
+        null,
+        "",
+        chatRouteHash(chat.chat_id, data.anchor_id),
+      );
+    }
+    positionScroll();
+    fillIfShort();
+  } catch {
+    if (seq === state.convSeq) await showAlert(t("common.error"));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel: overlay layout and resizing
+// ---------------------------------------------------------------------------
+
+/** Show or hide the chats panel over the conversation (only has a visible effect in the overlay layout, see base.css). */
+function setPanelOpen(open) {
+  state.panelOpen = open;
+  const view = document.getElementById("chatview");
+  if (view) view.dataset.overlay = open ? "open" : "closed";
+  document
+    .getElementById("cv-panel-toggle")
+    ?.setAttribute("aria-expanded", String(open));
+}
+
+/** Drag the panel's right edge, or use the arrow keys on it.
+ *  The width is remembered per browser (localStorage, which may be unavailable). */
+function initPanelResizer() {
+  const handle = document.getElementById("cv-resizer");
+  const view = document.getElementById("chatview");
+  if (!handle || !view) return;
+
+  const clamp = (px) => {
+    // While the Chats tab is hidden (the saved width is applied at start-up, before the tab is shown) the view has no width yet;
+    // clamping against 0 would shrink every saved width to the minimum.
+    // base.css limits the column to 60% of the view anyway.
+    const room =
+      view.clientWidth > 0
+        ? Math.max(view.clientWidth - CONVERSATION_MIN_WIDTH, PANEL_MIN_WIDTH)
+        : PANEL_MAX_WIDTH;
+    return Math.round(
+      Math.min(Math.max(px, PANEL_MIN_WIDTH), Math.min(PANEL_MAX_WIDTH, room)),
+    );
+  };
+  const apply = (px) => {
+    const width = clamp(px);
+    view.style.setProperty("--cv-panel-width", `${width}px`);
+    handle.setAttribute("aria-valuenow", String(width));
+    return width;
+  };
+  const remember = () => {
+    try {
+      localStorage.setItem(
+        PANEL_WIDTH_STORAGE_KEY,
+        handle.getAttribute("aria-valuenow") ?? "",
+      );
+    } catch {
+      // Private mode or blocked storage: the width just resets next time.
+    }
+  };
+
+  try {
+    const saved = Number(localStorage.getItem(PANEL_WIDTH_STORAGE_KEY));
+    if (Number.isFinite(saved) && saved > 0) apply(saved);
+  } catch {
+    // Same as above: use the default.
+  }
+  handle.setAttribute("aria-valuemin", String(PANEL_MIN_WIDTH));
+  handle.setAttribute("aria-valuemax", String(PANEL_MAX_WIDTH));
+  if (!handle.hasAttribute("aria-valuenow"))
+    handle.setAttribute("aria-valuenow", String(PANEL_DEFAULT_WIDTH));
+
+  let dragging = false;
+  handle.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    handle.setPointerCapture(event.pointerId);
+    view.classList.add("is-resizing"); // no text selection while dragging (CSS)
+    event.preventDefault();
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (dragging) apply(event.clientX - view.getBoundingClientRect().left);
+  });
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    view.classList.remove("is-resizing");
+    remember();
+  };
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
+  handle.addEventListener("keydown", (event) => {
+    const current =
+      Number(handle.getAttribute("aria-valuenow")) || PANEL_DEFAULT_WIDTH;
+    const next = {
+      ArrowLeft: current - 16,
+      ArrowRight: current + 16,
+      Home: PANEL_MIN_WIDTH,
+      End: PANEL_MAX_WIDTH,
+    }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    apply(next);
+    remember();
+  });
+  handle.addEventListener("dblclick", () => {
+    apply(PANEL_DEFAULT_WIDTH);
+    remember();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -767,14 +1126,24 @@ async function openRoute(route) {
     state.chat = null;
     state.messages = [];
     state.convStatus = "none";
+    resetFilters();
     renderConversation();
     return;
   }
+
+  // Another chat, or a message "in context", starts without the narrowing: it belonged to the list the person came from.
+  // If a narrowing WAS in place, what is loaded is only its matches, so the shortcut below must not trust it.
+  const leavingNarrowing =
+    filtersActive() &&
+    (route.chatId !== previous?.chatId || route.messageId !== null);
+  if (leavingNarrowing) resetFilters();
+  setPanelOpen(false);
 
   // Same chat, and the wanted message is already loaded: no request, just move to it.
   const sameChat = previous?.chatId === route.chatId && state.chat !== null;
   if (
     sameChat &&
+    !leavingNarrowing &&
     state.convStatus === "ready" &&
     (route.messageId === null
       ? !state.hasNewer
@@ -798,15 +1167,15 @@ async function openRoute(route) {
   state.anchorId = null;
   renderConversation();
 
-  const windowUrl =
+  const url =
     route.messageId === null
-      ? `/api/chats/${route.chatId}/window`
-      : `/api/chats/${route.chatId}/window?around=${route.messageId}`;
+      ? windowUrl(route.chatId)
+      : windowUrl(route.chatId, { around: route.messageId });
   try {
     // The window first: its errors carry a machine-readable `reason` (chat_not_found, message_not_found) the UI can translate,
     // which the plain-text 404 of GET /api/chats/{id} does not.
     const [windowRes, chatRes] = await Promise.all([
-      apiFetch(windowUrl),
+      apiFetch(url),
       apiFetch(`/api/chats/${route.chatId}`),
     ]);
     if (seq !== state.convSeq) return;
@@ -889,7 +1258,7 @@ async function loadOlder() {
   setEdgeLoading("top", true);
   try {
     const res = await apiFetch(
-      `/api/chats/${chatId}/window?before=${state.messages[0].id}`,
+      windowUrl(chatId, { before: state.messages[0].id }),
     );
     if (seq !== state.convSeq) return;
     if (!res.ok) {
@@ -931,7 +1300,9 @@ async function loadNewer() {
   setEdgeLoading("bottom", true);
   try {
     const res = await apiFetch(
-      `/api/chats/${chatId}/window?after=${state.messages[state.messages.length - 1].id}`,
+      windowUrl(chatId, {
+        after: state.messages[state.messages.length - 1].id,
+      }),
     );
     if (seq !== state.convSeq) return;
     if (!res.ok) {
@@ -1107,7 +1478,13 @@ function syncFromHash() {
 async function refreshChatView() {
   refetchPanel();
 
-  if (state.convStatus === "ready" && state.chat && !state.hasNewer) {
+  // A narrowed list is left alone: merging the unfiltered newest window into it would put non-matching messages in.
+  if (
+    state.convStatus === "ready" &&
+    state.chat &&
+    !state.hasNewer &&
+    !filtersActive()
+  ) {
     const seq = state.convSeq;
     try {
       const [windowRes, chatRes] = await Promise.all([
@@ -1163,8 +1540,20 @@ function initChatView() {
   if (initialized) return;
   initialized = true;
 
-  document.querySelectorAll(".cv-switch__btn").forEach((btn) => {
-    btn.addEventListener("click", () => setMode(btn.dataset.mode));
+  document
+    .querySelectorAll(".chatview__panel-head .cv-switch__btn")
+    .forEach((btn) => {
+      btn.addEventListener("click", () => setMode(btn.dataset.mode));
+    });
+  initPanelResizer();
+  document
+    .getElementById("cv-scrim")
+    ?.addEventListener("click", () => setPanelOpen(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.panelOpen) {
+      setPanelOpen(false);
+      document.getElementById("cv-panel-toggle")?.focus();
+    }
   });
 
   const search = document.getElementById("cv-search");

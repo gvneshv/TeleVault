@@ -505,4 +505,26 @@ export const uk = {
   "cv.purgeRuleKept":
     "Чат досі в списку «Чати без архівування», тому нові повідомлення з нього не зберігаються.",
   "error.messageNotFound": "Цього повідомлення немає в цьому чаті.",
+
+  // Chat view, step D - narrowing, search, date jump, panel overlay and resizer
+  "cv.panelToggle": "Показати список чатів",
+  "cv.resizeLabel": "Змінити ширину панелі чатів",
+  "cv.filterLabel": "Які повідомлення показувати",
+  "cv.kind.all": "Усі",
+  "cv.kind.edited": "Змінені",
+  "cv.kind.deleted": "Видалені",
+  "cv.chatSearchPlaceholder": "Пошук у цьому чаті…",
+  "cv.chatSearchLabel": "Пошук у цьому чаті",
+  "cv.dateLabel": "Перейти до дати",
+  "cv.filterQuery": "Показано повідомлення, що містять «{q}».",
+  "cv.filterEdited": "Показано лише змінені повідомлення.",
+  "cv.filterEditedQuery":
+    "Показано лише змінені повідомлення, що містять «{q}».",
+  "cv.filterDeleted": "Показано лише видалені повідомлення.",
+  "cv.filterDeletedQuery":
+    "Показано лише видалені повідомлення, що містять «{q}».",
+  "cv.clearFilter": "Показати всі повідомлення",
+  "cv.showInContext": "Показати в контексті",
+  "cv.noMatch": "Жодне повідомлення не підійшло.",
+  "cv.emptyChat": "Для цього чату ще нічого не збережено.",
 };

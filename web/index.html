@@ -101,8 +101,8 @@
            The old Chats, Messages and Deleted pages this replaces are gone. -->
       <section class="app-view app-view--chats" data-view="chats">
         <h1 class="sr-only" data-i18n="nav.chats">Chats</h1>
-        <div id="chatview" class="chatview" data-pane="panel">
-          <aside class="chatview__panel" data-i18n-aria-label="cv.panelLabel" aria-label="Chats">
+        <div id="chatview" class="chatview" data-pane="panel" data-overlay="closed">
+          <aside id="cv-panel" class="chatview__panel" data-i18n-aria-label="cv.panelLabel" aria-label="Chats">
             <div class="chatview__panel-head">
               <div class="cv-switch" role="group" data-i18n-aria-label="cv.switchLabel" aria-label="What to list">
                 <button type="button" class="cv-switch__btn" data-mode="chats" aria-pressed="true" data-i18n="cv.modeChats">Chats</button>
@@ -116,7 +116,11 @@
             </div>
             <!-- Rows, load-more button and every loading/error/empty state of the panel render here. -->
             <div id="cv-panel-body" class="chatview__panel-body"></div>
+            <!-- Drag (or use the arrow keys) to change the panel's width; only shown in the two-column layout. -->
+            <div id="cv-resizer" class="chatview__resizer" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria-label="cv.resizeLabel" aria-label="Resize the chats panel"></div>
           </aside>
+          <!-- Dims the conversation while the panel is open as an overlay (tablet widths); a click closes it. -->
+          <div id="cv-scrim" class="chatview__scrim" aria-hidden="true"></div>
           <section id="cv-conversation" class="chatview__conversation" data-i18n-aria-label="cv.conversationLabel" aria-label="Conversation"></section>
         </div>
       </section>
