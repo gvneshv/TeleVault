@@ -9,7 +9,9 @@ REM Pass the account like so (or double-click and it will ask): toggle_archiver.
 REM
 REM %~dp0 resolves to this .bat file's own directory, so it finds the .ps1 correctly regardless of what folder you double-click it from.
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0toggle_archiver.ps1" %*
+REM -ProjectRoot is passed explicitly: this wrapper always knows its own folder (%~dp0), whereas PowerShell's own way of finding it ($PSScriptRoot) was
+REM empty on some launches, which stopped the script before it started. "%~dp0.." is the folder above scripts\ - the project root.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0toggle_archiver.ps1" -ProjectRoot "%~dp0.." %*
 
 echo.
 pause

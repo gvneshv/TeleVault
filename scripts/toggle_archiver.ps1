@@ -27,18 +27,36 @@
 
 .PARAMETER ProjectRoot
   Defaults to the parent of this script's own folder (scripts/..), i.e. the TeleVault project root.
-  Override only if you've moved this script somewhere else.
+  The .bat wrapper passes it explicitly (it always knows its own folder), so launching through the wrapper never depends on PowerShell finding it.
+  Override if you've moved this script somewhere else.
 #>
 
 param(
     [Parameter(Mandatory = $true)]
     [int]$UserId,
     [string]$DataDir = "data",
-    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")),
+    [string]$ProjectRoot = "",
     [int]$StaleAfterSeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
+
+# Work out the project root HERE rather than in the param() default.
+# The default used to be `Resolve-Path (Join-Path $PSScriptRoot "..")`, and on some launches $PSScriptRoot is empty while parameters are being bound
+# (seen from a desktop shortcut on Windows: "Join-Path : Cannot bind argument to parameter 'Path' because it is an empty string"),
+# which killed the script before it printed anything. Here we can try several sources in turn and, if none works, say what to do.
+if (-not $ProjectRoot) {
+    $scriptDir = $PSScriptRoot
+    if (-not $scriptDir -and $PSCommandPath) { $scriptDir = Split-Path -Parent $PSCommandPath }
+    if (-not $scriptDir -and $MyInvocation.MyCommand.Path) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if (-not $scriptDir) {
+        throw "Cannot tell where this script lives, so the project folder is unknown. Pass it explicitly: -ProjectRoot <path to the TeleVault folder> (the one that contains main.py)."
+    }
+    $ProjectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+}
+if (-not (Test-Path (Join-Path $ProjectRoot "main.py"))) {
+    throw "main.py was not found in '$ProjectRoot' - that is not the TeleVault project folder. Pass the right one with -ProjectRoot."
+}
 Set-Location $ProjectRoot
 
 # Same layout as utils/worker_paths.py: <data dir>/users/<user_id>/...

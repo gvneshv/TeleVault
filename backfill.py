@@ -259,7 +259,8 @@ async def run(
         logger.exception("Cannot start: the control database could not be read - is Docker (Postgres) running?")
         sys.exit(1)
 
-    # Schema application is `alembic upgrade head`, run when the archive was provisioned (db/provisioning.py) - not called here (see db/schema.py's module docstring for why).
+    # Schema application is `alembic upgrade head`,
+    # run when the archive was provisioned (db/provisioning.py) - not called here (see db/schema.py's module docstring for why).
     # This assumes migrations have already been applied.
     db.init_server(settings.control_database_url)
     db.init_db(db.server_database_url(account.archive_db_name, account.archive_login).render_as_string(hide_password=False))
