@@ -9,6 +9,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added - chat view follow-ups: block/unblock toggle, own messages on the right, softer light theme
+Three changes the owner asked for after trying steps C and D.
+- **The header's block button is a toggle** (`web/js/views/chat-view.js`). On a blocked chat it reads "Archive this chat again" (new `unblock` icon) and calls the existing idempotent `DELETE /api/ingest/blocklist/{id}`;
+  its dialog is not a danger dialog and says what unblocking cannot do (nothing that arrived while blocked was stored). Blocking still asks first, as before.
+  The Settings "Chats not archived" list used to load once per page visit, so a chat blocked from the chat view only showed up after a reload. The two places now tell each other
+  (a `televault:blocklistchanged` event): Settings re-reads its list, and the chat view re-reads its own copy when Settings changes it. Blocking or unblocking in either place is visible in both without a reload.
+- **Own messages on the right.** The archive had no way to tell the owner's messages from the rest (`messages` has no "outgoing" flag, and adding one would leave every stored message unflagged).
+  New table **`archive_owner`** (one row, enforced by the database: `singleton` primary key with a `CHECK`) holds the Telegram user id of the account the archive belongs to.
+  The archiver records it at start-up from Telegram's own answer (`main.py`, best effort: a failure logs a warning and never stops archiving), `GET /api/archive/owner` returns it (`owner_id`, or `null` while unknown),
+  and the chat view draws a message whose `sender.sender_id` equals it on the right with a blue-grey tint, labelled "You" / "Ви". Works for messages archived before this release too, because it compares ids instead of reading a per-message flag.
+  A deleted own message keeps the seal tint (what the archive preserved matters more than who wrote it); channel posts have no sender and stay on the left.
+  New migration `7c1d4a9e2b35`. **Existing archives need it: run `python scripts/migrate_archives.py` once, then restart the archiver** so it records the id. Until then nothing breaks - the endpoint answers `null` and every message stays on the left.
+  Privacy: the id is the owner's own and is returned only for the calling account's own archive; it is not logged.
+  Known edge: re-linking the archiver to a *different* Telegram account overwrites the id, so the earlier account's messages stop counting as "own".
+- **Softer light theme** (`web/css/variables.css`): the page was about 83% relative luminance with near-black borders; it is now about 62%, panels one step lighter, borders a slate grey (3:1 against the panel), text pairs re-measured
+  (ink 9.1-10.4:1, muted 5.1-6.5:1, seal and patina on their tints 5.4:1 and 7.1:1). Seal = deleted and patina = edited are unchanged. New token `--color-own-bg` in both themes. The dark theme is unchanged.
+- Web shell cache v45 (no file added or removed); new strings `cv.unblock*` and `cv.you` in `en.js` and `uk.js`.
+- Tests: 17 new (`tests/integration/test_archive_owner_db.py`, `tests/api/test_archive_owner.py`); `make_old_archive` in `test_migrate_archives.py` and the head-revision check in `test_ingest_blocklist_db.py` now cope with a newer migration.
+  Each new backend test was shown to fail against a deliberately broken implementation (no recording at start-up, no rollback on a missing table). Browser check (Chrome, mocked API): 131 checks, including the toggle both ways,
+  Settings following the chat view and the reverse, the bubble sides and the light theme screenshots; four deliberate UI breakages (Settings not listening, own class never set, wrong HTTP method, bubble on the wrong side) were each caught.
+- **Not done / not checked**: the archiver's real start-up against Telegram (only the wiring and the database half are tested), Safari, a touch device, a screen reader, Windows, and the colours on other monitors - the light theme is a judgement call, tell me if it is still too bright or too dull.
+
 ### Added - chat view step D: filter, in-chat search, jump to date, resizable and overlay panel
 Fourth step of the chat view (`claude/chat-view-spec.md`). Builds on step C (listed below in this same section until both are committed).
 - **API: `GET /api/chats/{id}/window` takes `kind` and `q`** (`api/routes/chats.py`, `db/read_queries.get_chat_window`). `kind` is `all` (default), `edited` or `deleted`; `q` is a case-insensitive literal substring of the text

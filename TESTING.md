@@ -126,6 +126,22 @@ Needs a Bearer token of an account with an archive that holds a chat. Use `/docs
 | `DELETE` while a backfill is running | **409** `backfill_running`, nothing deleted. |
 | `DELETE` on an id that does not exist | **404** `chat_not_found`. |
 
+### C6c. Chat view follow-ups (toggle, own messages, light theme)
+
+Needs the web UI, an archive that holds a chat, and a real archiver for the owner row.
+
+| Test | Expected outcome |
+|---|---|
+| Open a chat, click "Block this chat", confirm; then open Settings (without reloading the page) | The header shows "Not archived" and the button now reads "Archive this chat again" (enabled). Settings -> Chats not archived already lists the chat. |
+| Click "Archive this chat again", confirm | The badge disappears, the button reads "Block this chat" again, and Settings no longer lists the chat - no reload needed. |
+| Unblock the chat in Settings, then go back to the chat | The header has no "Not archived" badge. |
+| `GET /api/archive/owner` on a freshly migrated archive before the archiver has run | `{"owner_id": null}`. All bubbles on the left. |
+| Run `python scripts/migrate_archives.py`, start the archiver, reload the chat | `owner_id` is your Telegram user id; your messages are on the right, blue-grey, labelled "You"; others stay on the left with their names. **Real Telegram only.** |
+| In Saved Messages | Every bubble is on the right. |
+| A message of yours that was deleted afterwards | On the right, with the red (seal) tint, not the blue-grey one. |
+| An archive that was NOT migrated | The chat view works; everything on the left; no error. |
+| Switch to the light theme | Noticeably dimmer than before: grey-lavender page, soft borders, all text readable, deleted (red) and edited (indigo) still unmistakable. Judge on your own monitor. |
+
 ### C7. Per-account workers - `telethon.py`/`backfill.py`
 
 | Test | Expected outcome |

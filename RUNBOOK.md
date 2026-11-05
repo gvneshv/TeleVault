@@ -100,6 +100,7 @@ Advanced fallback, for a single archive: `alembic -x url=postgresql+psycopg://US
 (the server login works on every archive, secured or not, as long as it is a superuser).
 Until an archive is migrated nothing breaks - the code that needs a new table treats its absence as "nothing configured yet" - but the matching feature is unavailable
 (for the ingest blocklist, Settings -> Chats not archived says the archive needs updating, and the archiver logs one warning).
+For the archive owner table (own messages on the right in the chat view), migrate and then **restart the archiver once**: it records your Telegram id when it starts. Until then every message is drawn on the left.
 
 ---
 
