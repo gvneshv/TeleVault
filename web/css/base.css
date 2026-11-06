@@ -103,6 +103,13 @@ input:focus-visible {
   transition: var(--transition-theme);
 }
 
+.auth-page__controls button {
+  /* Centres the theme button's SVG icon (page-icons.js); the same box size as before for a text glyph. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Theme/language controls - the same two elements #theme-toggle (theme.js) and #lang-select (i18n.js) already wire up on index.html;
    both modules feature-detect the element with getElementById, so just having this markup on login.html/register.html is enough to make them work here too. */
 .auth-page__controls {
@@ -2152,6 +2159,11 @@ mark.legal-placeholder {
   color: var(--color-seal);
 }
 
+/* The history table is wider than a phone: scroll the TABLE sideways instead of the whole page. */
+.backfill-history-scroll {
+  overflow-x: auto;
+}
+
 .backfill-history-table {
   width: 100%;
   border-collapse: collapse;
@@ -2612,10 +2624,9 @@ mark.legal-placeholder {
   border-color: var(--color-seal);
 }
 
-/* Edited: a patina edge. */
-.cv-msg--edited:not(.cv-msg--deleted) {
-  border-left: 4px solid var(--color-patina);
-}
+/* Edited: no bubble decoration.
+   An earlier version drew a 4px patina edge on the left, which read as a "role" marker on a busy group chat
+   (owner feedback, 2026-11-05); the "Edited N times" chip under the text (.cv-msg__chips) is the one cue. */
 
 .cv-msg--anchor {
   outline: 3px solid var(--color-focus);

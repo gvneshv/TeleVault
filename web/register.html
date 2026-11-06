@@ -26,7 +26,10 @@
 
   <div class="auth-page">
     <div class="auth-page__controls">
-      <button id="theme-toggle" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">☀</button>
+      <button id="theme-toggle" type="button" data-i18n-aria-label="theme.toggleLabel" aria-label="Toggle theme">
+        <span class="nav-icon theme-toggle__icon theme-toggle__icon--light" data-icon="theme-light"></span>
+        <span class="nav-icon theme-toggle__icon theme-toggle__icon--dark" data-icon="theme-dark"></span>
+      </button>
       <select id="lang-select" data-i18n-aria-label="lang.selectLabel" aria-label="Language">
         <option value="en">EN</option>
         <option value="uk">UK</option>
@@ -90,6 +93,8 @@
       <a href="/privacy" target="_blank" rel="noopener" data-i18n="legal.privacyLink">Privacy Policy</a>
     </footer>
   </div>
+
+  <script type="module" src="/js/page-icons.js"></script>
 
   <script type="module" src="/js/views/register.js"></script>
 </body>

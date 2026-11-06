@@ -205,6 +205,7 @@ function renderHistory(data) {
     )
     .join("");
   return `
+    <div class="backfill-history-scroll">
     <table class="backfill-history-table">
       <thead><tr>
         <th>${t("backfill.historyStarted")}</th><th>${t("backfill.historyStatus")}</th>
@@ -213,6 +214,7 @@ function renderHistory(data) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    </div>
     ${renderPagination(data.page, data.pages)}
   `;
 }

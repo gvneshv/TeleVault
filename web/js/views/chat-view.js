@@ -1587,6 +1587,47 @@ function mergeNewest(fresh) {
   if (el && atBottom) el.scrollTop = el.scrollHeight;
 }
 
+/**
+ * How often the Chats tab quietly re-reads what the archiver stored (panel previews, counts, and the newest messages of the open chat).
+ * 10 s is a compromise: fast enough that a new message feels "live", slow enough that a personal server never notices the requests (a few small GETs).
+ */
+const LIVE_REFRESH_MS = 10000;
+
+/** True while nobody can see the Chats tab: the page is in a background tab / locked phone, or another tab of the app is open. */
+function chatsTabHidden() {
+  if (document.hidden) return true;
+  return document.querySelector('.app-view[data-view="chats"]')?.hidden ?? true;
+}
+
+let liveRefreshRunning = false;
+
+/**
+ * One tick of the live refresh.
+ * Skipped while the tab is not visible (no point, and a phone would be woken for nothing), and never overlaps itself, so a slow connection cannot pile requests up.
+ *
+ * It reuses refreshChatView() - the tab-switch refresh - on purpose:
+ * that function already follows the rule that a refresh may only redraw when the answer DIFFERS and must keep scroll position,
+ * so a timer calling it never rewrites a list while someone is reading it unless something really changed.
+ * (The old "no timer" rule in app.js was about re-drawing blindly, which this does not do.)
+ */
+async function liveTick() {
+  if (liveRefreshRunning || chatsTabHidden()) return;
+  liveRefreshRunning = true;
+  try {
+    await refreshChatView();
+  } finally {
+    liveRefreshRunning = false;
+  }
+}
+
+function startLiveRefresh() {
+  setInterval(liveTick, LIVE_REFRESH_MS);
+  // Coming back to the page (unlocking a phone, switching browser tabs) should not wait for the next tick.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) liveTick();
+  });
+}
+
 /** Wire the panel's controls, draw the empty states, and open whatever the URL already names.
  *  Idempotent. */
 let initialized = false;
@@ -1638,6 +1679,32 @@ function initChatView() {
 
   window.addEventListener("hashchange", syncFromHash);
   syncFromHash();
+  startLiveRefresh();
+
+  // A link to the route that is ALREADY in the address bar changes nothing for the browser: no hashchange fires, so nothing would happen.
+  // That bit "Show in context": open it, narrow the list again (All/Edited/Deleted) - the hash still names that message -
+  // and the same link did nothing the second time.
+  // Treat such a click as an explicit request to go there and open the route ourselves.
+  // Modified clicks (new tab, new window) are left to the browser.
+  document.addEventListener("click", (event) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    const link = /** @type {HTMLElement} */ (event.target).closest?.(
+      'a[href^="#/chats"]',
+    );
+    if (!link || link.getAttribute("href") !== location.hash) return;
+    const route = parseChatRoute(location.hash);
+    if (!route) return;
+    event.preventDefault();
+    openRoute(route);
+  });
 
   // Labels built from data (rows, chips, header) are redrawn from state in the new language; no request is needed.
   document.addEventListener("televault:langchange", () => {

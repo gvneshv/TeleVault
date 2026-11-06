@@ -64,11 +64,15 @@
  * v45 (chat view follow-ups): changed css/variables.css (softer, dimmer light theme + the --color-own-bg token), css/base.css (own messages on the right),
  * js/views/chat-view.js (block/unblock toggle, owner lookup), js/views/settings.js (re-reads the blocklist when the chat view changes it),
  * js/lib/icons.js and i18n/{en,uk}.js;
- * no file was added or removed. 
+ * no file was added or removed.
+ * v46 (live refresh and polish): ADDED js/page-icons.js (SVG icons on login/register/setup/legal/404 pages - and it is in SHELL_FILES below);
+ * changed login.html, register.html, telegram-setup.html (and the uncached privacy/tos/404 pages) for the theme button, css/base.css (no edited-bubble bar,
+ * backfill table scroll, auth-page button), js/views/chat-view.js (10 s live refresh),
+ * js/archiver-toggle.js (5 s status poll + visibility catch-up), js/views/backfill.js, js/app.js (comment only).
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v45";
+const CACHE_NAME = "televault-shell-v46";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -95,6 +99,7 @@ const SHELL_FILES = [
   "/js/lib/icons.js",
   "/js/lib/router.js",
   "/js/archiver-toggle.js",
+  "/js/page-icons.js",
   "/js/app.js",
   "/js/views/chat-view.js",
   "/js/views/stats.js",

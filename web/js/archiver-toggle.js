@@ -4,7 +4,7 @@
  *
  * Talks to GET/POST /api/telethon/{status,start,stop} (see api/routes/telethon.py).
  * Polls status every POLL_INTERVAL_MS so the button reflects reality even when the archiver was started/stopped some other way
- * (cron, systemd, a manual `python main.py`, or a crash) - not just after this button's own clicks.
+ * (another device, cron, systemd, a manual `python main.py`, or a crash) - not just after this button's own clicks.
  *
  * Self-initializes on DOMContentLoaded, like theme.js - this file is imported for that side effect by app.js, it has no exported init() to call lazily.
  */
@@ -15,7 +15,10 @@ import { archiveFixLink } from "./lib/archive-error.js";
 import { apiFetch } from "./lib/auth.js";
 import { showAlert, showConfirm } from "./lib/dialog.js";
 
-const POLL_INTERVAL_MS = 15000;
+// The status endpoint only reads a small heartbeat file, so a short interval is cheap.
+// It is what makes a start/stop done on ANOTHER device show up here.
+// Timers are throttled or frozen in background tabs and on locked phones, so a visibility/focus listener (below) catches up the moment the page is looked at again.
+const POLL_INTERVAL_MS = 5000;
 
 // main.py takes a moment to actually connect to Telegram (or disconnect) after the start/stop request returns
 // - a single status check immediately afterward often still shows the OLD state, which made the button look like it hadn't done anything.
@@ -137,7 +140,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   render(button);
   refreshStatus(button);
-  setInterval(() => refreshStatus(button), POLL_INTERVAL_MS);
+  // Skipped while hidden (nobody is looking) and while this button's own click is settling (settlePoll() is already polling, faster).
+  setInterval(() => {
+    if (!document.hidden && !state.busy) refreshStatus(button);
+  }, POLL_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !state.busy) refreshStatus(button);
+  });
   button.addEventListener("click", () => handleClick(button));
 });
 

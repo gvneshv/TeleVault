@@ -13,7 +13,9 @@
  *
  * Switching BACK to a data tab (chats, stats, health) re-fetches it quietly (each view's refresh*View(), see lib/refresh.js),
  * so what the live archiver stored in the meantime shows up without a page reload.
- * There is deliberately no timer: a list that rewrites itself while someone is reading it is worse than one that updates when they come back to it.
+ * The Chats tab ALSO refreshes itself every few seconds while it is visible (chat-view.js, LIVE_REFRESH_MS), through the same function and under the same rule:
+ * it redraws only when the server's answer differs, and keeps the scroll position - a list that rewrites itself while someone is reading it would be worse than none.
+ * Stats and Health still update only when you come back to them.
  * The Admin tab is the exception to both:
  * its nav button, its section, AND its module (views/admin.js, loaded via dynamic import()) only come into existence for the admin account - see mountAdminTab() below.
  *
