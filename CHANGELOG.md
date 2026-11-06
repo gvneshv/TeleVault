@@ -9,6 +9,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed / Fixed - live refresh, "Show in context", theme icons on every page, phone fixes (owner feedback, 2026-11-06)
+- **Live refresh of the Chats tab** (`web/js/views/chat-view.js`). While the tab is visible the app re-reads, every 10 s, what the archiver stored: the chat list previews and counts, and - when the reader is at the end of a chat -
+  new messages and messages that became deleted or edited. It reuses the tab-switch refresh, so it still redraws only when the answer differs and never moves a reader who has scrolled up.
+  Nothing is requested while the page is in a background tab or another tab of the app is open; coming back to the page refreshes at once. The earlier "no timer" rule in `app.js` is replaced by this one.
+- **Archiver status follows other devices** (`web/js/archiver-toggle.js`): polled every 5 s (was 15 s) while the page is visible, plus an immediate re-check when the page becomes visible again
+  (phones freeze timers in the background). Starting or stopping on one device now shows on the other within a few seconds without a reload.
+- **Fix: "Show in context" did nothing the second time.** It is a link to `#/chats/<id>/m/<message>`; after the first click the address bar already holds that hash, narrowing the list again does not change it,
+  and a link to the current hash fires no `hashchange`. Clicks on a chat link that equals the current hash are now opened directly.
+- **Fix: the theme button on login, register, Telegram setup, the legal pages and 404 still showed the old text glyph.** New `web/js/page-icons.js` draws the same SVG icons there; added to the precache list.
+- **Removed the thin patina bar on the left of edited messages.** It was easy to mistake for a role marker in busy group chats; the "Edited N times" chip stays as the one cue.
+- **Backfill history table scrolls inside its own box** on a narrow screen instead of making the whole page scroll sideways.
+- **Fix: `scripts/toggle_archiver.ps1` stopped at start-up** on a launch where PowerShell gave the script an empty `$PSScriptRoot` ("Cannot bind argument to parameter 'Path' because it is an empty string").
+  The project root is now worked out in the script body with fallbacks (and a readable message if none works), and `toggle_archiver.bat` passes it explicitly.
+- Web shell cache v46 (one file added: `js/page-icons.js`).
+- Tests: browser check (Chrome, mocked API) 42 checks, each of the main changes also shown to fail when deliberately broken (live refresh off, refresh while hidden, same-hash link, status polling, table wrapper, icons script on four pages).
+  **Not verified:** the PowerShell fix (no PowerShell here, and CI does not run it); the real archiver and a second real device; Safari, iPhone and Windows.
+- Documented in `RUNBOOK.md`: stopping the API server does not stop archivers by design; Ctrl+C in the same terminal does, via the operating system.
+
 ### Added - chat view follow-ups: block/unblock toggle, own messages on the right, softer light theme
 Three changes the owner asked for after trying steps C and D.
 - **The header's block button is a toggle** (`web/js/views/chat-view.js`). On a blocked chat it reads "Archive this chat again" (new `unblock` icon) and calls the existing idempotent `DELETE /api/ingest/blocklist/{id}`;

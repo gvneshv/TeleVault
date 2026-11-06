@@ -123,6 +123,16 @@ The API server spawns one live archiver (`main.py --user-id N`) and, on demand, 
 - Safe to delete by hand: a stale heartbeat or status file for an account whose worker is not running.
   Do not delete them while the worker is running.
 
+### Does stopping the API server stop the archivers?
+
+Not by TeleVault's design: the API's shutdown code only closes its database pools (`api/server.py`, `lifespan`), and logging out of the web UI only ends your web session.
+Workers are separate processes that keep archiving; that is also why the Start/Stop button still works after the API was restarted (it goes through the heartbeat file).
+
+What you may still see is the operating system's doing, not TeleVault's: pressing **Ctrl+C in the terminal that started uvicorn** is delivered to every process sharing that terminal,
+including archivers the API launched from it, so they stop too. I believe this is how both Linux and Windows consoles behave, but it has not been verified on Windows here.
+Stopping uvicorn another way (a service restart, `kill` on its PID, closing only the API) can leave the archivers running.
+Either way nothing is lost: a stopped archiver simply does not store messages while it is off, and the heartbeat goes stale after 60 s, so it can be started again from the UI.
+
 Running a worker by hand (debugging) enforces the same guards:
 
 ```bash

@@ -142,6 +142,20 @@ Needs the web UI, an archive that holds a chat, and a real archiver for the owne
 | An archive that was NOT migrated | The chat view works; everything on the left; no error. |
 | Switch to the light theme | Noticeably dimmer than before: grey-lavender page, soft borders, all text readable, deleted (red) and edited (indigo) still unmistakable. Judge on your own monitor. |
 
+### C6d. Live refresh, show-in-context, theme icons, phone (2026-11-06)
+
+| Test | Expected outcome |
+|---|---|
+| Open a chat; with the archiver running let a new message arrive in that chat (no click, no reload) | Within ~10 s the chat list preview and count change and the message appears at the bottom. If you were reading higher up, nothing jumps. |
+| Delete a recent message in Telegram while that chat is open | Within ~10 s that bubble turns red (deleted). |
+| Open Stats, wait a minute, check the server log or network tab | No requests to `/api/chats` while another tab is open. |
+| In a chat press "Edited", click "Show in context" on a message, press "Edited" again, click "Show in context" on the SAME message | It jumps there every time. |
+| Start the archiver on one device, watch another device | Its button changes within about 5 s without a reload (phone: after unlocking). |
+| Login, Register, Telegram setup, Terms, Privacy and a wrong address (404) | The theme button shows the sun/moon icon (not a text symbol) and switches with the theme. |
+| iPhone: open Backfill | The page does not scroll sideways; the history table scrolls inside its own box. |
+| Edited messages in a group chat | No coloured bar on the left; the "Edited N times" chip is there. |
+| Windows: run `scripts\toggle_archiver.bat`, enter your account id | It starts (or stops) the archiver instead of failing with "empty string". **Windows only; I could not run it.** |
+
 ### C7. Per-account workers - `telethon.py`/`backfill.py`
 
 | Test | Expected outcome |
