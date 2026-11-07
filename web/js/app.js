@@ -15,7 +15,7 @@
  * so what the live archiver stored in the meantime shows up without a page reload.
  * The Chats tab ALSO refreshes itself every few seconds while it is visible (chat-view.js, LIVE_REFRESH_MS), through the same function and under the same rule:
  * it redraws only when the server's answer differs, and keeps the scroll position - a list that rewrites itself while someone is reading it would be worse than none.
- * Stats and Health still update only when you come back to them.
+ * Stats (every 60 s) and Health (every 30 s) refresh themselves the same way while their tab is visible (startAutoRefresh below).
  * The Admin tab is the exception to both:
  * its nav button, its section, AND its module (views/admin.js, loaded via dynamic import()) only come into existence for the admin account - see mountAdminTab() below.
  *
@@ -44,6 +44,22 @@ const VIEW_REFRESHERS = {
   stats: refreshStatsView,
   health: refreshHealthView,
 };
+
+// Tabs that also re-fetch on a timer while they are the visible tab.
+// Only the data tabs; the same quiet refresh as a revisit, so a view redraws only if its data changed.
+// Intervals are long on purpose: these are overview pages, not live feeds (the Chats tab has its own, faster loop in chat-view.js).
+const AUTO_REFRESH_MS = { stats: 60000, health: 30000 };
+
+/** Start the timers above. Each tick is skipped while the page is hidden or another tab is showing, so a background tab makes no requests. */
+function startAutoRefresh() {
+  for (const [viewName, interval] of Object.entries(AUTO_REFRESH_MS)) {
+    setInterval(() => {
+      if (document.hidden) return;
+      const active = document.querySelector(".app-main")?.dataset.activeView;
+      if (active === viewName) VIEW_REFRESHERS[viewName]?.();
+    }, interval);
+  }
+}
 
 // Where the collapsed/expanded choice is remembered.
 // Only a per-browser convenience: storage can be missing or throw (private windows, blocked site data),
@@ -105,6 +121,7 @@ function initNavCollapse() {
 document.addEventListener("DOMContentLoaded", () => {
   renderIcons();
   initNavCollapse();
+  startAutoRefresh();
   const navList = document.querySelector(".app-nav__list");
   const visitedViews = new Set();
 

@@ -69,10 +69,14 @@
  * changed login.html, register.html, telegram-setup.html (and the uncached privacy/tos/404 pages) for the theme button, css/base.css (no edited-bubble bar,
  * backfill table scroll, auth-page button), js/views/chat-view.js (10 s live refresh),
  * js/archiver-toggle.js (5 s status poll + visibility catch-up), js/views/backfill.js, js/app.js (comment only).
+ * v47 (3.1.0, polish): changed 404.html (upright folder), index.html (Log out on its own bottom row), css/base.css (jump highlight, date button, logout row),
+ * js/lib/icons.js (package-open for a running archiver, calendar-days), js/views/chat-view.js (date button, 6 s highlight),
+ * js/app.js and js/views/health.js (auto-refresh of Stats and Health);
+ * no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v46";
+const CACHE_NAME = "televault-shell-v47";
 const SHELL_FILES = [
   "/",
   "/index.html",

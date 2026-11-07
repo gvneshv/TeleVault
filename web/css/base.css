@@ -459,6 +459,19 @@ Shared by the collapsed rail and the phone top bar below. */
   flex-direction: column;
 }
 
+/* Log out sits alone on the LAST row of the rail (expanded or collapsed): it is the "end of session" control and people look for it at the bottom.
+   With room to spare (expanded rail, not a phone) it shows its words; everywhere else it is icon-only like its neighbours. */
+@media (min-width: 641px) {
+  .app-shell:not([data-nav="collapsed"]) .app-nav__controls-row--logout .nav-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+  }
+}
+
 .app-nav__controls button,
 .app-nav__controls select,
 .app-nav__controls-row button,
@@ -535,7 +548,7 @@ Shared by the collapsed rail and the phone top bar below. */
   opacity: 0.7;
 }
 
-/* The package icon follows the archiver's state: "box with an x" when stopped, "box with a plus" when running.
+/* The package icon follows the archiver's state: "closed box with an x" when stopped, "open box" when running.
    Busy and unknown show the stopped one, in the muted colour.
    Colour is NOT the only signal: the two icons differ in shape, as do the dot and ring below. */
 .archiver-toggle__icon--running {
@@ -1714,7 +1727,7 @@ mark.legal-placeholder {
 }
 
 .notfound-card__art {
-  width: 180px;
+  width: 170px;
   height: auto;
   margin: 0 auto 4px;
   fill: none;
@@ -2628,9 +2641,33 @@ mark.legal-placeholder {
    An earlier version drew a 4px patina edge on the left, which read as a "role" marker on a busy group chat
    (owner feedback, 2026-11-05); the "Edited N times" chip under the text (.cv-msg__chips) is the one cue. */
 
+/* The message a search hit / "Show in context" / date jump took you to: a wash across the WHOLE row that pulses slowly three times and fades out
+   (the way Telegram marks the message it jumps to), instead of a thin border that was easy to miss.
+   How: the wash is a huge box-shadow of the bubble, and clip-path cuts it to the bubble's own height but lets it run far sideways -
+   so it fills the row without touching the neighbouring messages.
+   A box-shadow adds no scrollable overflow, so no horizontal scrollbar appears.
+   ANCHOR_HIGHLIGHT_MS in chat-view.js removes the class when this animation (6 s) is over - keep the two in step. */
 .cv-msg--anchor {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
+  clip-path: inset(0 -100vmax);
+  animation: cv-anchor-wash 6s ease-in-out both;
+}
+
+@keyframes cv-anchor-wash {
+  0%   { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 0%, transparent); }
+  8%   { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 75%, transparent); }
+  24%  { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 25%, transparent); }
+  40%  { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 75%, transparent); }
+  56%  { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 25%, transparent); }
+  72%  { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 65%, transparent); }
+  100% { box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 0%, transparent); }
+}
+
+/* No blinking for people who ask for less motion: a steady wash for the same time, then it goes. */
+@media (prefers-reduced-motion: reduce) {
+  .cv-msg--anchor {
+    animation: none;
+    box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--color-highlight-bg) 50%, transparent);
+  }
 }
 
 .cv-msg__meta {
@@ -2888,47 +2925,62 @@ Its hit area is wider than what is drawn, so it is easy to grab. */
   min-width: 140px;
 }
 
+/* Jump-to-date: ONE icon button that opens the browser's date picker wherever you click it.
+   A bare <input type="date"> only opens its picker from the little icon inside it - clicking the text just selects it, which is what the owner ran into.
+   The real input stays in the page (so the browser can anchor its picker to it and the value/change handling is the browser's own) but is invisible;
+   chat-view.js calls showPicker() on it when the button is pressed. */
 .cv-date {
+  position: relative;
+  display: inline-flex;
+}
+
+.cv-date__btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 34px;
   padding: 0 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-bg-raised);
   color: var(--color-ink-muted);
+  cursor: pointer;
 }
 
-.cv-date:focus-within {
-  outline: 2px solid var(--color-focus);
-  outline-offset: -2px;
-}
-
-.cv-date .nav-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.cv-date input {
-  padding: 6px 0;
-  border: 0;
-  background: transparent;
+.cv-date__btn:hover {
   color: var(--color-ink);
-  font: inherit;
-  font-size: 13px;
+  border-color: var(--color-focus);
+}
+
+.cv-date__btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.cv-date__btn .nav-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.cv-date__input {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
   color-scheme: light dark; /* the browser's own date picker follows the theme */
 }
 
-.cv-date input:focus-visible {
-  outline: none;
-}
-
-[data-theme="light"] .cv-date input {
+[data-theme="light"] .cv-date__input {
   color-scheme: light;
 }
 
-[data-theme="dark"] .cv-date input {
+[data-theme="dark"] .cv-date__input {
   color-scheme: dark;
 }
 

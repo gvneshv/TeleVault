@@ -53,7 +53,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 // Start fetching the next batch when the scroll position is this close to the end of what is loaded (px).
 const SCROLL_LOAD_MARGIN = 300;
 // How long the message a search hit opened is outlined.
-const ANCHOR_HIGHLIGHT_MS = 2500;
+// How long the jumped-to message stays highlighted.
+// Must match the 6 s `cv-anchor-wash` animation in css/base.css (three slow pulses, then fade-out).
+const ANCHOR_HIGHLIGHT_MS = 6000;
 // Mirrors SEARCH_QUERY_MAX_LENGTH in utils/validation.py (also the maxlength of the panel's search box in index.html).
 const CHAT_SEARCH_MAX_LENGTH = 200;
 // The chats panel's width: bounds, default, and where the person's choice is remembered.
@@ -808,10 +810,13 @@ function renderConversation() {
         <input id="cv-chat-search" type="search" maxlength="${CHAT_SEARCH_MAX_LENGTH}" autocomplete="off" spellcheck="false"
           value="${escapeHtml(state.cq)}" placeholder="${escapeHtml(t("cv.chatSearchPlaceholder"))}" aria-label="${escapeHtml(t("cv.chatSearchLabel"))}" />
       </label>
-      <label class="cv-date" title="${escapeHtml(t("cv.dateLabel"))}">
-        <span class="nav-icon" data-icon="calendar"></span>
-        <input id="cv-date" type="date" aria-label="${escapeHtml(t("cv.dateLabel"))}" />
-      </label>
+      <span class="cv-date">
+        <button type="button" class="cv-date__btn" id="cv-date-btn" title="${escapeHtml(t("cv.dateLabel"))}" aria-label="${escapeHtml(t("cv.dateLabel"))}">
+          <span class="nav-icon" data-icon="calendar"></span>
+        </button>
+        <!-- The real field is invisible; the button above opens its picker (see css/base.css, .cv-date). Not reachable on its own: the button is the control. -->
+        <input id="cv-date" class="cv-date__input" type="date" tabindex="-1" aria-hidden="true" />
+      </span>
     </div>
     <div class="cv-banner" id="cv-banner" role="status" hidden></div>
     <div class="cv-scroll" id="cv-scroll" tabindex="0">
@@ -835,6 +840,9 @@ function renderConversation() {
     .getElementById("cv-chat-search")
     ?.addEventListener("input", onChatSearchInput);
   document.getElementById("cv-date")?.addEventListener("change", onDateChange);
+  document
+    .getElementById("cv-date-btn")
+    ?.addEventListener("click", openDatePicker);
   updateBanner();
 
   const el = scroller();
@@ -975,9 +983,28 @@ async function reloadConversation() {
  * a bare "2026-10-31" would mean midnight UTC to the API and could land hours off the day that was meant.
  * The window then centres on the first message at or after it (the first matching one while the list is narrowed).
  */
+/**
+ * Open the browser's date picker for the (invisible) date field.
+ * showPicker() is the standard way; it can throw (older browsers, or a page the browser considers inactive), and then focusing and clicking the field is the fallback.
+ */
+function openDatePicker() {
+  const input = /** @type {HTMLInputElement | null} */ (
+    document.getElementById("cv-date")
+  );
+  if (!input) return;
+  try {
+    input.showPicker();
+  } catch {
+    input.focus();
+    input.click();
+  }
+}
+
 async function onDateChange(event) {
   const chat = state.chat;
   const value = event.target.value; // "YYYY-MM-DD", or "" when the field was cleared
+  // Emptied right away so choosing the SAME day again later still fires a change event (a field that keeps its value would stay silent).
+  event.target.value = "";
   if (!chat || !value) return;
   const [year, month, day] = value.split("-").map(Number);
   const start = new Date(year, month - 1, day);

@@ -7,10 +7,8 @@
  * See api/routes/health.py for exactly what each check does and doesn't cover
  * (notably: it does NOT confirm the userbot is currently connected to Telegram - that needs IPC, a Phase 3 addition per that file's own docstring).
  *
- * No polling - this is a manually-refreshed diagnostic view, not a live dashboard.
- * It re-fetches when the Refresh button is pressed and each time the tab is switched back to (app.js calls refreshHealthView()),
- * so the message count is current without a page reload.
- * Adding timed auto-refresh is a small change later if it turns out to be wanted, not something to build speculatively now.
+ * Not a live dashboard, but never stale for long: it re-fetches when the Refresh button is pressed, each time the tab is switched back to,
+ * and every 30 s while it is the visible tab (app.js, AUTO_REFRESH_MS - all through refreshHealthView(), the quiet refresh that redraws only on a change).
  *
  * Lazy-initialized by app.js on first tab open, same pattern as the other non-landing views.
  */
