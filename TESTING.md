@@ -156,6 +156,17 @@ Needs the web UI, an archive that holds a chat, and a real archiver for the owne
 | Edited messages in a group chat | No coloured bar on the left; the "Edited N times" chip is there. |
 | Windows: run `scripts\toggle_archiver.bat`, enter your account id | It starts (or stops) the archiver instead of failing with "empty string". **Windows only; I could not run it.** |
 
+### C6e. Polish before 3.1.0 (2026-11-07)
+
+| Test | Expected outcome |
+|---|---|
+| Click anywhere on the calendar button in a chat header | The date picker opens. Pick a day: the chat jumps there. Open it again and pick the SAME day: it jumps again. |
+| Open a chat from a search hit / "Show in context" | The whole row of that message glows, pulses slowly about three times and fades within ~6 s. With the system "reduce motion" setting on: a steady glow, no blinking. Looks right in light and dark themes. |
+| Start the archiver | The button's icon changes from the closed box with an x to the open box (green). Stop it: back again. |
+| Look at the bottom of the rail, expanded and collapsed | Archiver, then theme + language, then Log out last on its own row (with its words when expanded on a desktop screen). On a phone the controls stay one icon row. |
+| Open Stats and Health and leave them open | They update by themselves (Health about every 30 s, Stats about every minute) without flicker; switch to another tab and no requests are sent for them. |
+| Open a wrong address (404) | The folder is upright (taller than wide), not squashed, in both themes. |
+
 ### C7. Per-account workers - `telethon.py`/`backfill.py`
 
 | Test | Expected outcome |

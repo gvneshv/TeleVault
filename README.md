@@ -24,7 +24,10 @@ per-view chat filter, EN/UK language support, and light/dark themes.
 > [`v2.1.0`](CHANGELOG.md#210--2026-09-13). Multi-user accounts (each with
 > its own Telegram link, archive database and workers, linked in the web UI
 > by QR code or login code) shipped in
-> [`v3.0.0`](CHANGELOG.md#300--2026-10-21). See the CHANGELOG for the full
+> [`v3.0.0`](CHANGELOG.md#300--2026-10-21). The chat view (one Telegram-like
+> place for chats, messages and deleted messages), per-archive database logins,
+> the "chats not archived" list and your own messages on the right shipped in
+> [`v3.1.0`](CHANGELOG.md#310--2026-11-07). See the CHANGELOG for the full
 > writeup and what's next.
 
 ---

@@ -9,7 +9,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed / Fixed - live refresh, "Show in context", theme icons on every page, phone fixes (owner feedback, 2026-11-06)
+## [3.1.0] - 2026-11-07
+
+The **chat view** release. The Chats, Messages and Deleted pages are replaced by one Telegram-like view (chat list, conversation, edit history, filters, search, jump to date, block and delete),
+the navigation became a collapsible icon rail, every archive got its own Postgres login, chats can be excluded from archiving, and your own messages show on the right. The entries below are in reverse order of work.
+
+**Upgrading from 3.0.0** (in this order; each step is safe to repeat):
+1. `pip install -r requirements.txt -c constraints.txt`
+2. `alembic -c alembic_control.ini upgrade head` (control database: adds the per-archive login columns)
+3. `python scripts/secure_archives.py --dry-run`, then without `--dry-run` (gives every existing archive its own login; until then they keep working with the server login). The server's Postgres login now also needs `CREATEROLE`.
+4. `python scripts/migrate_archives.py --dry-run`, then without it (archive tables added since 3.0.0: the blocklist and the owner id).
+5. Restart the archiver and backfill workers (they record your Telegram id on start, which is what moves your messages to the right).
+6. Reload the web page once (the service worker cache is now v47; it updates itself, a reload just makes it immediate).
+Nothing is migrated automatically. Until steps 3 and 4 are done the app keeps working, with the blocklist section and the right-hand messages unavailable.
+
+### Changed - polish before the release
+- **The jumped-to message is marked much more clearly.** The thin outline is replaced by a wash across the whole row that pulses slowly three times and fades out over 6 s (it was a 2.5 s outline); with "reduce motion" set it is a steady wash for the same time.
+- **Jump to date is one button** (Lucide `calendar-days`) that opens the date picker wherever you click; the bare date field only opened it from its tiny inner icon. The field is emptied after a pick so the same day can be chosen twice.
+- **The archiver button uses two clearly different icons**: the closed box with an x when stopped, the open box (Lucide `package-open`, green) while running. It was a box with a plus.
+- **Log out moved to its own row at the bottom of the rail** (below theme and language), expanded or collapsed. In the expanded rail it shows its words.
+- **Stats and Health refresh themselves** while they are the visible tab (every 60 s and 30 s), by the same quiet refresh as a revisit: it redraws only when the data changed and makes no requests from a background tab.
+- **The 404 folder is taller and narrower** (it looked squashed).
+- Web shell cache v47 (no file added or removed).
+- Checked in Chrome against a mocked API (the same 42-check script plus new checks for each item above, each also shown to fail when the change is broken). **Not checked:** how the pulse looks on a real iPhone and in Safari (`color-mix()` needs Safari 16.2 or newer), and a screen reader on the date button.
+
+### Changed / Fixed - live refresh, "Show in context", theme icons on every page, phone fixes
 - **Live refresh of the Chats tab** (`web/js/views/chat-view.js`). While the tab is visible the app re-reads, every 10 s, what the archiver stored: the chat list previews and counts, and - when the reader is at the end of a chat -
   new messages and messages that became deleted or edited. It reuses the tab-switch refresh, so it still redraws only when the answer differs and never moves a reader who has scrolled up.
   Nothing is requested while the page is in a background tab or another tab of the app is open; coming back to the page refreshes at once. The earlier "no timer" rule in `app.js` is replaced by this one.
@@ -28,7 +52,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Documented in `RUNBOOK.md`: stopping the API server does not stop archivers by design; Ctrl+C in the same terminal does, via the operating system.
 
 ### Added - chat view follow-ups: block/unblock toggle, own messages on the right, softer light theme
-Three changes the owner asked for after trying steps C and D.
+Three changes after trying steps C and D.
 - **The header's block button is a toggle** (`web/js/views/chat-view.js`). On a blocked chat it reads "Archive this chat again" (new `unblock` icon) and calls the existing idempotent `DELETE /api/ingest/blocklist/{id}`;
   its dialog is not a danger dialog and says what unblocking cannot do (nothing that arrived while blocked was stored). Blocking still asks first, as before.
   The Settings "Chats not archived" list used to load once per page visit, so a chat blocked from the chat view only showed up after a reload. The two places now tell each other
@@ -69,7 +93,7 @@ Fourth step of the chat view (`claude/chat-view-spec.md`). Builds on step C (lis
 - Tests: 13 new query tests (`TestWindowFilters` in `tests/integration/test_chat_view_queries.py`) and 7 HTTP tests (`tests/api/test_chat_view_api.py`), each shown to fail against the previous backend; full suite 1034 passed, `pyright` clean.
   Browser check (Chrome, mocked API, throwaway script): 116 checks including the narrowing, search, both kinds of date jump, resizing, the tablet overlay and a 390px phone; four deliberate breakages of the UI (filter not sent, bare date sent,
   narrowing not cleared, saved width clamped while hidden) were each caught - the last one was a real bug the check found in the first version.
-- **Not done**: the final icon decisions of the spec (the rail keeps the first shortlist candidate of each icon until the owner chooses), whole-word search and sort order of the old pages, a "N matches" count (the window API has none),
+- **Not done**: the final icon decisions of the spec, whole-word search and sort order of the old pages, a "N matches" count (the window API has none),
   virtual scrolling for very long loaded lists. The date field is the browser's own control, so its format and picker text follow the BROWSER's language, not the app's (a native control cannot be translated from the page).
   Not checked: Safari/Firefox, a real touch device (drag-resizing with a finger), a screen reader, Windows, the live API with a large archive.
 
@@ -102,8 +126,7 @@ Third step of the chat view (`claude/chat-view-spec.md`). The Chats tab is now a
 
 ### Changed - navigation rail: icons, collapsing, one-button language (chat view, step B)
 Second step of the chat view (`claude/chat-view-spec.md`): the shell around the future chat panel. The pages themselves are unchanged.
-- **Every tab has an icon** and a text label (`web/js/lib/icons.js`, inline SVG - no CDN, no icon font). Chats, Messages, Deleted, Stats and Health use the paths drawn in the approved mockup
-  (the owner asked to keep the stats and health ones); Settings, Backfill, Admin, the archiver states, log out, language and collapse/expand are Lucide icons, first candidate of each shortlist
+- **Every tab has an icon** and a text label (`web/js/lib/icons.js`, inline SVG - no CDN, no icon font). Chats, Messages, Deleted, Stats and Health use the paths drawn in the approved mockup; Settings, Backfill, Admin, the archiver states, log out, language and collapse/expand are Lucide icons, first candidate of each shortlist
   (cog, rotate-ccw-clock, user-star, package-x / package-plus, log-out, earth, fold-horizontal / unfold-horizontal). Lucide is ISC-licensed and the icons it took from Feather (log-out is one) are MIT-licensed:
   both notices are kept in `web/icons/LICENSE-lucide.txt`. The theme button shows Lucide `sun` (light theme) or `moon` (dark theme): both SVGs sit in the button and CSS shows the one matching `<html data-theme>`,
   so there is no flash and no script swap; the other pages keep the text glyph.
@@ -130,7 +153,7 @@ First step of the chat view (the design is in `claude/chat-view-spec.md`); nothi
   group-migration records that mention it, backfill runs aimed only at that chat (by id or `@username`; a run over every chat stays), and every sender who appears in no other chat.
   Meant for chats whose Telegram account no longer exists (they show as a bare number and clutter every picker).
   - **An ingest-blocklist rule is kept by default** (`block_rule_kept` in the response) - the rule has no foreign key to `chats` for exactly this reason; "forget and keep ignoring" must not quietly stop ignoring.
-    **`?also_unblock=true` removes it in the same transaction** - the owner's explicit choice at purge time (the confirmation dialog will offer it as a tick box, default off):
+    **`?also_unblock=true` removes it in the same transaction**:
     forget the chat AND archive it again if it writes to you. Only that chat's rule goes, and a failed purge leaves the rule in place (never "unblocked but not purged").
   - **The archiver may keep running.** The chat row is locked first, so a message being written at that moment waits for the purge and is removed with the rest. If the chat receives a new message
     afterwards it is created again, empty, from that message on. One message already past its chat upsert and waiting on the lock can fail its foreign key and is lost (a few-millisecond window per purge).
@@ -1199,7 +1222,8 @@ message_deletions (id PK, message_id FK, text_snapshot, deleted_at)
 
 ---
 
-[Unreleased]: https://github.com/gvneshv/TeleVault/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/gvneshv/TeleVault/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/gvneshv/TeleVault/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/gvneshv/TeleVault/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/gvneshv/TeleVault/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/gvneshv/TeleVault/compare/v1.2.0...v2.0.0
