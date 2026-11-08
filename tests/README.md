@@ -2,7 +2,7 @@
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                 # whole suite (~1 min)
+python -m pytest                 # whole suite: ~5 min on a 2-core cloud VM (1149 tests), 10 min on an HDD machine - see "How long it takes"
 python -m pytest tests/unit      # no database needed, a few seconds
 python -m pytest -k leakage      # one topic
 ```
@@ -16,6 +16,11 @@ python -m pytest -k leakage      # one topic
   `TELEVAULT_TEST_SERVER_URL=postgresql+psycopg://user:pass@host:5432/postgres`; the role needs `CREATEDB`.
 * With no reachable server the database tests are **skipped** with a message. Set `TELEVAULT_TEST_REQUIRE_DB=1` (e.g. in CI)
   to turn that into a failure, so a missing database can't silently look like a green run.
+
+## How long it takes
+The whole suite takes **minutes, not one minute**: about 5 minutes (1149 tests, 290 s) on a 2-core cloud VM, and about 10 minutes (1059 tests, 593 s) reported on a machine with a hard disk.
+Most of it is not the tests themselves but their setup: each API test provisions real accounts and a real archive database (about 1 s each), and creating a database is bound by disk syncs, so an SSD should help a lot on a spinning disk; the exact gain has not been measured.
+Use `python -m pytest tests/unit` (seconds) or `-k <topic>` while working, and run the whole suite before delivering a change.
 
 ## Why it is safe to run next to real data
 

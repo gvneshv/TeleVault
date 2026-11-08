@@ -101,6 +101,7 @@ Advanced fallback, for a single archive: `alembic -x url=postgresql+psycopg://US
 Until an archive is migrated nothing breaks - the code that needs a new table treats its absence as "nothing configured yet" - but the matching feature is unavailable
 (for the ingest blocklist, Settings -> Chats not archived says the archive needs updating, and the archiver logs one warning).
 For the archive owner table (own messages on the right in the chat view), migrate and then **restart the archiver once**: it records your Telegram id when it starts. Until then every message is drawn on the left.
+For the sender-name tables (your own names for senders, and the names seen over time), migrate and you are done - no restart: the archiver notices the new table on the next message. Name changes are only recorded from then on, and saving a name before the migration answers "archive needs updating".
 
 ---
 

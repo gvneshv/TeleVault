@@ -9,6 +9,35 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The **display names + name history** release (Roadmap Phase 3). Give any sender your own label ("Mum"), and see the names TeleVault has seen them under.
+
+**Upgrading from 3.1.0** (each step is safe to repeat):
+1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables to every existing archive; **nothing migrates them automatically**).
+2. Reload the web page once (the service worker cache is now v48; it updates itself, a reload just makes it immediate). No archiver restart is needed.
+Until step 1 is done nothing breaks: the archiver records no name history, labels read as "none", and saving a label answers 409 `archive_outdated`.
+
+### Added - display names and name history
+- **Your own name for a sender.** Click a name above a message bubble (someone else's; "You" and channel posts have nothing to rename) to open a dialog: type your label, or remove it.
+  The label replaces Telegram's name in the bubbles and in the Messages/Deleted rows of the panel. It is a display preference only: nothing is sent to Telegram and archived messages are not touched.
+  Search matches Telegram's names and the message text, **not** your labels (the message endpoints do not know about them, which keeps paging and search unchanged).
+- **Names seen over time.** The same dialog lists every name (first name, last name, `@username`) the archiver has seen a sender under, newest first, ending with the one they were first seen under.
+  The date is when TeleVault *saw* the name, not when the person changed it: a change is noticed when they write next (or a backfill reads them), and a backfill reads the sender's *current* name even for old messages.
+  Only changes seen from this release on exist; nothing is reconstructed for the past.
+- **A removed username is not recorded.** Telegram sends partial ("min") users without a username in many events, which looks exactly like a removal. A field that arrives empty therefore means "not provided" and never overwrites the last known value.
+- New archive tables (migration `a3f81c5d7e92`): `sender_name_history` and `sender_display_names`, both deleted with the sender (so "Delete stored data" on a chat also removes the names and label of people who then have no message left).
+- New API: `GET /api/senders/display-names`, `GET /api/senders/{id}`, `PUT` and `DELETE /api/senders/{id}/display-name` (limits in `utils/validation.py`: 64 characters, 2000 labels, 100 history entries per response).
+  Writes answer 404 `sender_not_found`, 409 `display_names_full` and 409 `archive_outdated`; the two GETs stay quiet on an archive that has not been migrated.
+- `upsert_sender()` compares a known sender with the latest known identity in one statement inside a SAVEPOINT. Recording a name can never cost a message, and an un-migrated archive is detected with `to_regclass()` (no failed statement, no log noise) and re-checked until the table appears, so migrating a running system needs no restart.
+- UI: a text-field dialog (`showFieldDialog` in `web/js/lib/dialog.js`), English and Ukrainian strings, `web/sw.js` cache v48.
+
+### Changed
+- The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender).
+- Removed four items from "Planned - Phase 3" that had shipped or were stale: the chat view (3.1.0), display name overrides and username change tracking (this release), and the `resolved_name` item (already a computed API field).
+
+### Tests
+- New `tests/integration/test_sender_names_db.py` and `tests/api/test_senders_api.py`; `tests/conftest.py` and `make_old_archive()` know the new tables. Each rule was shown to fail with its code reverted.
+- Not verified: a real Telegram account (names seen live), a real server-backed browser session (the dialog was exercised in Chromium against a mocked API), Windows, Docker.
+
 ## [3.1.0] - 2026-11-07
 
 The **chat view** release. The Chats, Messages and Deleted pages are replaced by one Telegram-like view (chat list, conversation, edit history, filters, search, jump to date, block and delete),
@@ -753,21 +782,12 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 - Ingestion-time chat allowlist (the blocklist half shipped, see "Unreleased"): archive *only*
   chosen chats. Needs a way to see chats that are not archived yet, which means storing
   metadata about chats the person chose not to keep - undecided
-- Chat view (design approved, see `claude/chat-view-spec.md`; backend step A shipped, see "Unreleased"): a Telegram-like view of one chat showing every archived message, deleted ones
-  (marked) and edited ones included; clicking an edited message expands its edit history with the date of each version. A chat-list panel next to the conversation REPLACES the
-  Chats, Messages and Deleted pages; the main navigation becomes Chats, Stats, Health, Backfill, Settings (+ Admin) and can collapse to icons. The header holds "Block this chat" and
-  "Delete this chat's data". Remaining: shell, panel + conversation, polish
 - Storage mode: `all` (default) vs `deletions_only`
-- Display name overrides: map a friendly label to a sender ID
-- Username change tracking (`username_history` table)
 - Auto-read policies: mark selected chats as read on a schedule
 - Data management: clear all data (per-chat data removal: backend shipped, button comes with the chat view)
 - Message ignore rules: filter by text pattern before archiving (filtering by chat shipped
   as the ingest blocklist)
 - TTL / retention policy: auto-delete archived messages older than N months
-- Expose `SenderOut.resolved_name` as a computed API field instead of the
-  same priority logic being duplicated in three places (the backend
-  property, `messages.js`, `deleted.js`)
 
 ### Planned - Phase 4 (Infrastructure & Expansion)
 
