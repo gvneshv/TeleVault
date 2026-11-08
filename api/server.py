@@ -35,7 +35,7 @@ from config import settings
 from control_db import queries as cq
 from utils.logging_setup import setup_logging
 
-from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, telegram_sessions, archive, ingest, admin
+from .routes import auth, chats, messages, deleted, stats, health, backfill, telethon, telegram, telegram_sessions, archive, ingest, senders, admin
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +202,7 @@ app.include_router(telegram.router,  prefix="/api")
 app.include_router(telegram_sessions.router, prefix="/api")
 app.include_router(archive.router,   prefix="/api")
 app.include_router(ingest.router,    prefix="/api")
+app.include_router(senders.router,   prefix="/api")
 app.include_router(backfill.router,  prefix="/api")
 app.include_router(telethon.router,  prefix="/api")
 app.include_router(admin.router,     prefix="/api", dependencies=[Depends(require_admin)])

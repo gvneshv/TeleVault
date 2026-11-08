@@ -28,6 +28,15 @@ from .telegram import (
 )
 from .archive import ArchiveOwnerOut, ArchiveProvisionOut
 from .ingest import BlockedChatOut, BlocklistOut, BlockedChatRemovedOut
+from .sender import (
+    DisplayNameIn,
+    DisplayNameOut,
+    DisplayNameItem,
+    DisplayNamesOut,
+    DisplayNameRemovedOut,
+    SenderNameVersion,
+    SenderDetailOut,
+)
 from .admin import (
     AdminUserOut,
     AdminUserListOut,
@@ -84,6 +93,14 @@ __all__ = [
     "BlockedChatOut",
     "BlocklistOut",
     "BlockedChatRemovedOut",
+    # senders
+    "DisplayNameIn",
+    "DisplayNameOut",
+    "DisplayNameItem",
+    "DisplayNamesOut",
+    "DisplayNameRemovedOut",
+    "SenderNameVersion",
+    "SenderDetailOut",
     # admin
     "AdminUserOut",
     "AdminUserListOut",
