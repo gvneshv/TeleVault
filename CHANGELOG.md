@@ -34,6 +34,7 @@ Until step 1 is done nothing breaks: the archiver records no name history, label
 
 ### Changed
 - The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender).
+- Roadmap: dropped the chat allowlist and the `deletions_only` storage mode (reasons in "Planned - Phase 3"), added "Show the last read message", and moved auto-read policies to the end of Phase 3.
 - Removed four items from "Planned - Phase 3" that had shipped or were stale: the chat view (3.1.0), display name overrides and username change tracking (this release), and the `resolved_name` item (already a computed API field).
 
 ### Tests
@@ -781,15 +782,23 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Ingestion-time chat allowlist (the blocklist half shipped, see "Unreleased"): archive *only*
-  chosen chats. Needs a way to see chats that are not archived yet, which means storing
-  metadata about chats the person chose not to keep - undecided
-- Storage mode: `all` (default) vs `deletions_only`
-- Auto-read policies: mark selected chats as read on a schedule
-- Data management: clear all data (per-chat data removal: backend shipped, button comes with the chat view)
+- Data management: clear all data (per-chat data removal: backend shipped and in the chat view)
 - Message ignore rules: filter by text pattern before archiving (filtering by chat shipped
   as the ingest blocklist)
 - TTL / retention policy: auto-delete archived messages older than N months
+- Show the last read message: a bar in the conversation, like Telegram's own, marking where the
+  messages you have read in Telegram end; everything after it is unread. Mirrors Telegram's read
+  state (`read_inbox_max_id`) and never marks anything as read itself. Related to the Phase 4
+  item "Read receipt inference", which is about the other side's reading
+- Auto-read policies: mark selected chats as read on a schedule - deliberately LAST, only wanted
+  for one group; it acts on the real Telegram account, so check the Telegram ToS first
+
+Dropped (decided, do not re-add): the **chat allowlist** (the blocklist already covers "do not archive
+this chat", and an allowlist would only be its mirror image) and the **`deletions_only` storage mode**
+(Telegram's deletion event carries only message ids, never the text, so a deleted message can be
+recovered only if it was stored BEFORE the deletion, and any message, even one years old, can be
+deleted later: "store only what will be deleted" cannot be known in advance. What it was meant to
+save is what the TTL / retention policy does, openly).
 
 ### Planned - Phase 4 (Infrastructure & Expansion)
 

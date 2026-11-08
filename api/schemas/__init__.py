@@ -26,7 +26,7 @@ from .telegram import (
     TelegramDevicesOut,
     TelegramDeviceEndedOut,
 )
-from .archive import ArchiveOwnerOut, ArchiveProvisionOut
+from .archive import ArchiveClearedOut, ArchiveOwnerOut, ArchiveProvisionOut
 from .ingest import BlockedChatOut, BlocklistOut, BlockedChatRemovedOut
 from .sender import (
     DisplayNameIn,
@@ -87,6 +87,7 @@ __all__ = [
     "TelegramDevicesOut",
     "TelegramDeviceEndedOut",
     # archive
+    "ArchiveClearedOut",
     "ArchiveOwnerOut",
     "ArchiveProvisionOut",
     # ingest blocklist

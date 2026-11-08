@@ -1,6 +1,7 @@
 """
 POST /archive/provision - automatic archive-database provisioning.
 GET  /archive/owner     - which Telegram account this archive belongs to (so the UI can draw the owner's own messages on the right).
+DELETE /archive/data    - forget everything stored (messages, chats, senders), keeping the owner's settings; see db.queries.clear_all_data.
 
 Turns the two manual steps every account previously needed after linking Telegram
 (an admin running `CREATE DATABASE` and `alembic upgrade head` by hand, per the README, then scripts/manage_admin.py set-archive) into one self-service call.
@@ -14,16 +15,19 @@ and there's no correctness reason to force one order over the other;
 the natural flow (frontend calls this right after POST /telegram/link/confirm returns linked=true) is a UI choice, not something this endpoint enforces.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.engine import Connection
 
 import control_db
-from api.dependencies import get_archive_connection, get_control_db, get_current_user
-from api.schemas import ArchiveOwnerOut, ArchiveProvisionOut
+from api.dependencies import get_archive_connection, get_archive_write_connection, get_control_db, get_current_user
+from api.process_utils import is_backfill_running
+from api.schemas import ArchiveClearedOut, ArchiveOwnerOut, ArchiveProvisionOut
+from db.queries import clear_all_data
 from db.read_queries import get_archive_owner
 from db.provisioning import ArchiveProvisioningError, provision_archive_database
 from utils.archive_login import encrypt_archive_password
 from utils.security import DecodedAccessToken
+from utils.worker_paths import backfill_status_path
 
 router = APIRouter(prefix="/archive", tags=["archive"])
 
@@ -77,3 +81,44 @@ def get_owner(conn: Connection = Depends(get_archive_connection)) -> ArchiveOwne
     An id is not secret from its owner, and this only ever answers for the CALLING account's own archive.
     """
     return ArchiveOwnerOut(owner_id=get_archive_owner(conn))
+
+
+# The literal the caller must send.
+# The UI already makes the person type a phrase, so this is not authentication:
+# it only stops a stray or mistyped request (a wrong URL, a script, a crawler following links) from emptying an archive.
+# Missing or different -> 422, nothing is touched.
+CLEAR_CONFIRMATION = "delete-all-data"
+
+
+@router.delete("/data", response_model=ArchiveClearedOut, summary="Delete everything stored in this archive (cannot be undone)")
+def clear_archive_data(
+    confirm: str = Query(..., max_length=len(CLEAR_CONFIRMATION), description=f"Must be exactly '{CLEAR_CONFIRMATION}'."),
+    current: DecodedAccessToken = Depends(get_current_user),
+    conn: Connection = Depends(get_archive_write_connection),
+) -> dict:
+    """
+    Empty the caller's archive: every message (with edit history and deletion snapshots),
+    chat, group-migration record and backfill run, and every sender except those who carry a display name.
+    Kept: the "chats not archived" blocklist, the display names and the archive-owner row.
+    The caller is expected to have asked for confirmation first; there is no undo and no soft delete.
+    The live archiver may keep running and stores new messages afterwards.
+    This is not account deletion (GDPR erasure is a separate feature).
+
+    Errors: 422 if `confirm` is not exactly "delete-all-data"; 409 "backfill_running" while this account's backfill runs
+    (it would store the history again - try again when it has finished); 409 "archive_unattached" without an archive.
+    Only the CALLER's own archive is reachable (get_archive_write_connection resolves it from the access token).
+    """
+    if confirm != CLEAR_CONFIRMATION:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Confirmation text is missing or wrong.", "reason": "confirmation_required"},
+        )
+    if is_backfill_running(backfill_status_path(current["user_id"])):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A backfill is running and would store the history again. Wait for it to finish (or cancel it), then try again.",
+                "reason": "backfill_running",
+            },
+        )
+    return clear_all_data(conn)

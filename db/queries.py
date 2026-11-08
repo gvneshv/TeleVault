@@ -1067,6 +1067,87 @@ def get_deletion_record(
 # ---------------------------------------------------------------------------
 
 
+def clear_all_data(conn: Connection) -> dict[str, Any]:
+    """
+    Remove everything the archiver has STORED from the archive, in ONE transaction: all messages (with their edit history and deletion snapshots),
+    all chats, the group-migration records and the backfill history, and every sender except those the owner has given a display name.
+    Returns the counts of what was removed.
+    There is NO undo, and nothing here asks for confirmation - that belongs to the caller (the UI's typed confirmation).
+
+    This is the "start from an empty archive" action (DELETE /api/archive/data); purge_chat() is its one-chat sibling.
+    It is NOT account deletion: the full erasure the GDPR asks for (the account, its archive database, its Telegram session) is a separate, later feature.
+
+    What is deliberately KEPT
+        - The ingest blocklist and the archive-owner row: they are settings, not archived content.
+          A block rule keeps its own copy of the chat's name.
+        - The owner's display names (`sender_display_names`), and therefore the `senders` row each of them hangs on: the label has a foreign key to that row,
+          so deleting the sender would silently delete the label too (ON DELETE CASCADE).
+          Such a sender keeps only the identity it was first seen under (the same row the archiver would have created again);
+          its recorded NAME HISTORY is removed with everything else.
+          When that person writes again, the label simply applies again - which is the point of keeping it.
+    What is removed that purge_chat() would keep
+        - Every backfill run, including a global one ("all chats"): after a full clear there is nothing left for that log to describe.
+
+    Concurrency (the live archiver keeps running while this executes)
+        chats, senders and messages are locked in SHARE ROW EXCLUSIVE mode first,
+        in the order the archiver itself touches them (upsert_chat, upsert_sender, insert_message), so the two cannot deadlock.
+        A message that arrives meanwhile WAITS and is stored, into the now-empty archive, once this commits -
+        none is lost (purge_chat() accepts a few-millisecond window; here the cost of a lost message is not worth paying for a rare, deliberate action).
+        Without the lock, a message inserted between the statements below would make `DELETE FROM chats` fail on its foreign key and roll everything back.
+        A running BACKFILL is the caller's concern, as for purge_chat(): the API refuses while one runs.
+
+    Cost: like purge_chat(), deleting messages fires the per-row counter trigger (chats_counters_ad), so a very large archive takes a noticeable while;
+    it stays one consistent transaction.
+    TRUNCATE would be faster but is not used: it needs a privilege the archive login does not have and, with CASCADE, would also reach the display names.
+
+    Any failure rolls the whole thing back, so a clear is all-or-nothing and the connection stays usable.
+    """
+    try:
+        conn.execute(sql_text("LOCK TABLE chats, senders, messages IN SHARE ROW EXCLUSIVE MODE"))
+
+        # Tables that are missing on archives that predate them (querying one would abort this whole transaction, see purge_chat()).
+        has_labels = bool(conn.execute(sql_text("SELECT to_regclass('sender_display_names') IS NOT NULL")).scalar())
+        has_history = bool(conn.execute(sql_text("SELECT to_regclass('sender_name_history') IS NOT NULL")).scalar())
+
+        # Children first: message_edits and message_deletions point at messages.id with no ON DELETE CASCADE.
+        deletions_deleted = conn.execute(sql_text("DELETE FROM message_deletions")).rowcount
+        edits_deleted = conn.execute(sql_text("DELETE FROM message_edits")).rowcount
+        messages_deleted = conn.execute(sql_text("DELETE FROM messages")).rowcount
+        conn.execute(sql_text("DELETE FROM chat_migrations"))
+        backfill_runs_deleted = conn.execute(sql_text("DELETE FROM backfill_runs")).rowcount
+        chats_deleted = conn.execute(sql_text("DELETE FROM chats")).rowcount
+
+        if has_history:
+            conn.execute(sql_text("DELETE FROM sender_name_history"))
+        if has_labels:
+            senders_deleted = conn.execute(
+                sql_text("DELETE FROM senders s WHERE NOT EXISTS (SELECT 1 FROM sender_display_names d WHERE d.sender_id = s.sender_id)")
+            ).rowcount
+            senders_kept = int(conn.execute(sql_text("SELECT COUNT(*) FROM senders")).scalar() or 0)
+        else:
+            senders_deleted = conn.execute(sql_text("DELETE FROM senders")).rowcount
+            senders_kept = 0
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    # Counts only - never a name or any text (see the logging rules in the project docs).
+    logger.info(
+        "Cleared the archive: %d messages, %d edits, %d deletion records, %d chats, %d senders (%d kept for their display names), %d backfill runs.",
+        messages_deleted, edits_deleted, deletions_deleted, chats_deleted, senders_deleted, senders_kept, backfill_runs_deleted,
+    )
+    return {
+        "messages_deleted": messages_deleted,
+        "edits_deleted": edits_deleted,
+        "deletions_deleted": deletions_deleted,
+        "chats_deleted": chats_deleted,
+        "senders_deleted": senders_deleted,
+        "senders_kept": senders_kept,
+        "backfill_runs_deleted": backfill_runs_deleted,
+    }
+
+
 def purge_chat(conn: Connection, chat_id: int, *, also_unblock: bool = False) -> dict[str, Any] | None:
     """
     Remove every message-derived trace of one chat from the archive, in ONE transaction.
