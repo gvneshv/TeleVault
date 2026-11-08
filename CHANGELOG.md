@@ -13,7 +13,7 @@ The **display names + name history** release (Roadmap Phase 3). Give any sender 
 
 **Upgrading from 3.1.0** (each step is safe to repeat):
 1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables to every existing archive; **nothing migrates them automatically**).
-2. Reload the web page once (the service worker cache is now v50; it updates itself, a reload just makes it immediate). No archiver restart is needed.
+2. Reload the web page once (the service worker cache is now v51; it updates itself, a reload just makes it immediate). No archiver restart is needed.
 Until step 1 is done nothing breaks: the archiver records no name history, labels read as "none", and saving a label answers 409 `archive_outdated`.
 
 ### Added - display names and name history
@@ -32,7 +32,17 @@ Until step 1 is done nothing breaks: the archiver records no name history, label
 - `upsert_sender()` compares a known sender with the latest known identity in one statement inside a SAVEPOINT. Recording a name can never cost a message, and an un-migrated archive is detected with `to_regclass()` (no failed statement, no log noise) and re-checked until the table appears, so migrating a running system needs no restart.
 - UI: a text-field dialog (`showFieldDialog` in `web/js/lib/dialog.js`), English and Ukrainian strings, `web/sw.js` cache v50.
 
+### Added - delete all stored data
+- **Settings -> "Delete all stored data"** empties your archive: every message (with edit history and the copies of deleted messages), chat, group-migration record, backfill run, and every person seen - **except** what is a setting of yours: the "chats not archived" list, your display names and which Telegram account the archive belongs to.
+  The person has to type a phrase (`DELETE ALL` / `ВИДАЛИТИ ВСЕ`) and the request carries its own fixed confirmation (`DELETE /api/archive/data?confirm=delete-all-data`, 422 without it), so neither a stray click nor a stray request can do it. There is no undo.
+- A person who has a display name keeps their `senders` row (the label has a foreign key to it and would be deleted with it): only the name they were first seen under stays; their recorded name history is removed. When they write again the label applies again.
+- The live archiver can keep running: the clear locks `chats`, `senders` and `messages` (in the order the archiver touches them, so no deadlock); a message that arrives meanwhile waits and is stored afterwards into the empty archive, so none is lost. Refused with 409 `backfill_running` while a backfill runs, like deleting one chat.
+- This is **not** account deletion: erasing the TeleVault account, its archive database and its Telegram session (GDPR) is a separate, later feature.
+- New: `db.queries.clear_all_data()`, `DELETE /api/archive/data`, `ArchiveClearedOut`; no migration (the sender-name tables are optional: an archive without them clears too). `web/sw.js` cache v51.
+- Tests: `tests/integration/test_clear_all_data_db.py`, `tests/api/test_clear_archive_api.py` (including a test that the clear waits for a message being stored); each rule was shown to fail with its code reverted. The Settings card was exercised in Chromium against a mocked API, not against a real server.
+
 ### Changed
+- Roadmap: "Data management: clear all data" is done and removed from "Planned - Phase 3".
 - The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender).
 - Roadmap: dropped the chat allowlist and the `deletions_only` storage mode (reasons in "Planned - Phase 3"), added "Show the last read message", and moved auto-read policies to the end of Phase 3.
 - Removed four items from "Planned - Phase 3" that had shipped or were stale: the chat view (3.1.0), display name overrides and username change tracking (this release), and the `resolved_name` item (already a computed API field).
@@ -782,7 +792,6 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Data management: clear all data (per-chat data removal: backend shipped and in the chat view)
 - Message ignore rules: filter by text pattern before archiving (filtering by chat shipped
   as the ingest blocklist)
 - TTL / retention policy: auto-delete archived messages older than N months
