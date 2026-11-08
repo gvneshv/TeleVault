@@ -2697,6 +2697,19 @@ mark.legal-placeholder {
   cursor: pointer;
 }
 
+/* The pencil says "this name can be changed"; without it the button is indistinguishable from plain text.
+Dimmed until hovered. */
+.cv-msg__edit-icon {
+  margin-left: 4px;
+  vertical-align: -1px;
+  opacity: 0.45;
+}
+
+.cv-msg__sender--btn:hover .cv-msg__edit-icon,
+.cv-msg__sender--btn:focus-visible .cv-msg__edit-icon {
+  opacity: 1;
+}
+
 .cv-msg__sender--btn:hover,
 .cv-msg__sender--btn:focus-visible {
   text-decoration: underline;

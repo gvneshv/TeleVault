@@ -839,6 +839,11 @@ function renderDetail(message) {
 }
 
 /** One message bubble. */
+// Lucide "pencil", inline because message HTML is built as a string (the nav icons are filled in afterwards by renderIcons).
+// Decorative: the button has its own label.
+const PENCIL_SVG =
+  '<svg class="cv-msg__edit-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>';
+
 /** The name above a bubble.
  *  Someone else's name is a button that opens the rename dialog; "You" and a channel post have nothing to rename. */
 function renderSenderName(message) {
@@ -847,7 +852,7 @@ function renderSenderName(message) {
   const name = senderName(message.sender);
   if (!name || message.sender?.sender_id === undefined)
     return `<span class="cv-msg__sender">${escapeHtml(name)}</span>`;
-  return `<button type="button" class="cv-msg__sender cv-msg__sender--btn" data-action="sender" data-sender-id="${message.sender.sender_id}" title="${escapeHtml(t("sender.open"))}">${escapeHtml(name)}</button>`;
+  return `<button type="button" class="cv-msg__sender cv-msg__sender--btn" data-action="sender" data-sender-id="${message.sender.sender_id}" title="${escapeHtml(t("sender.open"))}" aria-label="${escapeHtml(`${name} - ${t("sender.open")}`)}">${escapeHtml(name)}${PENCIL_SVG}</button>`;
 }
 
 function renderMessage(message) {

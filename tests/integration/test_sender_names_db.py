@@ -28,6 +28,13 @@ def scalar(conn, sql, **params):
     return conn.execute(sa.text(sql), params).scalar()
 
 
+def detail(conn, sender_id):
+    """get_sender_detail() for a sender the test knows exists (narrows the Optional so the checker, and the test, fail clearly otherwise)."""
+    d = rq.get_sender_detail(conn, sender_id)
+    assert d is not None, f"sender {sender_id} should exist"
+    return d
+
+
 def history(conn, sender_id):
     """The recorded changes of one sender, oldest first, as (username, first_name, last_name)."""
     rows = conn.execute(
@@ -36,7 +43,15 @@ def history(conn, sender_id):
     return [tuple(r) for r in rows]
 
 
-def see(conn, sender_id=7, username="olga", first_name="Olga", last_name="K", **kw):
+def see(
+    conn,
+    sender_id: int = 7,
+    username: str | None = "olga",
+    first_name: str | None = "Olga",
+    last_name: str | None = "K",
+    **kw,
+):
+    """Show the archiver a sender under this name. None means "not provided" (see upsert_sender)."""
     q.upsert_sender(conn, sender_id=sender_id, username=username, first_name=first_name, last_name=last_name, **kw)
 
 
@@ -277,7 +292,7 @@ class TestSenderDetail:
 
     def test_a_sender_who_never_changed_has_one_history_entry_the_first_identity(self, archive):
         see(archive.conn)
-        d = rq.get_sender_detail(archive.conn, 7)
+        d = detail(archive.conn, 7)
         assert (d["username"], d["first_name"], d["last_name"]) == ("olga", "Olga", "K")
         assert d["display_name"] is None and d["display_name_updated_at"] is None
         assert [(h["username"], h["first_name"]) for h in d["history"]] == [("olga", "Olga")]
@@ -286,7 +301,7 @@ class TestSenderDetail:
         see(archive.conn)
         see(archive.conn, first_name="Olha")
         see(archive.conn, first_name="Olya", username="olya")
-        d = rq.get_sender_detail(archive.conn, 7)
+        d = detail(archive.conn, 7)
         assert [(h["username"], h["first_name"]) for h in d["history"]] == [("olya", "Olya"), ("olga", "Olha"), ("olga", "Olga")]
         # the plain fields are still the FIRST identity, history[0] is the latest
         assert d["first_name"] == "Olga"
@@ -294,7 +309,7 @@ class TestSenderDetail:
     def test_the_label_is_included(self, archive):
         see(archive.conn)
         q.set_sender_display_name(archive.conn, 7, "Mum")
-        d = rq.get_sender_detail(archive.conn, 7)
+        d = detail(archive.conn, 7)
         assert d["display_name"] == "Mum" and d["display_name_updated_at"] is not None
 
     def test_history_is_capped_keeping_the_newest(self, archive, monkeypatch):
@@ -302,7 +317,7 @@ class TestSenderDetail:
         see(archive.conn, first_name="n0")
         for i in range(1, 6):
             see(archive.conn, first_name=f"n{i}")
-        d = rq.get_sender_detail(archive.conn, 7)
+        d = detail(archive.conn, 7)
         assert [h["first_name"] for h in d["history"]] == ["n5", "n4", "n3"]
 
     def test_an_archive_without_the_tables_still_answers_reads(self, server_ready):

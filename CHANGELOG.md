@@ -13,11 +13,11 @@ The **display names + name history** release (Roadmap Phase 3). Give any sender 
 
 **Upgrading from 3.1.0** (each step is safe to repeat):
 1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables to every existing archive; **nothing migrates them automatically**).
-2. Reload the web page once (the service worker cache is now v48; it updates itself, a reload just makes it immediate). No archiver restart is needed.
+2. Reload the web page once (the service worker cache is now v49; it updates itself, a reload just makes it immediate). No archiver restart is needed.
 Until step 1 is done nothing breaks: the archiver records no name history, labels read as "none", and saving a label answers 409 `archive_outdated`.
 
 ### Added - display names and name history
-- **Your own name for a sender.** Click a name above a message bubble (someone else's; "You" and channel posts have nothing to rename) to open a dialog: type your label, or remove it.
+- **Your own name for a sender.** Click a name (it carries a small pencil) above a message bubble (someone else's; "You" and channel posts have nothing to rename) to open a dialog: type your label, or remove it.
   The label replaces Telegram's name in the bubbles and in the Messages/Deleted rows of the panel. It is a display preference only: nothing is sent to Telegram and archived messages are not touched.
   Search matches Telegram's names and the message text, **not** your labels (the message endpoints do not know about them, which keeps paging and search unchanged).
 - **Names seen over time.** The same dialog lists every name (first name, last name, `@username`) the archiver has seen a sender under, newest first, ending with the one they were first seen under.
@@ -28,7 +28,7 @@ Until step 1 is done nothing breaks: the archiver records no name history, label
 - New API: `GET /api/senders/display-names`, `GET /api/senders/{id}`, `PUT` and `DELETE /api/senders/{id}/display-name` (limits in `utils/validation.py`: 64 characters, 2000 labels, 100 history entries per response).
   Writes answer 404 `sender_not_found`, 409 `display_names_full` and 409 `archive_outdated`; the two GETs stay quiet on an archive that has not been migrated.
 - `upsert_sender()` compares a known sender with the latest known identity in one statement inside a SAVEPOINT. Recording a name can never cost a message, and an un-migrated archive is detected with `to_regclass()` (no failed statement, no log noise) and re-checked until the table appears, so migrating a running system needs no restart.
-- UI: a text-field dialog (`showFieldDialog` in `web/js/lib/dialog.js`), English and Ukrainian strings, `web/sw.js` cache v48.
+- UI: a text-field dialog (`showFieldDialog` in `web/js/lib/dialog.js`), English and Ukrainian strings, `web/sw.js` cache v49.
 
 ### Changed
 - The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender).
