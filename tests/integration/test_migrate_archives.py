@@ -24,11 +24,14 @@ def add_account(control_conn, username: str, archive: str | None) -> int:
 
 
 def make_old_archive(user_id: int) -> str:
-    """A real archive taken back to the revision before the blocklist (and so before the owner table) - what every archive created before those releases looks like."""
+    """A real archive taken back to the revision before the blocklist (and so before the owner and sender-name tables) -
+    what every archive created before those releases looks like."""
     name = provisioning.provision_archive_database(user_id).db_name
     engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
     with engine.begin() as conn:
         # Every table added by a revision AFTER PREVIOUS_REVISION must go too, or re-running those migrations would find them already there.
+        conn.execute(sa.text("DROP TABLE sender_display_names"))
+        conn.execute(sa.text("DROP TABLE sender_name_history"))
         conn.execute(sa.text("DROP TABLE archive_owner"))
         conn.execute(sa.text("DROP TABLE ingest_blocked_chats"))
         conn.execute(sa.text("UPDATE alembic_version SET version_num = :v"), {"v": PREVIOUS_REVISION})
@@ -41,6 +44,15 @@ def has_blocklist_table(name: str) -> bool:
     try:
         with engine.connect() as conn:
             return conn.execute(sa.text("SELECT to_regclass('public.ingest_blocked_chats')")).scalar() is not None
+    finally:
+        engine.dispose()
+
+
+def has_table(name: str, table: str) -> bool:
+    engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            return conn.execute(sa.text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar() is not None
     finally:
         engine.dispose()
 
@@ -82,6 +94,7 @@ def test_an_outdated_archive_is_migrated_and_a_second_run_finds_nothing_to_do(ac
     assert migrate_archives.main([]) == 0
     assert "migrated" in capsys.readouterr().out
     assert has_blocklist_table(name)
+    assert has_table(name, "sender_name_history") and has_table(name, "sender_display_names")
     assert provisioning.archive_revision(name) == provisioning.head_revision()
 
     assert migrate_archives.main([]) == 0

@@ -478,6 +478,87 @@ def resolve_chat_id(conn: Connection, chat_id: int) -> int:
 # ---------------------------------------------------------------------------
 
 
+# Archives (by database name) known to have the sender_name_history table, so the existence probe in _name_history_ready() runs once per process.
+# Only a positive answer is remembered: an archive that is migrated while the archiver runs starts recording on the very next message, no restart.
+_archives_with_name_history: set[str] = set()
+
+
+def _name_history_ready(conn: Connection) -> bool:
+    """
+    True when this archive has the sender_name_history table (migration a3f81c5d7e92).
+
+    Probed with to_regclass() instead of "try it and catch undefined_table" on purpose:
+    a failing statement is logged by Postgres as an ERROR for every message of an un-migrated archive, and it would abort the caller's open transaction.
+    to_regclass() answers NULL quietly.
+    Once the table is seen it is never probed again for that database in this process.
+    """
+    name = conn.engine.url.database or ""
+    if name in _archives_with_name_history:
+        return True
+    present = conn.execute(sql_text("SELECT to_regclass('public.sender_name_history') IS NOT NULL")).scalar()
+    if present:
+        _archives_with_name_history.add(name)
+    return bool(present)
+
+
+# One statement does the whole "has this sender's name changed?" check, so it costs a single round trip and is atomic.
+#   cur    : the latest KNOWN identity - the newest history row, else the senders row (history rows rank above it).
+#   merged : what we now believe: a field we were given replaces the known one, a NULL (not provided) keeps it.
+# A row is inserted only if `merged` differs from `cur`; IS DISTINCT FROM treats NULL as a value, so None -> "x" counts as a change and None -> None does not.
+# CAST(... AS text) is needed because psycopg sends an untyped NULL parameter that Postgres cannot type inside COALESCE.
+_RECORD_NAME_CHANGE_SQL = """
+    WITH cur AS (
+        SELECT username, first_name, last_name FROM (
+            SELECT username, first_name, last_name, 1 AS prio, id AS ord
+              FROM sender_name_history WHERE sender_id = :sender_id
+            UNION ALL
+            SELECT username, first_name, last_name, 0 AS prio, 0 AS ord
+              FROM senders WHERE sender_id = :sender_id
+        ) AS known
+        ORDER BY prio DESC, ord DESC
+        LIMIT 1
+    ),
+    merged AS (
+        SELECT COALESCE(CAST(:username AS text), username)     AS username,
+               COALESCE(CAST(:first_name AS text), first_name) AS first_name,
+               COALESCE(CAST(:last_name AS text), last_name)   AS last_name,
+               username AS old_username, first_name AS old_first_name, last_name AS old_last_name
+          FROM cur
+    )
+    INSERT INTO sender_name_history (sender_id, username, first_name, last_name)
+    SELECT :sender_id, username, first_name, last_name
+      FROM merged
+     WHERE (username, first_name, last_name) IS DISTINCT FROM (old_username, old_first_name, old_last_name)
+"""
+
+
+def _record_name_change(conn: Connection, sender_id: int, username: str | None, first_name: str | None, last_name: str | None) -> None:
+    """
+    Append a sender_name_history row if the sender is now known under a different name.
+    Never raises: name history is a bonus and must not cost a message.
+
+    Runs inside a SAVEPOINT so that if the write fails for any reason, only this statement is undone - the caller's transaction
+    (typically upsert_chat + upsert_sender + insert_message, all with commit=False) stays alive and the message is still archived.
+    Skipped entirely when nothing was provided (nothing to compare) or the archive has not been migrated yet.
+
+    Two writers seeing the same new name at the same instant (live handler + edit handler) can each add the identical row.
+    That is harmless (the history list just shows one more equal entry) and not worth a row lock:
+    a lock on `senders` here would deadlock against purge_chat(), which holds the chat row and then deletes senders.
+    """
+    if username is None and first_name is None and last_name is None:
+        return
+    try:
+        if not _name_history_ready(conn):
+            return
+        with conn.begin_nested():
+            conn.execute(
+                sql_text(_RECORD_NAME_CHANGE_SQL),
+                {"sender_id": sender_id, "username": username, "first_name": first_name, "last_name": last_name},
+            )
+    except Exception:
+        logger.warning("Could not record a name change for sender %s; the message is archived regardless.", sender_id, exc_info=True)
+
+
 def upsert_sender(
     conn: Connection,
     sender_id: int,
@@ -488,9 +569,15 @@ def upsert_sender(
 ) -> None:
     """
     Insert a sender record if it doesn't exist yet.
-    Same rationale as upsert_chat - we preserve the first-seen identity.
+    Same rationale as upsert_chat - the `senders` row keeps the FIRST-SEEN identity and is never rewritten.
 
-    Note: for anonymous admin posts in supergroups, Telegram sets the sender to the group itself, so sender_id may be a negative channel ID rather than a user ID. These rows end up in the senders table with whatever fields the channel entity exposes (usually just a name/username).
+    If the sender already exists and is now seen under a different username / first name / last name,
+    the change is appended to sender_name_history instead (see _record_name_change() and db/schema.py's comment on that table).
+    A None argument means "not provided", not "removed": Telegram often sends partial ("min") users without a username,
+    so a removed username cannot be told apart from a missing one and is deliberately not tracked.
+
+    Note: for anonymous admin posts in supergroups, Telegram sets the sender to the group itself, so sender_id may be a negative channel ID rather than a user ID.
+    These rows end up in the senders table with whatever fields the channel entity exposes (usually just a name/username).
     This is a Telegram protocol behaviour, not a bug.
 
     commit=False: same semantics as upsert_chat - see its docstring.
@@ -498,11 +585,11 @@ def upsert_sender(
     since senders has no CHECK constraint (unlike chats) that could cause a legitimate silent rejection.
     """
     try:
-        conn.execute(
+        inserted = conn.execute(
             sql_text(
                 "INSERT INTO senders (sender_id, username, first_name, last_name) "
                 "VALUES (:sender_id, :username, :first_name, :last_name) "
-                "ON CONFLICT (sender_id) DO NOTHING"
+                "ON CONFLICT (sender_id) DO NOTHING RETURNING sender_id"
             ),
             {
                 "sender_id": sender_id,
@@ -510,12 +597,17 @@ def upsert_sender(
                 "first_name": first_name,
                 "last_name": last_name,
             },
-        )
+        ).first() is not None
     except Exception:
         # No CHECK constraint on senders to translate into a friendlier message the way upsert_chat does - but any error here still aborts the Postgres transaction,
         # so it must still be rolled back before re-raising (see this module's docstring).
         conn.rollback()
         raise
+
+    if not inserted:
+        # A brand-new sender has nothing to compare against - its row IS the first identity.
+        # Only a known sender can have changed.
+        _record_name_change(conn, sender_id, username, first_name, last_name)
 
     if not commit:
         return
@@ -537,6 +629,48 @@ def upsert_sender(
             f"ON CONFLICT DO NOTHING silently rejected the row - the sender_id value "
             f"likely failed the CHECK constraint."
         )
+
+
+def set_sender_display_name(conn: Connection, sender_id: int, display_name: str, commit: bool = True) -> dict[str, Any]:
+    """
+    Give a sender the owner's own label, replacing any earlier one.
+    Returns {sender_id, display_name, updated_at}.
+
+    The caller validates the text (api/schemas/sender.py) and checks that the sender exists and that the label limit is not hit (api/routes/senders.py);
+    a sender that is not in the archive fails the foreign key here and raises IntegrityError.
+    Raises ProgrammingError (undefined table) on an archive that predates the migration - the route turns that into a 409.
+    """
+    try:
+        row = conn.execute(
+            sql_text(
+                "INSERT INTO sender_display_names (sender_id, display_name) VALUES (:sender_id, :display_name) "
+                "ON CONFLICT (sender_id) DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = now() "
+                "RETURNING sender_id, display_name, updated_at"
+            ),
+            {"sender_id": sender_id, "display_name": display_name},
+        ).mappings().one()
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return dict(row)
+
+
+def clear_sender_display_name(conn: Connection, sender_id: int, commit: bool = True) -> bool:
+    """Remove a sender's label.
+    Returns True if there was one, False if not (so the call is idempotent)."""
+    try:
+        row = conn.execute(
+            sql_text("DELETE FROM sender_display_names WHERE sender_id = :sender_id RETURNING sender_id"),
+            {"sender_id": sender_id},
+        ).first()
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return row is not None
 
 
 # ---------------------------------------------------------------------------

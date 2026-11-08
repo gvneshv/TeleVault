@@ -261,8 +261,11 @@ def pytest_sessionfinish(session, exitstatus):
 # Archive databases
 # ---------------------------------------------------------------------------
 
-# CASCADE reaches messages/edits/deletions; chat_migrations and ingest_blocked_chats have no FK (on purpose), so they are listed
-_ARCHIVE_TABLES = "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats, archive_owner"
+# CASCADE reaches messages/edits/deletions (and the two sender-name tables, which reference senders); chat_migrations and ingest_blocked_chats have no FK (on purpose).
+# The sender-name tables are listed anyway: relying on CASCADE alone would hide a future change that drops their foreign key.
+_ARCHIVE_TABLES = (
+    "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats, archive_owner, sender_name_history, sender_display_names"
+)
 
 
 @pytest.fixture

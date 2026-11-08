@@ -15,6 +15,8 @@ Table overview:
   - backfill_runs       : records each time a backfill is run
   - ingest_blocked_chats: chats the account owner chose NOT to archive (the ingestion-time blocklist)
   - archive_owner       : the Telegram user id of the account this archive belongs to (one row; lets the UI tell "my" messages from the rest)
+  - sender_name_history : every time a sender was seen under a different username / first name / last name (see upsert_sender() in db/queries.py)
+  - sender_display_names: the owner's own friendly label for a sender (PUT /api/senders/{id}/display-name)
 
 Schema history (SQLite era, db/migrations/001-005 - see that package for the full reasoning behind each;
 this file represents the END state of all of them, not the incremental steps):
@@ -326,6 +328,54 @@ archive_owner = Table(
     Column("owner_id", BigInteger, nullable=False, autoincrement=False),
     Column("recorded_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
     CheckConstraint("singleton", name="ck_archive_owner_singleton"),
+)
+
+
+# ---------------------------------------------------------------------------
+# sender_name_history
+# ---------------------------------------------------------------------------
+# What a sender was called over time.
+# `senders` keeps the identity we saw FIRST and is never rewritten (so old messages keep showing the name they were archived under); this table records every LATER change.
+#
+# One row = a complete snapshot (username, first_name, last_name) as of `seen_at`, not a diff, so "what were they called then?" is a single row.
+# `seen_at` is when TeleVault OBSERVED the new name, not when the person changed it: the archiver cannot know that,
+# and a backfill reads a sender's CURRENT name even for years-old messages.
+# The UI says "seen", never "changed".
+#
+# The newest row is the latest known identity; if a sender has no row at all, `senders` itself is the latest.
+# `id` (identity column) is the ordering key, not `seen_at`: rows written in one transaction share the same now(), so time alone cannot order them.
+#
+# ON DELETE CASCADE: purge_chat() deletes senders left without messages, and what was recorded about them goes too (a purge must not leave a trail).
+#
+# Username REMOVAL is not recorded: Telegram sends a "min" (partial) user without a username in many events, which looks exactly like a removal.
+# A NULL field therefore always means "not provided" and never overrides the last known value (see upsert_sender()).
+sender_name_history = Table(
+    "sender_name_history",
+    metadata,
+    Column("id", BigInteger, Identity(always=False), primary_key=True),
+    Column("sender_id", BigInteger, ForeignKey("senders.sender_id", ondelete="CASCADE"), nullable=False),
+    Column("username", Text),
+    Column("first_name", Text),
+    Column("last_name", Text),
+    Column("seen_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    # Serves "newest row of one sender" (upsert_sender runs it for every message) and the per-sender history list.
+    Index("idx_sender_name_history_sender", "sender_id", "id"),
+)
+
+
+# ---------------------------------------------------------------------------
+# sender_display_names
+# ---------------------------------------------------------------------------
+# The owner's own label for a sender ("Mum" instead of "Olga K."): purely a display preference, never sent to Telegram.
+# It is applied by the web UI (GET /api/senders/display-names) and deliberately NOT joined into the message queries,
+# so the message endpoints, their pagination and their search stay exactly as they were; search does not match labels.
+# autoincrement=False: same reasoning as senders.sender_id. Deleted with the sender (see sender_name_history above).
+sender_display_names = Table(
+    "sender_display_names",
+    metadata,
+    Column("sender_id", BigInteger, ForeignKey("senders.sender_id", ondelete="CASCADE"), primary_key=True, autoincrement=False),
+    Column("display_name", Text, nullable=False),
+    Column("updated_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
 )
 
 

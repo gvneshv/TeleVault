@@ -62,6 +62,24 @@ TELEGRAM_CHAT_ID_MAX = 2**63 - 1
 # (a very large account is in a few thousand chats at most); it exists so that "no upper bound" is never true of a write endpoint.
 INGEST_BLOCKLIST_MAX_COUNT = 2000
 
+# --- Senders: display names and name history (api/routes/senders.py) --------------------------------------------------
+
+# A sender id is a Telegram user id, or a negative channel id for anonymous admin posts (see db/queries.py's upsert_sender()): the same 64-bit range as chat ids.
+TELEGRAM_SENDER_ID_MIN = TELEGRAM_CHAT_ID_MIN
+TELEGRAM_SENDER_ID_MAX = TELEGRAM_CHAT_ID_MAX
+# Counted in characters, as Pydantic counts them.
+# Telegram's own first-name and last-name limits are 64 each; a label is shown in a chat bubble header
+# and in the chat-list preview, so a short one is the point.
+# web/ repeats this number in the dialog's `maxlength`.
+DISPLAY_NAME_MAX_LENGTH = 64
+# How many senders may carry a label.
+# Like INGEST_BLOCKLIST_MAX_COUNT: far above real use, there so a write endpoint never has "no upper bound".
+# The whole list is sent to the browser in one response (GET /api/senders/display-names), which is the other reason to keep it bounded.
+DISPLAY_NAME_MAX_COUNT = 2000
+# How many name-history entries one sender detail response carries (newest first).
+# A person who renames a hundred times is already far out of the ordinary.
+SENDER_HISTORY_MAX_ENTRIES = 100
+
 # --- Chat view (api/routes/chats.py) ----------------------------------------------------------------------------------
 
 # How many messages one window of a conversation may hold (GET /api/chats/{chat_id}/window).

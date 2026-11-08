@@ -25,6 +25,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import ProgrammingError
 
 from db.connection import is_undefined_table_error
+from utils.validation import SENDER_HISTORY_MAX_ENTRIES
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -231,6 +232,89 @@ def get_blocked_chats(conn: Connection) -> list[dict[str, Any]]:
         ORDER BY blocked_at DESC, chat_id ASC
     """
     return _rows_to_dicts(conn.execute(sql_text(sql)))
+
+
+def sender_exists(conn: Connection, sender_id: int) -> bool:
+    """True if the archive has a `senders` row for this id (the only senders that can be given a label)."""
+    return conn.execute(sql_text("SELECT 1 FROM senders WHERE sender_id = :sender_id"), {"sender_id": sender_id}).first() is not None
+
+
+def get_sender_display_names(conn: Connection) -> list[dict[str, Any]]:
+    """
+    Every display-name override as {sender_id, display_name}, ordered by sender id for a stable response.
+
+    Unpaginated: the API caps the number of overrides (utils/validation.py's DISPLAY_NAME_MAX_COUNT), so the list is bounded by construction.
+    An archive that predates the migration has no overrides by definition, so it answers [] instead of failing -
+    the web UI loads this list on every chat-view start, and an old archive must keep working until `python scripts/migrate_archives.py` is run.
+    Any OTHER database error propagates.
+    """
+    try:
+        return _rows_to_dicts(conn.execute(sql_text("SELECT sender_id, display_name FROM sender_display_names ORDER BY sender_id")))
+    except ProgrammingError as exc:
+        # A failed statement aborts the Postgres transaction - release it before the connection goes back to the pool.
+        conn.rollback()
+        if not is_undefined_table_error(exc):
+            raise
+        return []
+
+
+def get_sender_detail(conn: Connection, sender_id: int) -> dict[str, Any] | None:
+    """
+    One sender with their label and name history, or None if the archive has never seen this id.
+
+    Returns {sender_id, username, first_name, last_name, first_seen, display_name, display_name_updated_at, history}.
+    The plain name fields are the identity stored when the sender was first seen (the `senders` row, which is never rewritten).
+    `history` is every identity TeleVault has seen, NEWEST first and including that first one as its last entry, so the first row is the latest known name.
+    It holds at most SENDER_HISTORY_MAX_ENTRIES rows; for a sender beyond that, the oldest entries (including the first-seen one) are cut.
+
+    On an archive that predates the migration the label is None and `history` has just the first-seen identity, rather than an error:
+    this is a read, and the dialog that shows it must still open.
+    """
+    sender = conn.execute(
+        sql_text("SELECT sender_id, username, first_name, last_name, first_seen FROM senders WHERE sender_id = :sender_id"),
+        {"sender_id": sender_id},
+    ).mappings().first()
+    if sender is None:
+        return None
+    detail: dict[str, Any] = dict(sender)
+    detail["display_name"] = None
+    detail["display_name_updated_at"] = None
+    first = {k: sender[k] for k in ("username", "first_name", "last_name")} | {"seen_at": sender["first_seen"]}
+    detail["history"] = [first]
+
+    params = {"sender_id": sender_id, "limit": SENDER_HISTORY_MAX_ENTRIES}
+    try:
+        label = conn.execute(
+            sql_text("SELECT display_name, updated_at FROM sender_display_names WHERE sender_id = :sender_id"), params
+        ).first()
+        # The first-seen row is appended in SQL (not in Python) so the LIMIT applies to the whole timeline, newest first, in one ordering.
+        history = _rows_to_dicts(
+            conn.execute(
+                sql_text(
+                    """
+                    SELECT username, first_name, last_name, seen_at FROM (
+                        SELECT username, first_name, last_name, seen_at, 1 AS prio, id AS ord
+                          FROM sender_name_history WHERE sender_id = :sender_id
+                        UNION ALL
+                        SELECT username, first_name, last_name, first_seen AS seen_at, 0 AS prio, 0 AS ord
+                          FROM senders WHERE sender_id = :sender_id
+                    ) AS timeline
+                    ORDER BY prio DESC, ord DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            )
+        )
+    except ProgrammingError as exc:
+        conn.rollback()
+        if not is_undefined_table_error(exc):
+            raise
+        return detail
+    if label is not None:
+        detail["display_name"], detail["display_name_updated_at"] = label
+    detail["history"] = history
+    return detail
 
 
 def get_archive_owner(conn: Connection) -> int | None:
