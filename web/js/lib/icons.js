@@ -153,6 +153,15 @@ const ICONS = {
     ["path", { d: "m19 15 3-3-3-3" }],
     ["path", { d: "m5 9-3 3 3 3" }],
   ], // lucide: unfold-horizontal
+  pencil: [
+    ["path", { d: "M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" }],
+    ["path", { d: "m15 5 4 4" }],
+  ], // lucide: pencil
+  history: [
+    ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }],
+    ["path", { d: "M3 3v5h5" }],
+    ["path", { d: "M12 7v5l4 2" }],
+  ], // lucide: history
   block: [
     ["circle", { cx: "12", cy: "12", r: "10" }],
     ["path", { d: "M4.929 4.929 19.07 19.071" }],

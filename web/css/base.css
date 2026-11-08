@@ -2833,6 +2833,27 @@ Dimmed until hovered. */
   color: var(--color-ink-muted);
 }
 
+/* Rename / name-history buttons next to a private chat's name in the chat header. */
+.cv-head__tool {
+  margin-left: 6px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.cv-head__tool:hover,
+.cv-head__tool:focus-visible {
+  color: var(--color-ink);
+}
+
+.cv-head__tool .nav-icon {
+  width: 16px;
+  height: 16px;
+}
+
 /* The "names seen" list of the sender dialog (js/views/chat-view.js, openSenderDialog). */
 .modal__history {
   margin: 0 0 14px;

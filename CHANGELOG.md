@@ -13,7 +13,7 @@ The **display names + name history** release (Roadmap Phase 3). Give any sender 
 
 **Upgrading from 3.1.0** (each step is safe to repeat):
 1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables to every existing archive; **nothing migrates them automatically**).
-2. Reload the web page once (the service worker cache is now v49; it updates itself, a reload just makes it immediate). No archiver restart is needed.
+2. Reload the web page once (the service worker cache is now v50; it updates itself, a reload just makes it immediate). No archiver restart is needed.
 Until step 1 is done nothing breaks: the archiver records no name history, labels read as "none", and saving a label answers 409 `archive_outdated`.
 
 ### Added - display names and name history
@@ -23,12 +23,14 @@ Until step 1 is done nothing breaks: the archiver records no name history, label
 - **Names seen over time.** The same dialog lists every name (first name, last name, `@username`) the archiver has seen a sender under, newest first, ending with the one they were first seen under.
   The date is when TeleVault *saw* the name, not when the person changed it: a change is noticed when they write next (or a backfill reads them), and a backfill reads the sender's *current* name even for old messages.
   Only changes seen from this release on exist; nothing is reconstructed for the past.
+- **Labels also name private chats.** A private chat's id is the other person's id, so their label replaces the chat name in the chat list, the Messages/Deleted rows, the chat header and the Settings "chats not archived" list and picker (shown as "label (Telegram name)" there) - so three friends called "Kyrylo" can be told apart. Groups and channels keep their own name; their members are labelled above their messages. Search does not match labels.
+- **Name history from the chat header.** In a private chat the header has a pencil (rename) and a history button (the names seen, read-only). In groups the history stays in the rename dialog of a member's name. A person you wrote to but who never wrote back has no sender record yet, so the buttons answer "not in your archive" until they do.
 - **A removed username is not recorded.** Telegram sends partial ("min") users without a username in many events, which looks exactly like a removal. A field that arrives empty therefore means "not provided" and never overwrites the last known value.
 - New archive tables (migration `a3f81c5d7e92`): `sender_name_history` and `sender_display_names`, both deleted with the sender (so "Delete stored data" on a chat also removes the names and label of people who then have no message left).
 - New API: `GET /api/senders/display-names`, `GET /api/senders/{id}`, `PUT` and `DELETE /api/senders/{id}/display-name` (limits in `utils/validation.py`: 64 characters, 2000 labels, 100 history entries per response).
   Writes answer 404 `sender_not_found`, 409 `display_names_full` and 409 `archive_outdated`; the two GETs stay quiet on an archive that has not been migrated.
 - `upsert_sender()` compares a known sender with the latest known identity in one statement inside a SAVEPOINT. Recording a name can never cost a message, and an un-migrated archive is detected with `to_regclass()` (no failed statement, no log noise) and re-checked until the table appears, so migrating a running system needs no restart.
-- UI: a text-field dialog (`showFieldDialog` in `web/js/lib/dialog.js`), English and Ukrainian strings, `web/sw.js` cache v49.
+- UI: a text-field dialog (`showFieldDialog` in `web/js/lib/dialog.js`), English and Ukrainian strings, `web/sw.js` cache v50.
 
 ### Changed
 - The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender).

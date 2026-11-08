@@ -548,6 +548,11 @@ export const en = {
     "Give this person a name of your own. It is shown only here in TeleVault: nothing is sent to Telegram, and the archived messages are not changed.",
   "sender.fieldLabel": "Your name for them",
   "sender.save": "Save",
+  "sender.renameChat": "Give this person a name of your own",
+  "sender.historyOpen": "Names this person has been seen under",
+  "sender.historyDialogTitle": "Names: {name}",
+  "sender.historyMessage":
+    "Every name TeleVault has seen this person under, newest first.",
   "sender.remove": "Remove my name",
   "sender.blank": "Type a name, or use “Remove my name”.",
   "sender.blankNew": "Type a name first.",

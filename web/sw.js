@@ -76,10 +76,13 @@
  * v48 (3.2.0, display names): changed js/lib/dialog.js (text-field dialog), js/views/chat-view.js (labels applied to sender names, rename dialog),
  * js/lib/errors.js, css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * v49 (display names, discoverability): changed js/views/chat-view.js (pencil on a renameable sender name) and css/base.css; no file was added or removed.
+ * v50 (display names on chats): ADDED js/lib/display-names.js (in SHELL_FILES below);
+ * changed js/views/chat-view.js (labels in the chat list and header, rename and name-history buttons),
+ * js/views/settings.js (labels in the blocklist), js/lib/dialog.js, js/lib/icons.js, css/base.css and i18n/{en,uk}.js.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v49";
+const CACHE_NAME = "televault-shell-v50";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -101,6 +104,7 @@ const SHELL_FILES = [
   "/js/lib/pagination.js",
   "/js/lib/errors.js",
   "/js/lib/dialog.js",
+  "/js/lib/display-names.js",
   "/js/lib/archive-error.js",
   "/js/lib/refresh.js",
   "/js/lib/icons.js",

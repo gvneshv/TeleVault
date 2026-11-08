@@ -47,6 +47,11 @@ import { describeError } from "../lib/errors.js";
 import { renderArchiveErrorState } from "../lib/archive-error.js";
 import { renderIcons } from "../lib/icons.js";
 import {
+  chatDisplayName,
+  fetchDisplayNames,
+  isPrivateChat,
+} from "../lib/display-names.js";
+import {
   showAlert,
   showConfirm,
   showConfirmWithCheckbox,
@@ -265,7 +270,12 @@ function windowUrl(chatId, extra = {}) {
 
 /** @param {object} chat @returns {string} the chat's name, or its id for a chat Telegram never named. */
 function chatName(chat) {
-  return chat?.name || String(chat?.chat_id ?? "");
+  // A private chat takes the owner's label for that person (lib/display-names.js), so three friends with same names can be told apart.
+  return chatDisplayName(
+    state.displayNames,
+    chat,
+    chat?.name || String(chat?.chat_id ?? ""),
+  );
 }
 
 /**
@@ -317,7 +327,7 @@ function renderChatRow(chat) {
   return `
     <li>
       <a class="cv-row" href="${chatRouteHash(chat.chat_id)}" ${active ? 'aria-current="true"' : ""}>
-        <span class="cv-avatar" aria-hidden="true">${escapeHtml(initials(chat.name))}</span>
+        <span class="cv-avatar" aria-hidden="true">${escapeHtml(initials(chatName(chat)))}</span>
         <span class="cv-row__body">
           <span class="cv-row__top">
             <span class="cv-row__name">${escapeHtml(chatName(chat))}</span>
@@ -343,10 +353,10 @@ function renderResultRow(message) {
   return `
     <li>
       <a class="cv-row cv-row--result" href="${chatRouteHash(message.chat?.chat_id ?? null, message.id)}">
-        <span class="cv-avatar" aria-hidden="true">${escapeHtml(initials(message.chat?.name))}</span>
+        <span class="cv-avatar" aria-hidden="true">${escapeHtml(initials(chatName(message.chat)))}</span>
         <span class="cv-row__body">
           <span class="cv-row__top">
-            <span class="cv-row__name">${escapeHtml(message.chat?.name ?? String(message.chat?.chat_id ?? ""))}</span>
+            <span class="cv-row__name">${escapeHtml(chatName(message.chat))}</span>
             <span class="cv-row__time">${escapeHtml(formatShortStamp(message.date))}</span>
           </span>
           <span class="cv-row__preview cv-row__preview--text">${sender ? `<b>${escapeHtml(sender)}:</b> ` : ""}${text}</span>
@@ -557,17 +567,8 @@ async function loadBlocklist() {
  * If a conversation is already on screen, its messages and the panel rows are redrawn with the labels.
  */
 async function loadDisplayNames() {
-  try {
-    const res = await apiFetch("/api/senders/display-names");
-    if (!res.ok) return;
-    const data = await res.json();
-    state.displayNames = new Map(
-      data.items.map((item) => [item.sender_id, item.display_name]),
-    );
-    redrawSenderNames();
-  } catch {
-    // Decoration only: without the labels Telegram's names are shown.
-  }
+  state.displayNames = await fetchDisplayNames();
+  redrawSenderNames();
 }
 
 /** Redraw everything that shows a sender's name, after a label changed.
@@ -575,7 +576,8 @@ async function loadDisplayNames() {
 function redrawSenderNames() {
   if (state.convStatus === "ready")
     state.messages.forEach((m) => redrawMessage(m.id));
-  if (state.mode !== "chats") renderPanel();
+  renderPanel();
+  renderConversationHeader();
 }
 
 /** One line for a name-history entry: "@username · First Last", with whatever is known. */
@@ -589,25 +591,21 @@ function formatNameVersion(version) {
   return parts.join(" · ") || t("sender.noName");
 }
 
-/**
- * The rename dialog for one sender: their current label, and under it the names TeleVault has seen them under.
- * "Seen" is deliberate: the archiver learns of a change when the person writes next (or a backfill reads them), not when they made it.
- */
-async function openSenderDialog(senderId) {
-  if (!Number.isFinite(senderId)) return;
-  let detail;
+/** GET /api/senders/{id}, or null after telling the person why not (a sender the archive has never seen is a 404). */
+async function fetchSenderDetail(senderId) {
+  if (!Number.isFinite(senderId)) return null;
   try {
     const res = await apiFetch(`/api/senders/${senderId}`);
-    if (!res.ok) {
-      await showAlert(describeError(await readErrorDetail(res)));
-      return;
-    }
-    detail = await res.json();
+    if (res.ok) return await res.json();
+    await showAlert(describeError(await readErrorDetail(res)));
   } catch {
     await showAlert(t("common.error"));
-    return;
   }
+  return null;
+}
 
+/** The "names TeleVault has seen" block: newest first, ending with the identity the sender was first seen under. @returns {HTMLElement} */
+function buildNameHistory(detail) {
   const history = document.createElement("div");
   history.className = "modal__history";
   const heading = document.createElement("p");
@@ -621,7 +619,7 @@ async function openSenderDialog(senderId) {
       const when = document.createElement("time");
       when.dateTime = version.seen_at;
       // The oldest entry is the identity the sender was first seen under, the others are later sightings.
-      when.textContent = ` — ${fill(
+      when.textContent = ` - ${fill(
         index === detail.history.length - 1
           ? t("sender.firstSeen")
           : t("sender.seenOn"),
@@ -638,6 +636,32 @@ async function openSenderDialog(senderId) {
     note.textContent = t("sender.noChanges");
     history.append(note);
   }
+  return history;
+}
+
+/** The chat header's history button: a read-only list of the names this person has been seen under (a private chat's id is the person's id). */
+async function openNameHistory(senderId) {
+  const detail = await fetchSenderDetail(senderId);
+  if (!detail) return;
+  await showAlert(t("sender.historyMessage"), {
+    title: fill(t("sender.historyDialogTitle"), {
+      name: chatDisplayName(
+        state.displayNames,
+        { chat_id: senderId, chat_type: "private" },
+        formatNameVersion(detail.history[0]),
+      ),
+    }),
+    content: buildNameHistory(detail),
+  });
+}
+
+/**
+ * The rename dialog for one sender: their current label, and under it the names TeleVault has seen them under.
+ * "Seen" is deliberate: the archiver learns of a change when the person writes next (or a backfill reads them), not when they made it.
+ */
+async function openSenderDialog(senderId, { showHistory = true } = {}) {
+  const detail = await fetchSenderDetail(senderId);
+  if (!detail) return;
 
   const current = state.displayNames.get(senderId) ?? detail.display_name ?? "";
   const answer = await showFieldDialog(t("sender.message"), {
@@ -651,7 +675,7 @@ async function openSenderDialog(senderId) {
     blankMessage: current ? t("sender.blank") : t("sender.blankNew"),
     secondaryLabel: current ? t("sender.remove") : undefined,
     secondaryDanger: true,
-    content: history,
+    content: showHistory ? buildNameHistory(detail) : undefined,
   });
   if (answer.action === "cancel") return;
   if (answer.action === "confirm" && answer.value === current) return;
@@ -735,9 +759,15 @@ function renderConversationHeader() {
     <button type="button" class="cv-btn cv-btn--icon cv-panel-toggle" id="cv-panel-toggle" aria-controls="cv-panel" aria-expanded="${state.panelOpen}"
       aria-label="${escapeHtml(t("cv.panelToggle"))}" title="${escapeHtml(t("cv.panelToggle"))}"><span class="nav-icon" data-icon="panel"></span></button>
     <a class="cv-back" href="${chatRouteHash()}" aria-label="${escapeHtml(t("cv.back"))}" title="${escapeHtml(t("cv.back"))}"><span class="nav-icon" data-icon="back"></span></a>
-    <span class="cv-avatar cv-avatar--lg" aria-hidden="true">${escapeHtml(initials(chat.name))}</span>
+    <span class="cv-avatar cv-avatar--lg" aria-hidden="true">${escapeHtml(initials(chatName(chat)))}</span>
     <div class="cv-head__text">
-      <h2 class="cv-head__name">${escapeHtml(chatName(chat))}</h2>
+      <h2 class="cv-head__name">${escapeHtml(chatName(chat))}${
+        isPrivateChat(chat)
+          ? `
+        <button type="button" class="cv-head__tool" id="cv-rename" title="${escapeHtml(t("sender.renameChat"))}" aria-label="${escapeHtml(t("sender.renameChat"))}"><span class="nav-icon" data-icon="pencil"></span></button>
+        <button type="button" class="cv-head__tool" id="cv-name-history" title="${escapeHtml(t("sender.historyOpen"))}" aria-label="${escapeHtml(t("sender.historyOpen"))}"><span class="nav-icon" data-icon="history"></span></button>`
+          : ""
+      }</h2>
       <p class="cv-head__sub">${escapeHtml(countsLine(chat))}</p>
     </div>
     <div class="cv-head__actions">
@@ -750,6 +780,14 @@ function renderConversationHeader() {
       </button>
     </div>`;
   renderIcons(head);
+  document
+    .getElementById("cv-rename")
+    ?.addEventListener("click", () =>
+      openSenderDialog(chat.chat_id, { showHistory: false }),
+    );
+  document
+    .getElementById("cv-name-history")
+    ?.addEventListener("click", () => openNameHistory(chat.chat_id));
   document.getElementById("cv-panel-toggle")?.addEventListener("click", () => {
     setPanelOpen(!state.panelOpen);
     if (state.panelOpen) document.getElementById("cv-search")?.focus();

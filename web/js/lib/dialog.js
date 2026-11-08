@@ -289,13 +289,14 @@ function openDialog({
  *   `link`: an optional "go and fix it" link under the message (see archiveFixLink() in lib/archive-error.js).
  * @returns {Promise<void>}
  */
-async function showAlert(message, { title, link } = {}) {
+async function showAlert(message, { title, link, content } = {}) {
   await openDialog({
     message,
     title,
     confirmLabel: t("dialog.ok"),
     showCancel: false,
     link,
+    content,
   });
 }
 

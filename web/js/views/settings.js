@@ -26,6 +26,7 @@ import { apiFetch } from "../lib/auth.js";
 import { describeError, describeSessionError } from "../lib/errors.js";
 import { archiveFixLink } from "../lib/archive-error.js";
 import { showConfirm } from "../lib/dialog.js";
+import { chatDisplayName, fetchDisplayNames } from "../lib/display-names.js";
 
 const settingsViewState = {
   initialized: false,
@@ -34,6 +35,8 @@ const settingsViewState = {
     items: null,
     // Every archived chat as {chat_id, name} (GET /api/chats/options) - what the picker offers, minus what is already blocked.
     chats: [],
+    // sender id -> the owner's own label (lib/display-names.js); a private chat is shown under its person's label, then Telegram's name in brackets.
+    labels: new Map(),
     maxCount: null,
     loading: false,
     // The chat id (string) being blocked/unblocked, or null.
@@ -145,6 +148,14 @@ function renderDevicesCard() {
   `;
 }
 
+/** A chat as the owner knows it: "label (Telegram name)" for a private chat that has a label, otherwise its name, otherwise `fallback`. */
+function labelled(chat, fallback) {
+  const name = chat.name || "";
+  const label = chatDisplayName(settingsViewState.blocklist.labels, chat, "");
+  if (!label) return name || fallback;
+  return name ? `${label} (${name})` : label;
+}
+
 /** One blocked chat: its name (as it was when blocked), id and date, and the button that lifts the block. */
 function renderBlockedRow(rule) {
   const s = settingsViewState.blocklist;
@@ -157,7 +168,7 @@ function renderBlockedRow(rule) {
   return `
     <li class="device-row">
       <div class="device-row__body">
-        <div class="device-row__name">${escapeHtml(rule.name || t("settings.blocklistUnnamed"))}</div>
+        <div class="device-row__name">${escapeHtml(labelled(rule, t("settings.blocklistUnnamed")))}</div>
         <div class="device-row__meta">${facts.map(escapeHtml).join(" · ")}</div>
       </div>
       <div class="device-row__action">
@@ -195,7 +206,7 @@ function renderBlocklistCard() {
     const options = choices
       .map(
         (c) =>
-          `<option value="${escapeHtml(String(c.chat_id))}" ${String(c.chat_id) === selected ? "selected" : ""}>${escapeHtml(c.name || `ID ${c.chat_id}`)}</option>`,
+          `<option value="${escapeHtml(String(c.chat_id))}" ${String(c.chat_id) === selected ? "selected" : ""}>${escapeHtml(labelled(c, `ID ${c.chat_id}`))}</option>`,
       )
       .join("");
 
@@ -261,9 +272,10 @@ async function loadBlocklist(root) {
   renderRoot(root);
 
   try {
-    const [rules, chats] = await Promise.all([
+    const [rules, chats, labels] = await Promise.all([
       apiFetch("/api/ingest/blocklist"),
       apiFetch("/api/chats/options"),
+      fetchDisplayNames(),
     ]);
     if (!rules.ok) {
       s.items = null;
@@ -276,6 +288,7 @@ async function loadBlocklist(root) {
       s.items = data.items;
       s.maxCount = data.max_count;
       s.chats = await chats.json();
+      s.labels = labels;
     }
   } catch {
     s.items = null;

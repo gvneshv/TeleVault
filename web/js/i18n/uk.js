@@ -546,6 +546,11 @@ export const uk = {
     "Дайте цій людині власне ім’я. Воно показується лише тут, у TeleVault: у Telegram нічого не надсилається, а збережені повідомлення не змінюються.",
   "sender.fieldLabel": "Ваше ім’я для неї",
   "sender.save": "Зберегти",
+  "sender.renameChat": "Дати цій людині власне ім’я",
+  "sender.historyOpen": "Імена, під якими бачили цю людину",
+  "sender.historyDialogTitle": "Імена: {name}",
+  "sender.historyMessage":
+    "Усі імена, під якими TeleVault бачив цю людину, від найновішого.",
   "sender.remove": "Прибрати моє ім’я",
   "sender.blank": "Введіть ім’я або скористайтеся «Прибрати моє ім’я».",
   "sender.blankNew": "Спершу введіть ім’я.",
