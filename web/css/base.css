@@ -1273,6 +1273,11 @@ Shared by the collapsed rail and the phone top bar below. */
 }
 
 /* Settings -> "Telegram devices": wider than a form card, since a row carries a name, a line of facts and a button. */
+/* The "delete all stored data" card: the same card, with the danger tone of .modal__btn--danger on its border so it reads as the one dangerous block of the page. */
+.settings-card--danger {
+  border-color: var(--color-seal);
+}
+
 .settings-card--devices {
   max-width: 620px;
 }

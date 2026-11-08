@@ -25,7 +25,7 @@ import { escapeHtml } from "../lib/dom.js";
 import { apiFetch } from "../lib/auth.js";
 import { describeError, describeSessionError } from "../lib/errors.js";
 import { archiveFixLink } from "../lib/archive-error.js";
-import { showConfirm } from "../lib/dialog.js";
+import { showAlert, showConfirm, showTypedConfirm } from "../lib/dialog.js";
 import { chatDisplayName, fetchDisplayNames } from "../lib/display-names.js";
 
 const settingsViewState = {
@@ -46,6 +46,11 @@ const settingsViewState = {
     error: null,
     // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
     fix: null,
+  },
+  data: {
+    // True while DELETE /api/archive/data runs (it can take a while on a big archive); the button is disabled meanwhile.
+    busy: false,
+    error: null,
   },
   devices: {
     // null = never loaded (only the "Show my devices" button), otherwise the last list from GET /api/telegram/sessions.
@@ -105,6 +110,25 @@ function renderDeviceRow(d) {
       </div>
       <div class="device-row__action">${action}</div>
     </li>
+  `;
+}
+
+/** "Your stored data": the one irreversible button of the page.
+ *  What it removes and keeps is spelled out BEFORE the person clicks. */
+function renderDataCard() {
+  const s = settingsViewState.data;
+  const error = s.error
+    ? `<p class="settings-error" role="alert">${escapeHtml(s.error)}</p>`
+    : "";
+  return `
+    <section class="settings-card settings-card--danger" id="data-card">
+      <h2>${t("settings.dataTitle")}</h2>
+      <p class="settings-help">${t("settings.dataIntro")}</p>
+      <div class="settings-actions">
+        <button type="button" id="data-clear" class="modal__btn modal__btn--danger" ${s.busy ? "disabled" : ""}>${s.busy ? t("settings.dataClearing") : t("settings.dataClear")}</button>
+      </div>
+      ${error}
+    </section>
   `;
 }
 
@@ -244,9 +268,11 @@ function renderRoot(root) {
       <a href="/telegram-setup.html" class="modal__btn modal__btn--primary">${t("settings.telegramCardLink")}</a>
     </section>
     ${renderBlocklistCard()}
+    ${renderDataCard()}
     ${renderDevicesCard()}
   `;
   attachBlocklistHandlers(root);
+  attachDataHandlers(root);
   attachDevicesHandlers(root);
 }
 
@@ -395,6 +421,52 @@ async function callDevices(
   s.loading = false;
   s.busy = null;
   renderRoot(root);
+}
+
+/**
+ * Clear everything stored.
+ * The typed phrase (not just OK) is what keeps a stray click from emptying an archive;
+ * the request carries its own fixed confirmation as well (api/routes/archive.py's CLEAR_CONFIRMATION), so a stray request cannot do it either.
+ */
+function attachDataHandlers(root) {
+  document.getElementById("data-clear")?.addEventListener("click", async () => {
+    const s = settingsViewState.data;
+    if (s.busy) return;
+    const phrase = t("settings.dataConfirmPhrase");
+    if (
+      !(await showTypedConfirm(t("settings.dataConfirm"), phrase, {
+        title: t("settings.dataTitle"),
+        confirmLabel: t("settings.dataClear"),
+      }))
+    )
+      return;
+    s.busy = true;
+    s.error = null;
+    renderRoot(root);
+    try {
+      const res = await apiFetch("/api/archive/data?confirm=delete-all-data", {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        const done = await res.json();
+        s.busy = false;
+        renderRoot(root);
+        // The chat view and the other pages re-read the archive when they are opened again; the labels and the block rules are still there.
+        await showAlert(
+          t("settings.dataCleared")
+            .replace("{messages}", String(done.messages_deleted))
+            .replace("{chats}", String(done.chats_deleted)),
+        );
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      s.error = describeError(body.detail);
+    } catch {
+      s.error = t("common.error");
+    }
+    s.busy = false;
+    renderRoot(root);
+  });
 }
 
 function attachDevicesHandlers(root) {

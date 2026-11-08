@@ -212,6 +212,16 @@ export const en = {
   "settings.blocklistNoChats": "No archived chats to choose from yet.",
   "settings.blocklistUnnamed": "Unnamed chat",
   "settings.blocklistBlockedOn": "Blocked",
+  "settings.dataTitle": "Delete all stored data",
+  "settings.dataIntro":
+    "Empties the archive: every stored message (with edit history and deleted-message copies), every chat and the people seen. Kept: the list of chats not archived, your own names for people, and which account this archive belongs to. Messages that arrive later are stored again as usual. This cannot be undone. It does not delete your TeleVault account.",
+  "settings.dataClear": "Delete all stored data",
+  "settings.dataClearing": "Deleting…",
+  "settings.dataConfirmPhrase": "DELETE ALL",
+  "settings.dataConfirm":
+    "This permanently deletes every message, chat and edit history stored in your archive. There is no undo. Your settings and your own names for people stay.",
+  "settings.dataCleared":
+    "Done. Messages deleted: {messages}. Chats deleted: {chats}.",
   "settings.devicesTitle": "Telegram devices",
   "settings.devicesIntro":
     "Every device signed in to your Telegram account - the same list as Telegram's own Settings → Devices. Each time you link TeleVault a new entry is added, so old ones can pile up. Loading the list briefly connects to Telegram as TeleVault, so stop the archiver and any backfill first.",
