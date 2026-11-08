@@ -2684,6 +2684,25 @@ mark.legal-placeholder {
   color: var(--color-ink);
 }
 
+/* A sender's name is a button (rename dialog, js/views/chat-view.js): it must look like the plain name until hovered or focused. */
+.cv-msg__sender--btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv-msg__sender--btn:hover,
+.cv-msg__sender--btn:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .cv-msg__time {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2799,6 +2818,33 @@ mark.legal-placeholder {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--color-ink-muted);
+}
+
+/* The "names seen" list of the sender dialog (js/views/chat-view.js, openSenderDialog). */
+.modal__history {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
+
+.modal__history-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.modal__history ul {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.modal__history time {
+  white-space: nowrap;
+}
+
+.modal__history-note {
+  margin: 6px 0 0;
 }
 
 /* The tick box of a confirmation dialog (lib/dialog.js, showConfirmWithCheckbox). */

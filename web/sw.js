@@ -73,10 +73,12 @@
  * js/lib/icons.js (package-open for a running archiver, calendar-days), js/views/chat-view.js (date button, 6 s highlight),
  * js/app.js and js/views/health.js (auto-refresh of Stats and Health);
  * no file was added or removed.
+ * v48 (3.2.0, display names): changed js/lib/dialog.js (text-field dialog), js/views/chat-view.js (labels applied to sender names, rename dialog),
+ * js/lib/errors.js, css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v47";
+const CACHE_NAME = "televault-shell-v48";
 const SHELL_FILES = [
   "/",
   "/index.html",

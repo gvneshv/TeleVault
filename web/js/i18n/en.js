@@ -368,10 +368,13 @@ export const en = {
     "Stop the archiver (and any backfill) first - it is using this Telegram session.",
   "error.telegramCodeExpired": "That code expired. Sending a new one.",
   "error.archiveOutdated":
-    "Your archive database needs updating before chats can be blocked. Ask whoever runs this TeleVault to apply the database update (python scripts/migrate_archives.py).",
+    "Your archive database needs updating before this can be saved (blocking a chat, naming a sender). Ask whoever runs this TeleVault to apply the database update (python scripts/migrate_archives.py).",
   "error.blocklistFull":
     "The blocked-chats list is full. Unblock a chat first.",
   "error.chatNotFound": "That chat isn't in your archive.",
+  "error.senderNotFound": "That sender isn't in your archive.",
+  "error.displayNamesFull":
+    "The list of display names is full. Remove one first.",
   "error.archiveAlreadyProvisioned":
     "This account already has an archive database.",
   "error.provisioningPermissionDenied":
@@ -423,6 +426,7 @@ export const en = {
     "Delete this invite? Its token stops working immediately. Used invites can't be deleted.",
   // Shared in-app dialogs (web/js/lib/dialog.js)
   "dialog.ok": "OK",
+  "dialog.save": "Save",
   "dialog.confirm": "Confirm",
   "dialog.typedInputLabel": 'Type "{value}" to confirm',
   "dialog.typedBlank": "Type the text exactly as shown to continue.",
@@ -536,4 +540,21 @@ export const en = {
   "cv.showInContext": "Show in context",
   "cv.noMatch": "No messages match.",
   "cv.emptyChat": "No messages are stored for this chat yet.",
+
+  // Display names and name history (Phase 3)
+  "sender.open": "Rename this sender or see their earlier names",
+  "sender.title": "Sender: {name}",
+  "sender.message":
+    "Give this person a name of your own. It is shown only here in TeleVault: nothing is sent to Telegram, and the archived messages are not changed.",
+  "sender.fieldLabel": "Your name for them",
+  "sender.save": "Save",
+  "sender.remove": "Remove my name",
+  "sender.blank": "Type a name, or use “Remove my name”.",
+  "sender.blankNew": "Type a name first.",
+  "sender.historyTitle": "Names TeleVault has seen",
+  "sender.firstSeen": "first seen {date}",
+  "sender.seenOn": "seen {date}",
+  "sender.noName": "(no name)",
+  "sender.noChanges":
+    "No name change has been seen yet. A change is noticed when the person writes next, so the date is when TeleVault saw it, not when they changed it.",
 };

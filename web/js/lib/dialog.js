@@ -7,7 +7,7 @@
  * These render inside the page instead, so that can't happen, and they match the app's theme/language
  * (the native ones are styled by the OS/browser and can't be translated by us).
  *
- * All three return a Promise, so callers `await` them where they used to call a blocking function:
+ * All of them return a Promise, so callers `await` them where they used to call a blocking function:
  *
  *     if (!(await showConfirm(t("archiver.confirmStop")))) return;
  *
@@ -36,8 +36,12 @@ import { t } from "../i18n.js";
  *   Built with DOM APIs like everything else here, so `label` is never parsed as HTML; `href` must be one of our own paths, never a value taken from a server response.
  * @param {{ label: string }} [opts.checkbox] - an extra tick box (always unticked at first) under the message.
  *   With it the promise resolves to `{ confirmed, checked }` instead of a bare boolean, so a caller cannot read the box without also knowing the answer.
- * @returns {Promise<boolean | { confirmed: boolean, checked: boolean }>}
- *   true if confirmed, false if cancelled/dismissed; the object form only when `checkbox` was given.
+ * @param {{ label: string, value: string, maxLength: number, blankMessage: string }} [opts.field] - a free-text field (showFieldDialog).
+ *   A blank (after trimming) value is refused inline with `blankMessage`; the promise then resolves to `{ action, value }`.
+ * @param {{ label: string, danger?: boolean }} [opts.secondary] - a second action button next to the confirm one (only with `field`): resolves `action: "secondary"`.
+ * @param {Node} [opts.content] - extra, already-built DOM shown between the message and the field (a read-only list, say). Never parsed as HTML.
+ * @returns {Promise<boolean | { confirmed: boolean, checked: boolean } | { action: "confirm" | "secondary" | "cancel", value: string }>}
+ *   true if confirmed, false if cancelled/dismissed; the object forms only when `checkbox` / `field` was given.
  */
 function openDialog({
   message,
@@ -48,6 +52,9 @@ function openDialog({
   typed,
   link,
   checkbox,
+  field,
+  secondary,
+  content,
 }) {
   return new Promise((resolve) => {
     const previouslyFocused = document.activeElement;
@@ -107,6 +114,27 @@ function openDialog({
       dialog.append(field, hint);
     }
 
+    if (content) dialog.append(content);
+
+    if (field) {
+      const row = document.createElement("label");
+      row.className = "modal__field";
+      const labelText = document.createElement("span");
+      labelText.textContent = field.label;
+      input = document.createElement("input");
+      input.type = "text";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.maxLength = field.maxLength;
+      input.value = field.value;
+      row.append(labelText, input);
+      hint = document.createElement("p");
+      hint.className = "modal__hint";
+      hint.setAttribute("role", "alert");
+      hint.hidden = true;
+      dialog.append(row, hint);
+    }
+
     /** @type {HTMLInputElement | null} */
     let optionBox = null;
     if (checkbox) {
@@ -132,6 +160,15 @@ function openDialog({
       actions.append(cancelBtn);
     }
 
+    let secondaryBtn = null;
+    if (secondary) {
+      secondaryBtn = document.createElement("button");
+      secondaryBtn.type = "button";
+      secondaryBtn.className = `modal__btn${secondary.danger ? " modal__btn--danger" : ""}`;
+      secondaryBtn.textContent = secondary.label;
+      actions.append(secondaryBtn);
+    }
+
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = `modal__btn ${danger ? "modal__btn--danger" : "modal__btn--primary"}`;
@@ -141,11 +178,19 @@ function openDialog({
     dialog.append(actions);
     overlay.append(dialog);
 
-    function close(result) {
+    function close(result, action) {
       document.removeEventListener("keydown", onKeydown, true);
       overlay.remove();
       // The element may have been removed from the page while the dialog was open (e.g. a list re-render) - focus() on a detached node is a harmless no-op.
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+      if (field) {
+        // The value is only meaningful for a confirmed save; Cancel/Escape/backdrop and the secondary action never hand it back.
+        resolve({
+          action: action ?? (result ? "confirm" : "cancel"),
+          value: result && input ? input.value.trim() : "",
+        });
+        return;
+      }
       resolve(
         optionBox
           ? { confirmed: result, checked: result && optionBox.checked }
@@ -163,6 +208,15 @@ function openDialog({
      */
     let attempted = false;
     function validate() {
+      if (field && input && hint) {
+        const blank = input.value.trim() === "";
+        if (attempted) {
+          hint.hidden = !blank;
+          hint.textContent = field.blankMessage;
+          input.setAttribute("aria-invalid", String(blank));
+        }
+        return !blank;
+      }
       if (!typed || !input || !hint) return true;
       const value = input.value.trim();
       const ok = value === typed.expected;
@@ -213,6 +267,7 @@ function openDialog({
 
     confirmBtn.addEventListener("click", tryConfirm);
     cancelBtn?.addEventListener("click", () => close(false));
+    secondaryBtn?.addEventListener("click", () => close(false, "secondary"));
     input?.addEventListener("input", validate);
     // mousedown (not click) on the backdrop itself: a text selection that starts inside the dialog and is released outside it fires click on the overlay too,
     // and must not be mistaken for a deliberate dismiss.
@@ -308,4 +363,49 @@ function showConfirmWithCheckbox(
   );
 }
 
-export { showAlert, showConfirm, showConfirmWithCheckbox, showTypedConfirm };
+/**
+ * A dialog with one text field, a Save button and an optional second action - used to rename a sender (and remove the name again).
+ * Resolves `{ action, value }`: "confirm" (value = the trimmed text, never blank), "secondary" (the extra button), or "cancel" (Escape, backdrop, Cancel).
+ * The field's `maxLength` is the browser-side copy of a limit enforced by the server (utils/validation.py); the server is the one that decides.
+ *
+ * @param {string} message
+ * @param {{ title?: string, confirmLabel?: string, fieldLabel: string, value?: string, maxLength: number, blankMessage: string,
+ *           secondaryLabel?: string, secondaryDanger?: boolean, content?: Node }} options
+ * @returns {Promise<{ action: "confirm" | "secondary" | "cancel", value: string }>}
+ */
+function showFieldDialog(
+  message,
+  {
+    title,
+    confirmLabel,
+    fieldLabel,
+    value = "",
+    maxLength,
+    blankMessage,
+    secondaryLabel,
+    secondaryDanger = false,
+    content,
+  },
+) {
+  return /** @type {Promise<{ action: "confirm" | "secondary" | "cancel", value: string }>} */ (
+    openDialog({
+      message,
+      title,
+      confirmLabel: confirmLabel ?? t("dialog.save"),
+      showCancel: true,
+      content,
+      field: { label: fieldLabel, value, maxLength, blankMessage },
+      secondary: secondaryLabel
+        ? { label: secondaryLabel, danger: secondaryDanger }
+        : undefined,
+    })
+  );
+}
+
+export {
+  showAlert,
+  showConfirm,
+  showConfirmWithCheckbox,
+  showTypedConfirm,
+  showFieldDialog,
+};

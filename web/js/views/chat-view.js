@@ -30,6 +30,12 @@
  * Message detail (edit history, deletion record) is fetched lazily on first click from GET /api/messages/{id} and cached for the page's lifetime:
  * a stored edit history only ever grows, and the cache entry is dropped when a refresh sees the message change.
  *
+ * Display names (Phase 3)
+ *   The owner can give a sender their own label ("Mum"): GET /api/senders/display-names is fetched once and kept in `state.displayNames`,
+ *   and senderName() puts it in front of Telegram's name in the bubbles and in the panel's message rows.
+ *   The message endpoints are not involved, so paging, search (which matches Telegram's names and the text, not labels) and the live refresh behave exactly as before.
+ *   Clicking a sender's name opens a dialog to rename them (PUT/DELETE /api/senders/{id}/display-name) and lists the names TeleVault has seen them under.
+ *
  * Privacy: this only DISPLAYS what the account owner already archived.
  * Nothing here collects anything, URLs carry ids only, and the two write actions (block, delete stored data) only reduce what TeleVault keeps.
  */
@@ -44,6 +50,7 @@ import {
   showAlert,
   showConfirm,
   showConfirmWithCheckbox,
+  showFieldDialog,
 } from "../lib/dialog.js";
 import { parseChatRoute, chatRouteHash } from "../lib/router.js";
 
@@ -56,6 +63,8 @@ const SCROLL_LOAD_MARGIN = 300;
 // How long the jumped-to message stays highlighted.
 // Must match the 6 s `cv-anchor-wash` animation in css/base.css (three slow pulses, then fade-out).
 const ANCHOR_HIGHLIGHT_MS = 6000;
+// Mirrors DISPLAY_NAME_MAX_LENGTH in utils/validation.py (the server is the one that enforces it).
+const DISPLAY_NAME_MAX_LENGTH = 64;
 // Mirrors SEARCH_QUERY_MAX_LENGTH in utils/validation.py (also the maxlength of the panel's search box in index.html).
 const CHAT_SEARCH_MAX_LENGTH = 200;
 // The chats panel's width: bounds, default, and where the person's choice is remembered.
@@ -105,6 +114,10 @@ const state = {
 
   /** Chat ids on the ingest blocklist ("Chats not archived"). */
   blocked: new Set(),
+
+  /** sender id -> the owner's own label for that sender (GET /api/senders/display-names).
+   *  Empty until loaded or on an archive that has none. */
+  displayNames: new Map(),
 
   /** Telegram user id of the archive's owner (GET /api/archive/owner), or null while unknown: their messages are drawn on the right. */
   ownerId: null,
@@ -255,6 +268,15 @@ function chatName(chat) {
   return chat?.name || String(chat?.chat_id ?? "");
 }
 
+/**
+ * What to call a sender: the owner's own label if there is one, otherwise the name Telegram gave them (the API's resolved_name).
+ * A message with no sender (a channel post) has no name at all.
+ */
+function senderName(sender) {
+  if (!sender) return "";
+  return state.displayNames.get(sender.sender_id) ?? sender.resolved_name ?? "";
+}
+
 /** Parse a failed response's JSON body; the structured error, if any, is under `detail`. */
 async function readErrorDetail(res) {
   const body = await res.json().catch(() => ({}));
@@ -313,7 +335,7 @@ function renderResultRow(message) {
   const text = message.text
     ? highlightMatches(escapeHtml(message.text), state.q.trim())
     : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`;
-  const sender = message.sender?.resolved_name;
+  const sender = senderName(message.sender);
   const chip =
     state.mode === "messages" && message.is_deleted
       ? `<span class="seal-badge">${escapeHtml(t("cv.deletedShort"))}</span>`
@@ -530,6 +552,133 @@ async function loadBlocklist() {
 }
 
 /**
+ * Load the owner's display names (once at start; changes made here update the map directly).
+ * An archive that has not been migrated answers an empty list, and a failure simply leaves Telegram's names in place.
+ * If a conversation is already on screen, its messages and the panel rows are redrawn with the labels.
+ */
+async function loadDisplayNames() {
+  try {
+    const res = await apiFetch("/api/senders/display-names");
+    if (!res.ok) return;
+    const data = await res.json();
+    state.displayNames = new Map(
+      data.items.map((item) => [item.sender_id, item.display_name]),
+    );
+    redrawSenderNames();
+  } catch {
+    // Decoration only: without the labels Telegram's names are shown.
+  }
+}
+
+/** Redraw everything that shows a sender's name, after a label changed.
+ *  Keeps the scroll position (messages are replaced one by one). */
+function redrawSenderNames() {
+  if (state.convStatus === "ready")
+    state.messages.forEach((m) => redrawMessage(m.id));
+  if (state.mode !== "chats") renderPanel();
+}
+
+/** One line for a name-history entry: "@username · First Last", with whatever is known. */
+function formatNameVersion(version) {
+  const full = [version.first_name, version.last_name]
+    .filter(Boolean)
+    .join(" ");
+  const parts = [full, version.username ? `@${version.username}` : ""].filter(
+    Boolean,
+  );
+  return parts.join(" · ") || t("sender.noName");
+}
+
+/**
+ * The rename dialog for one sender: their current label, and under it the names TeleVault has seen them under.
+ * "Seen" is deliberate: the archiver learns of a change when the person writes next (or a backfill reads them), not when they made it.
+ */
+async function openSenderDialog(senderId) {
+  if (!Number.isFinite(senderId)) return;
+  let detail;
+  try {
+    const res = await apiFetch(`/api/senders/${senderId}`);
+    if (!res.ok) {
+      await showAlert(describeError(await readErrorDetail(res)));
+      return;
+    }
+    detail = await res.json();
+  } catch {
+    await showAlert(t("common.error"));
+    return;
+  }
+
+  const history = document.createElement("div");
+  history.className = "modal__history";
+  const heading = document.createElement("p");
+  heading.className = "modal__history-title";
+  heading.textContent = t("sender.historyTitle");
+  const list = document.createElement("ul");
+  detail.history.forEach((version, index) => {
+    const item = document.createElement("li");
+    item.textContent = formatNameVersion(version);
+    if (version.seen_at) {
+      const when = document.createElement("time");
+      when.dateTime = version.seen_at;
+      // The oldest entry is the identity the sender was first seen under, the others are later sightings.
+      when.textContent = ` — ${fill(
+        index === detail.history.length - 1
+          ? t("sender.firstSeen")
+          : t("sender.seenOn"),
+        { date: formatDateTime(version.seen_at) },
+      )}`;
+      item.append(when);
+    }
+    list.append(item);
+  });
+  history.append(heading, list);
+  if (detail.history.length === 1) {
+    const note = document.createElement("p");
+    note.className = "modal__history-note";
+    note.textContent = t("sender.noChanges");
+    history.append(note);
+  }
+
+  const current = state.displayNames.get(senderId) ?? detail.display_name ?? "";
+  const answer = await showFieldDialog(t("sender.message"), {
+    title: fill(t("sender.title"), {
+      name: formatNameVersion(detail.history[0]),
+    }),
+    confirmLabel: t("sender.save"),
+    fieldLabel: t("sender.fieldLabel"),
+    value: current,
+    maxLength: DISPLAY_NAME_MAX_LENGTH,
+    blankMessage: current ? t("sender.blank") : t("sender.blankNew"),
+    secondaryLabel: current ? t("sender.remove") : undefined,
+    secondaryDanger: true,
+    content: history,
+  });
+  if (answer.action === "cancel") return;
+  if (answer.action === "confirm" && answer.value === current) return;
+
+  try {
+    const res = await apiFetch(`/api/senders/${senderId}/display-name`, {
+      method: answer.action === "secondary" ? "DELETE" : "PUT",
+      ...(answer.action === "confirm"
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_name: answer.value }),
+          }
+        : {}),
+    });
+    if (!res.ok) {
+      await showAlert(describeError(await readErrorDetail(res)));
+      return;
+    }
+    if (answer.action === "secondary") state.displayNames.delete(senderId);
+    else state.displayNames.set(senderId, answer.value);
+    redrawSenderNames();
+  } catch {
+    await showAlert(t("common.error"));
+  }
+}
+
+/**
  * Fetch who the archive's owner is, so their own messages can be drawn on the right.
  * Unknown (an archive not yet updated, or an archiver that has not recorded it) simply leaves every message on the left - same as before.
  * If the conversation is already on screen when the answer arrives, its messages are redrawn one by one (no scroll jump).
@@ -690,6 +839,17 @@ function renderDetail(message) {
 }
 
 /** One message bubble. */
+/** The name above a bubble.
+ *  Someone else's name is a button that opens the rename dialog; "You" and a channel post have nothing to rename. */
+function renderSenderName(message) {
+  if (isOwnMessage(message))
+    return `<span class="cv-msg__sender">${escapeHtml(t("cv.you"))}</span>`;
+  const name = senderName(message.sender);
+  if (!name || message.sender?.sender_id === undefined)
+    return `<span class="cv-msg__sender">${escapeHtml(name)}</span>`;
+  return `<button type="button" class="cv-msg__sender cv-msg__sender--btn" data-action="sender" data-sender-id="${message.sender.sender_id}" title="${escapeHtml(t("sender.open"))}">${escapeHtml(name)}</button>`;
+}
+
 function renderMessage(message) {
   const edits = message.edit_count ?? 0;
   const isEdited = message.is_edited || edits > 0;
@@ -731,7 +891,7 @@ function renderMessage(message) {
   return `
     <li class="${classes}" data-id="${message.id}">
       <div class="cv-msg__meta">
-        <span class="cv-msg__sender">${escapeHtml(isOwnMessage(message) ? t("cv.you") : (message.sender?.resolved_name ?? ""))}</span>
+        ${renderSenderName(message)}
         <time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>
       </div>
       <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
@@ -1390,8 +1550,14 @@ async function loadNewer() {
   }
 }
 
-/** Click on a chip: open or close that message's edit history / deletion note, fetching the detail the first time. */
+/** Click on a chip: open or close that message's edit history / deletion note, fetching the detail the first time.
+ *  Click on a sender's name: the rename dialog. */
 async function onMessageClick(event) {
+  const senderButton = event.target.closest?.(".cv-msg__sender--btn");
+  if (senderButton) {
+    openSenderDialog(Number(senderButton.dataset.senderId));
+    return;
+  }
   const button = event.target.closest?.(".cv-chip");
   if (!button) return;
   const li = button.closest(".cv-msg");
@@ -1699,6 +1865,7 @@ function initChatView() {
   loadPanelPage({ reset: true });
   loadBlocklist();
   loadOwner();
+  loadDisplayNames();
   // Settings changed the list (or another tab did): re-read it so the header badge and button match.
   document.addEventListener("televault:blocklistchanged", () => {
     loadBlocklist();

@@ -59,6 +59,8 @@ const ERROR_REASON_KEYS = {
   archive_outdated: "error.archiveOutdated",
   blocklist_full: "error.blocklistFull",
   chat_not_found: "error.chatNotFound",
+  sender_not_found: "error.senderNotFound",
+  display_names_full: "error.displayNamesFull",
   message_not_found: "error.messageNotFound", // chat view: a link to a message that is not (or no longer) in that chat
 
   // Archive provisioning (api/routes/archive.py, db/provisioning.py)
