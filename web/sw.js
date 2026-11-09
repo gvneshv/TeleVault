@@ -79,7 +79,8 @@
  * v50 (display names on chats): ADDED js/lib/display-names.js (in SHELL_FILES below);
  * changed js/views/chat-view.js (labels in the chat list and header, rename and name-history buttons),
  * js/views/settings.js (labels in the blocklist), js/lib/dialog.js, js/lib/icons.js, css/base.css and i18n/{en,uk}.js.
- * v51 (clear all data): changed js/views/settings.js (the "Delete all stored data" card), css/base.css and i18n/{en,uk}.js; no file was added or removed.
+ * v51 (clear all data): changed js/views/settings.js (the "Delete all stored data" card), js/views/chat-view.js (drops the open chat after a clear),
+ * css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 

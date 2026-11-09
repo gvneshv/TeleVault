@@ -270,7 +270,7 @@ function windowUrl(chatId, extra = {}) {
 
 /** @param {object} chat @returns {string} the chat's name, or its id for a chat Telegram never named. */
 function chatName(chat) {
-  // A private chat takes the owner's label for that person (lib/display-names.js), so three friends with same names can be told apart.
+  // A private chat takes the owner's label for that person (lib/display-names.js), so three friends with the same names can be told apart.
   return chatDisplayName(
     state.displayNames,
     chat,
@@ -1746,6 +1746,21 @@ async function onPurge() {
     await showAlert(t("common.error"));
   }
 }
+
+/**
+ * Settings -> "Delete all stored data" announces itself with this event (js/views/settings.js): the archive is empty now,
+ * but the conversation on screen still holds the old messages in memory, and the quiet refresh only ADDS what is new - it never re-checks older ones.
+ * So drop everything that was loaded and leave the chat, exactly as after deleting one chat's data.
+ * An event instead of an import keeps the two views independent (settings.js never needs to know the chat view exists).
+ */
+window.addEventListener("televault:archive-cleared", () => {
+  state.detailCache.clear();
+  state.openEdits.clear();
+  state.openDeletion.clear();
+  location.hash = chatRouteHash();
+  openRoute({ chatId: null, messageId: null }); // the hashchange event does the same; this covers a hash that was already "#/chats"
+  loadPanelPage({ reset: true });
+});
 
 // ---------------------------------------------------------------------------
 // Entry points (called by app.js)

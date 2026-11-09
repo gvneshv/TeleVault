@@ -451,7 +451,9 @@ function attachDataHandlers(root) {
         const done = await res.json();
         s.busy = false;
         renderRoot(root);
-        // The chat view and the other pages re-read the archive when they are opened again; the labels and the block rules are still there.
+        // The chat view holds the old messages in memory (its quiet refresh only adds new ones), so it is told to drop them and leave the open chat.
+        // The labels and the block rules are still there.
+        window.dispatchEvent(new CustomEvent("televault:archive-cleared"));
         await showAlert(
           t("settings.dataCleared")
             .replace("{messages}", String(done.messages_deleted))
