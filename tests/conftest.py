@@ -263,8 +263,10 @@ def pytest_sessionfinish(session, exitstatus):
 
 # CASCADE reaches messages/edits/deletions (and the two sender-name tables, which reference senders); chat_migrations and ingest_blocked_chats have no FK (on purpose).
 # The sender-name tables are listed anyway: relying on CASCADE alone would hide a future change that drops their foreign key.
+# Same for ingest_ignore_rule_chats, which cascades from ingest_ignore_rules.
 _ARCHIVE_TABLES = (
-    "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats, archive_owner, sender_name_history, sender_display_names"
+    "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats, archive_owner, sender_name_history, sender_display_names, "
+    "ingest_ignore_rules, ingest_ignore_rule_chats"
 )
 
 

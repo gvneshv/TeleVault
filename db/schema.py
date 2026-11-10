@@ -14,6 +14,7 @@ Table overview:
   - chat_migrations     : maps an old (pre-migration) chat_id to its canonical new one
   - backfill_runs       : records each time a backfill is run
   - ingest_blocked_chats: chats the account owner chose NOT to archive (the ingestion-time blocklist)
+  - ingest_ignore_rules / ingest_ignore_rule_chats: text patterns that keep a message out of the archive, and the chats each one is limited to
   - archive_owner       : the Telegram user id of the account this archive belongs to (one row; lets the UI tell "my" messages from the rest)
   - sender_name_history : every time a sender was seen under a different username / first name / last name (see upsert_sender() in db/queries.py)
   - sender_display_names: the owner's own friendly label for a sender (PUT /api/senders/{id}/display-name)
@@ -304,6 +305,47 @@ ingest_blocked_chats = Table(
     Column("chat_id", BigInteger, primary_key=True, autoincrement=False),
     Column("name", Text),
     Column("blocked_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+# ---------------------------------------------------------------------------
+# ingest_ignore_rules / ingest_ignore_rule_chats
+# ---------------------------------------------------------------------------
+# Message ignore rules: a plain-TEXT message whose text CONTAINS a rule's phrase (ignoring case) is never archived.
+# Checked by the live handlers and backfill.py right after the chat blocklist and before anything is stored - see handlers/ingest_filter.py.
+#
+# `pattern` is what the owner typed (trimmed), shown back in Settings.
+# `pattern_key` is the same text folded for comparison (utils/text_matching.py's fold(): Unicode NFC + casefold) - it is what messages are compared with,
+# and it is UNIQUE so that "Тривога" and "тривога" cannot both exist as two rules.
+# The comparison itself happens in Python, not SQL:
+# Postgres' own case-insensitive operators depend on the database's locale, and a rule for Cyrillic text must not.
+#
+# A rule is either `all_chats` (no rows in ingest_ignore_rule_chats) or limited to the chats listed there.
+# The API enforces that exclusivity.
+#
+# Like ingest_blocked_chats, ingest_ignore_rule_chats has NO foreign key to `chats`:
+# a rule must survive its chat's rows being deleted ("Delete stored data" must not silently drop a rule meant to keep that chat's noise out),
+# so the name is copied at creation time.
+# Its chat_id is the CANONICAL id; record_chat_migration() moves it when a basic group is upgraded to a supergroup.
+# The FK to ingest_ignore_rules is real and cascades: deleting a rule takes its chat rows with it.
+ingest_ignore_rules = Table(
+    "ingest_ignore_rules",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("pattern", Text, nullable=False),
+    Column("pattern_key", Text, nullable=False, unique=True),
+    Column("all_chats", Boolean, nullable=False, server_default=text("false")),
+    Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+)
+
+ingest_ignore_rule_chats = Table(
+    "ingest_ignore_rule_chats",
+    metadata,
+    Column("rule_id", BigInteger, ForeignKey("ingest_ignore_rules.id", ondelete="CASCADE"), primary_key=True),
+    Column("chat_id", BigInteger, primary_key=True, autoincrement=False),
+    Column("name", Text),
+    # The handlers ask "which rules apply to THIS chat?" for every text message.
+    Index("idx_ignore_rule_chats_chat", "chat_id"),
 )
 
 

@@ -28,6 +28,7 @@ Design rules followed here:
 """
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,11 +37,30 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from db.connection import is_undefined_table_error
+from utils.text_matching import fold
 
 logger = logging.getLogger(__name__)
 
 # Set once the "archive predates the blocklist table" warning in is_chat_blocked() has been logged, so a busy account does not log it for every message.
 _blocklist_table_missing_warned = False
+# The ignore-rule tables came with a later migration than the blocklist, so an archive can have the blocklist table and not these.
+# They are probed with to_regclass() like the name-history table (see _name_history_ready()), not with "try it and catch undefined_table":
+# a failing statement is logged by Postgres as an ERROR for every text message of an un-migrated archive.
+# Archives (by database name) known to have the tables, so the probe runs once per process. Only a positive answer is remembered:
+# an archive migrated while the archiver runs starts applying rules on the very next message, no restart.
+_archives_with_ignore_rules: set[str] = set()
+_ignore_rules_table_missing_warned = False
+
+
+def _ignore_rules_ready(conn: Connection) -> bool:
+    """True when this archive has the ignore-rule tables (migration b94e2d7a1c63). Quiet when it has not; once seen, never probed again for that database."""
+    name = conn.engine.url.database or ""
+    if name in _archives_with_ignore_rules:
+        return True
+    present = bool(conn.execute(sql_text("SELECT to_regclass('public.ingest_ignore_rules') IS NOT NULL")).scalar())
+    if present:
+        _archives_with_ignore_rules.add(name)
+    return present
 
 
 def get_last_archived_message_id(conn: Connection, chat_id: int) -> int | None:
@@ -295,6 +315,8 @@ def record_chat_migration(conn: Connection, old_chat_id: int, new_chat_id: int) 
 
     # A blocked basic group must stay blocked once it becomes a supergroup - see _move_blocklist_rule().
     _move_blocklist_rule(conn, old_chat_id, new_chat_id)
+    # Likewise a message ignore rule limited to that group - see _move_ignore_rule_chats().
+    _move_ignore_rule_chats(conn, old_chat_id, new_chat_id)
 
     # Fold any pre-existing rows under old_chat_id in immediately, rather than waiting for a manual merge_migrated_chats.py run.
     # Safe every time - merge_chat() is a no-op if old_chat_id already has nothing left.
@@ -383,6 +405,139 @@ def unblock_chat(conn: Connection, chat_id: int, commit: bool = True) -> bool:
         conn.rollback()
         raise
     return row is not None
+
+
+# ---------------------------------------------------------------------------
+# Message ignore rules (text phrases that keep a message out of the archive)
+# ---------------------------------------------------------------------------
+# Policy in handlers/ingest_filter.py, matching semantics in utils/text_matching.py, table shape in db/schema.py.
+
+
+def get_ignore_patterns(conn: Connection, chat_id: int) -> list[str]:
+    """
+    The folded phrases (ingest_ignore_rules.pattern_key) that apply to messages of `chat_id`: every "all chats" rule plus every rule limited to this chat.
+
+    Called by the live handlers (once per plain-text message) and by backfill.py (once per chat); the caller compares them with utils.text_matching.matches_any().
+    `chat_id` may be an old, pre-migration id: it is canonicalized first, exactly as is_chat_blocked() does.
+    Returns only keys, never the original text of a rule, and nothing here logs a rule.
+
+    An archive that predates the ignore-rule migration has no tables, which can only mean no rules exist,
+    so this answers [] (archiving as before) and warns ONCE that the archive needs updating.
+    Any database error on an archive that does have them propagates: the caller must then skip the message rather than guess.
+    """
+    global _ignore_rules_table_missing_warned
+    if not _ignore_rules_ready(conn):
+        if not _ignore_rules_table_missing_warned:
+            _ignore_rules_table_missing_warned = True
+            logger.warning(
+                "This archive has no ingest_ignore_rules table yet, so no message can be ignored by a rule. "
+                "Run `python scripts/migrate_archives.py` (see RUNBOOK.md) to update it and enable ignore rules."
+            )
+        return []
+    try:
+        canonical = resolve_chat_id(conn, chat_id)
+        rows = conn.execute(
+            sql_text(
+                "SELECT r.pattern_key FROM ingest_ignore_rules r "
+                "WHERE r.all_chats OR EXISTS ("
+                "  SELECT 1 FROM ingest_ignore_rule_chats c WHERE c.rule_id = r.id AND c.chat_id = :chat_id"
+                ")"
+            ),
+            {"chat_id": canonical},
+        ).all()
+    except Exception:
+        # A failed statement aborts the whole Postgres transaction - release it before this connection is used (or returned to the pool) again.
+        conn.rollback()
+        raise
+    return [row[0] for row in rows]
+
+
+def add_ignore_rule(
+    conn: Connection,
+    pattern: str,
+    all_chats: bool,
+    chats: Sequence[tuple[int, str | None]] = (),
+    commit: bool = True,
+) -> int | None:
+    """
+    Create a rule and (unless it is an "all chats" rule) the rows that limit it to `chats`, as one transaction. Returns the new rule's id.
+
+    Returns None, writing nothing, if a rule with the same phrase already exists (compared folded: "Тривога" and "тривога" are one rule).
+    The caller (api/routes/ingest.py) is responsible for the limits and for passing CANONICAL chat ids (resolve_chat_id()) with their current names;
+    an "all chats" rule must come with no chats, a limited one with at least one - checked there, since it is a request error rather than a data error.
+    """
+    key = fold(pattern)
+    try:
+        row = conn.execute(
+            sql_text(
+                "INSERT INTO ingest_ignore_rules (pattern, pattern_key, all_chats) VALUES (:pattern, :key, :all_chats) "
+                "ON CONFLICT (pattern_key) DO NOTHING RETURNING id"
+            ),
+            {"pattern": pattern, "key": key, "all_chats": all_chats},
+        ).first()
+        if row is None:
+            conn.rollback()
+            return None
+        rule_id = int(row[0])
+        if chats:
+            conn.execute(
+                sql_text("INSERT INTO ingest_ignore_rule_chats (rule_id, chat_id, name) VALUES (:rule_id, :chat_id, :name)"),
+                [{"rule_id": rule_id, "chat_id": chat_id, "name": name} for chat_id, name in chats],
+            )
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return rule_id
+
+
+def remove_ignore_rule(conn: Connection, rule_id: int, commit: bool = True) -> bool:
+    """Delete a rule (its chat rows go with it, ON DELETE CASCADE).
+    Returns False if there was no such rule.
+    Messages are archived again from the next one on."""
+    try:
+        row = conn.execute(
+            sql_text("DELETE FROM ingest_ignore_rules WHERE id = :rule_id RETURNING id"),
+            {"rule_id": rule_id},
+        ).first()
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return row is not None
+
+
+def _move_ignore_rule_chats(conn: Connection, old_chat_id: int, new_chat_id: int) -> None:
+    """
+    Carry the chat scope of ignore rules over when a basic group becomes a supergroup (record_chat_migration()).
+
+    Same reasoning as _move_blocklist_rule(): the upgrade gives the chat a brand-new id, and a rule limited to the old id would stop applying
+    (get_ignore_patterns() canonicalizes to the NEW id before looking), so the announcements it was meant to keep out would start being archived.
+    Rows are MOVED, not copied; a rule that already lists the new id keeps that row and the old one is dropped.
+
+    Does nothing on an archive without the tables (see get_ignore_patterns()): there is nothing to move.
+    """
+    if not _ignore_rules_ready(conn):
+        return
+    try:
+        conn.execute(
+            sql_text(
+                "INSERT INTO ingest_ignore_rule_chats (rule_id, chat_id, name) "
+                "SELECT rule_id, :new_chat_id, name FROM ingest_ignore_rule_chats WHERE chat_id = :old_chat_id "
+                "ON CONFLICT (rule_id, chat_id) DO NOTHING"
+            ),
+            {"old_chat_id": old_chat_id, "new_chat_id": new_chat_id},
+        )
+        conn.execute(
+            sql_text("DELETE FROM ingest_ignore_rule_chats WHERE chat_id = :old_chat_id"),
+            {"old_chat_id": old_chat_id},
+        )
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def record_archive_owner(conn: Connection, owner_id: int, commit: bool = True) -> None:

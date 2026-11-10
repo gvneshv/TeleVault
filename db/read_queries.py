@@ -234,6 +234,26 @@ def get_blocked_chats(conn: Connection) -> list[dict[str, Any]]:
     return _rows_to_dicts(conn.execute(sql_text(sql)))
 
 
+def get_ignore_rules(conn: Connection) -> list[dict[str, Any]]:
+    """
+    Every message ignore rule as {id, pattern, all_chats, created_at, chats: [{chat_id, name}]}, newest first.
+
+    Unpaginated: the API caps the number of rules and the chats per rule (utils/validation.py's IGNORE_RULE_MAX_COUNT / IGNORE_RULE_MAX_CHATS),
+    so it is bounded by construction.
+    Chat names are the rule's own copy (not `chats.name`), so they survive the chat's data being deleted.
+    Raises ProgrammingError (undefined table) on an archive that predates the migration - api/routes/ingest.py turns that into a clear 409.
+    """
+    rules = _rows_to_dicts(
+        conn.execute(sql_text("SELECT id, pattern, all_chats, created_at FROM ingest_ignore_rules ORDER BY created_at DESC, id DESC"))
+    )
+    by_rule: dict[int, list[dict[str, Any]]] = {r["id"]: [] for r in rules}
+    for row in conn.execute(sql_text("SELECT rule_id, chat_id, name FROM ingest_ignore_rule_chats ORDER BY name NULLS LAST, chat_id")):
+        by_rule.setdefault(row[0], []).append({"chat_id": row[1], "name": row[2]})
+    for rule in rules:
+        rule["chats"] = by_rule[rule["id"]]
+    return rules
+
+
 def sender_exists(conn: Connection, sender_id: int) -> bool:
     """True if the archive has a `senders` row for this id (the only senders that can be given a label)."""
     return conn.execute(sql_text("SELECT 1 FROM senders WHERE sender_id = :sender_id"), {"sender_id": sender_id}).first() is not None

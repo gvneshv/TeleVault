@@ -19,6 +19,7 @@ from sqlalchemy.pool import NullPool
 
 import db
 from tests.helpers import seed_chat
+from utils.text_matching import fold
 
 
 def scalar(conn, sql, **params):
@@ -88,6 +89,14 @@ class TestWhatGoes:
 
 
 class TestWhatStays:
+    def test_ignore_rules_are_settings_and_stay(self, filled):
+        """Like the blocklist: deleting the stored data must not silently lift the rules that keep unwanted messages out of the archive."""
+        q.add_ignore_rule(filled, "тривога", all_chats=False, chats=[(1, "alpha")])
+        q.add_ignore_rule(filled, "відбій", all_chats=True)
+        q.clear_all_data(filled)
+        assert count(filled, "ingest_ignore_rules") == 2 and count(filled, "ingest_ignore_rule_chats") == 1
+        assert set(q.get_ignore_patterns(filled, 1)) == {fold("тривога"), fold("відбій")}
+
     def test_the_blocklist_and_the_owner_are_settings_and_stay(self, filled):
         q.clear_all_data(filled)
         assert q.is_chat_blocked(filled, 77) is True

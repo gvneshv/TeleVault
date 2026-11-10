@@ -25,11 +25,13 @@ def add_account(control_conn, username: str, archive: str | None) -> int:
 
 def make_old_archive(user_id: int) -> str:
     """A real archive taken back to the revision before the blocklist (and so before the owner and sender-name tables) -
-    what every archive created before those releases looks like."""
+    what every archive created before those releases looks like (the ignore-rule tables are another that must go)."""
     name = provisioning.provision_archive_database(user_id).db_name
     engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
     with engine.begin() as conn:
         # Every table added by a revision AFTER PREVIOUS_REVISION must go too, or re-running those migrations would find them already there.
+        conn.execute(sa.text("DROP TABLE ingest_ignore_rule_chats"))  # before ingest_ignore_rules: it references it
+        conn.execute(sa.text("DROP TABLE ingest_ignore_rules"))
         conn.execute(sa.text("DROP TABLE sender_display_names"))
         conn.execute(sa.text("DROP TABLE sender_name_history"))
         conn.execute(sa.text("DROP TABLE archive_owner"))
@@ -95,6 +97,7 @@ def test_an_outdated_archive_is_migrated_and_a_second_run_finds_nothing_to_do(ac
     assert "migrated" in capsys.readouterr().out
     assert has_blocklist_table(name)
     assert has_table(name, "sender_name_history") and has_table(name, "sender_display_names")
+    assert has_table(name, "ingest_ignore_rules") and has_table(name, "ingest_ignore_rule_chats")
     assert provisioning.archive_revision(name) == provisioning.head_revision()
 
     assert migrate_archives.main([]) == 0

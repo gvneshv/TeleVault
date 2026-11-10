@@ -62,6 +62,18 @@ TELEGRAM_CHAT_ID_MAX = 2**63 - 1
 # (a very large account is in a few thousand chats at most); it exists so that "no upper bound" is never true of a write endpoint.
 INGEST_BLOCKLIST_MAX_COUNT = 2000
 
+# --- Ingest ignore rules: message text patterns (api/routes/ingest.py) -------------------------------------------------
+
+# Counted in characters, as Pydantic counts them, AFTER surrounding whitespace is trimmed.
+# A real rule is a phrase from an announcement ("ОГОЛОШЕНА ПОВІТРЯНА ТРИВОГА"); this only bounds what a client can make us store and compare against every message.
+# web/ takes the number from the API response (GET /api/ingest/ignore-rules -> max_length) rather than repeating it in markup.
+IGNORE_RULE_MAX_LENGTH = 200
+# How many rules one account may have.
+# EVERY text message of the account is compared with every rule that applies to its chat, so this bounds the per-message cost as well as the size of the Settings list.
+IGNORE_RULE_MAX_COUNT = 200
+# How many chats one rule may be restricted to ("apply to all chats" is a separate flag, not a list of every chat).
+IGNORE_RULE_MAX_CHATS = 200
+
 # --- Senders: display names and name history (api/routes/senders.py) --------------------------------------------------
 
 # A sender id is a Telegram user id, or a negative channel id for anonymous admin posts (see db/queries.py's upsert_sender()): the same 64-bit range as chat ids.
