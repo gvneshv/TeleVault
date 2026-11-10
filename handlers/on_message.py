@@ -2,13 +2,14 @@
 Handles Telethon's NewMessage event - fired for every message that arriveson the account, both incoming and outgoing (including Saved Messages).
 
 Flow per event:
-  0. Record a chat migration if this is one (an id mapping only, no text), then skip the event if its chat is on the ingest blocklist -
-     before anything below reads the message or asks Telegram about the chat (handlers/ingest_filter.py explains why it must be this early).
-  1. Resolve the text to store - either the message body or a synthesized call label for MessageActionPhoneCall service messages.
-  2. Skip if there is nothing worth archiving (media-only, stickers, etc.).
-  3. Extract the chat entity and upsert it into `chats`.
-  4. Extract the sender entity (if any) and upsert it into `senders`.
-  5. Insert the message into `messages`.
+  1. Record a chat migration if this is one (an id mapping only, no text), then skip the event if its chat is on the ingest blocklist,
+     or if its text matches a message ignore rule - before anything below resolves the message or asks Telegram about the chat
+     (handlers/ingest_filter.py explains why it must be this early).
+  2. Resolve the text to store - either the message body or a synthesized call label for MessageActionPhoneCall service messages.
+  3. Skip if there is nothing worth archiving (media-only, stickers, etc.).
+  4. Extract the chat entity and upsert it into `chats`.
+  5. Extract the sender entity (if any) and upsert it into `senders`.
+  6. Insert the message into `messages`.
 
 We call `await event.get_chat()` and `await event.get_sender()` rather than reading `event.chat` / `event.sender` directly.
 The direct attributes are only populated when Telegram includes the full entity in the update packet, which isn't guaranteed - the async getters always fetch from cache or the server.
@@ -181,6 +182,19 @@ def register(client) -> None:
         if await ingest_filter.should_skip(chat_id):
             logger.debug(
                 "Skipping message %s in chat %s - chat is blocked (or the blocklist could not be read).",
+                message.id,
+                chat_id,
+            )
+            return
+
+        # --- Message ignore rules ------------------------------------------
+        # Right after the blocklist, for the same reason: nothing has been stored or looked up yet.
+        # Compares the TEXT of a plain message only (not a caption, not a call label - handlers/ingest_filter.py's matchable_text()),
+        # so a message with nothing to match costs no database call.
+        # Only ids are logged: neither the rule's phrase nor the message text may ever reach a log.
+        if await ingest_filter.should_ignore_text(chat_id, message):
+            logger.debug(
+                "Skipping message %s in chat %s - ignored by a rule (or the rules could not be read).",
                 message.id,
                 chat_id,
             )

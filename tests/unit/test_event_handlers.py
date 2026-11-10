@@ -18,6 +18,7 @@ from telethon.tl.types import (
 )
 
 from handlers import ingest_filter, on_edit, on_message
+from utils.text_matching import fold
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -104,6 +105,18 @@ def blocked_chats(monkeypatch):
     blocked: set[int] = set()
     monkeypatch.setattr(ingest_filter, "_lookup", lambda chat_id: chat_id in blocked)
     return blocked
+
+
+@pytest.fixture(autouse=True)
+def ignore_rules(monkeypatch):
+    """
+    The folded ignore-rule phrases per chat id ({chat_id: [phrase, ...]}) - empty by default,
+    so every test that is not about ignore rules runs as if the feature did not exist.
+    Replaces only the database half (ingest_filter._load_patterns); the real should_ignore_text(), the matching and the handlers' wiring stay under test.
+    """
+    rules: dict[int, list[str]] = {}
+    monkeypatch.setattr(ingest_filter, "_load_patterns", lambda chat_id: rules.get(chat_id, []))
+    return rules
 
 
 @pytest.fixture
@@ -286,3 +299,111 @@ class TestIngestBlocklist:
             run(new_message_handler(FakeEvent(chat_id=123, text="TOP SECRET WORDS", message_id=77)))
         assert "TOP SECRET WORDS" not in caplog.text
         assert "77" in caplog.text and "123" in caplog.text
+
+
+
+class TestMessageIgnoreRules:
+    """A message whose text matches a rule is dropped before anything is looked up or stored; only plain text is matched, never a caption."""
+
+    ALERT = "🚨 М. ХАРКІВ - ОГОЛОШЕНА ПОВІТРЯНА ТРИВОГА"
+
+    def test_a_matching_message_is_not_persisted_and_telegram_is_not_asked_about_it(self, new_message_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("оголошена повітряна тривога")]
+        event = SpyEvent(chat_id=123, text=self.ALERT)
+        run(new_message_handler(event))
+        assert recorded["persist"] == []
+        assert "get_chat" not in event.touched and "get_sender" not in event.touched
+
+    def test_matching_ignores_case_and_the_emoji_around_the_phrase(self, new_message_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("Повітряна ТРИВОГА")]
+        run(new_message_handler(FakeEvent(chat_id=123, text=self.ALERT)))
+        assert recorded["persist"] == []
+
+    def test_a_message_without_the_phrase_is_still_archived(self, new_message_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("повітряна тривога")]
+        run(new_message_handler(FakeEvent(chat_id=123, text="Привіт, як справи?")))
+        assert len(recorded["persist"]) == 1
+
+    def test_a_rule_for_another_chat_does_not_apply_here(self, new_message_handler, recorded, ignore_rules):
+        ignore_rules[999] = [fold("тривога")]
+        run(new_message_handler(FakeEvent(chat_id=123, text="тривога")))
+        assert len(recorded["persist"]) == 1
+
+    def test_the_rules_are_loaded_for_the_events_own_chat(self, new_message_handler, edited_handler, recorded, monkeypatch):
+        seen = []
+        monkeypatch.setattr(ingest_filter, "_load_patterns", lambda chat_id: seen.append(chat_id) or [])
+        run(new_message_handler(FakeEvent(chat_id=123)))
+        run(edited_handler(FakeEvent(chat_id=456, edit_date=NOW)))
+        assert seen == [123, 456]
+
+    def test_a_caption_is_never_matched(self, new_message_handler, recorded, ignore_rules):
+        """The owner's decision: text only. A photo whose caption contains the phrase is archived."""
+        ignore_rules[123] = [fold("тривога")]
+        event = FakeEvent(chat_id=123, text="тривога")
+        event.message.media = types.MessageMediaPhoto()
+        run(new_message_handler(event))
+        assert len(recorded["persist"]) == 1
+
+    def test_a_link_preview_is_not_a_file(self, new_message_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("тривога")]
+        event = FakeEvent(chat_id=123, text="тривога https://example.com")
+        event.message.media = types.MessageMediaWebPage(webpage=types.WebPageEmpty(id=1), force_large_media=False, force_small_media=False, manual=False, safe=True)
+        run(new_message_handler(event))
+        assert recorded["persist"] == []
+
+    def test_a_call_label_is_never_matched(self, new_message_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("missed call")]
+        action = MessageActionPhoneCall(call_id=1, video=False, reason=PhoneCallDiscardReasonMissed(), duration=None)
+        run(new_message_handler(FakeEvent(chat_id=123, text="", action=action)))
+        assert len(recorded["persist"]) == 1
+
+    def test_an_edit_into_a_matching_text_is_dropped(self, edited_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("тривога")]
+        event = SpyEvent(chat_id=123, text="Повітряна ТРИВОГА!", edit_date=NOW)
+        run(edited_handler(event))
+        assert recorded["edit"] == []
+        assert "get_chat" not in event.touched
+
+    def test_an_edit_that_does_not_match_is_still_recorded(self, edited_handler, recorded, ignore_rules):
+        ignore_rules[123] = [fold("тривога")]
+        run(edited_handler(FakeEvent(chat_id=123, text="all clear", edit_date=NOW)))
+        assert len(recorded["edit"]) == 1
+
+    def test_unreadable_rules_skip_the_message_rather_than_archive_it(self, new_message_handler, recorded, monkeypatch, caplog):
+        def broken(chat_id):
+            raise ValueError("rules unreadable")
+
+        monkeypatch.setattr(ingest_filter, "_load_patterns", broken)
+        with caplog.at_level(logging.ERROR, logger="handlers.ingest_filter"):
+            run(new_message_handler(FakeEvent(chat_id=123, text="hello")))
+        assert recorded["persist"] == []
+        assert "rather than risk archiving a message you asked to ignore" in caplog.text
+
+    def test_unreadable_rules_skip_the_edit_too(self, edited_handler, recorded, monkeypatch):
+        def broken(chat_id):
+            raise ValueError("rules unreadable")
+
+        monkeypatch.setattr(ingest_filter, "_load_patterns", broken)
+        run(edited_handler(FakeEvent(chat_id=123, text="hello", edit_date=NOW)))
+        assert recorded["edit"] == []
+
+    def test_a_blocked_chat_never_reaches_the_rules(self, new_message_handler, recorded, blocked_chats, monkeypatch):
+        """The blocklist decides first and without reading anything: the rules must not even be loaded for a blocked chat."""
+        blocked_chats.add(123)
+        monkeypatch.setattr(ingest_filter, "_load_patterns", lambda chat_id: pytest.fail("rules were loaded for a blocked chat"))
+        run(new_message_handler(FakeEvent(chat_id=123)))
+        assert recorded["persist"] == []
+
+    def test_a_group_upgrade_is_recorded_whatever_the_rules_say(self, new_message_handler, recorded, ignore_rules):
+        """Migration service messages carry no text and are handled before any filter - recording them is what carries a rule over to the new id."""
+        ignore_rules[-777] = [fold("тривога")]
+        run(new_message_handler(FakeEvent(chat_id=-777, text="", action=MessageActionChatMigrateTo(channel_id=555))))
+        assert recorded["migration"] == [(-777, utils.get_peer_id(PeerChannel(555)))]
+
+    def test_neither_the_phrase_nor_the_text_is_ever_logged(self, new_message_handler, edited_handler, recorded, ignore_rules, caplog):
+        ignore_rules[123] = [fold("секретна фраза")]
+        with caplog.at_level(logging.DEBUG):
+            run(new_message_handler(FakeEvent(chat_id=123, text="Це СЕКРЕТНА ФРАЗА тут", message_id=77)))
+            run(edited_handler(FakeEvent(chat_id=123, text="знову секретна фраза", message_id=78, edit_date=NOW)))
+        assert "секретна" not in caplog.text.lower() and "СЕКРЕТНА" not in caplog.text
+        assert "77" in caplog.text and "78" in caplog.text and "123" in caplog.text

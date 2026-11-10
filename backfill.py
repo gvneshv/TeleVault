@@ -36,6 +36,11 @@ Blocked chats are skipped:
     That also holds when one is named with --chat: the run says so and archives nothing, rather than quietly overriding the owner's rule.
     Remove the chat from the blocklist first if you do want it backfilled.
 
+Message ignore rules apply to history too:
+    A plain-text message whose text matches a rule (Settings -> Ignore rules) is not stored,
+    exactly as in the live archiver (handlers/ingest_filter.py) - otherwise every backfill would bring back the very messages the rule keeps out.
+    The rules that apply to a chat are read once, before its first message; messages already archived are never removed by a rule.
+
 Do not run this at the same time as main.py (the live userbot) FOR THE SAME ACCOUNT - Telethon sessions support one active connection at a time.
 Stop that account's archiver first, run this, then start it again. (Other accounts' archivers are unaffected.)
 
@@ -67,8 +72,10 @@ from sqlalchemy import text as sql_text
 import db
 from config import settings
 from utils.logging_setup import setup_logging
+from utils.text_matching import matches_any
 from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
+from handlers.ingest_filter import matchable_text
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
 from utils.telethon_compat import disconnect_client, get_authenticated_user
@@ -178,6 +185,10 @@ async def backfill_chat(
         username=chat_username,
     )
 
+    # The message ignore rules that apply to this chat, loaded once (they cannot change in the middle of a chat in any way that matters).
+    # A failure here ends this chat as "failed" in run()'s per-chat handler - never archived on a guess; an archive without the tables has no rules.
+    ignore_patterns = db.queries.get_ignore_patterns(conn, utils.get_peer_id(chat))
+
     stored = 0
     skipped = 0
     processed = 0
@@ -202,6 +213,12 @@ async def backfill_chat(
             logger.info(
                 f"  ...{processed} messages processed so far ({stored} stored)."
             )
+
+        # Same rule as the live handlers (handlers/ingest_filter.py): a plain-text message whose text matches an ignore rule is not archived.
+        # Counted as skipped. Nothing about the message or the rule is logged.
+        if matches_any(ignore_patterns, matchable_text(message)):
+            skipped += 1
+            continue
 
         text = resolve_message_text(message)
         if not text:

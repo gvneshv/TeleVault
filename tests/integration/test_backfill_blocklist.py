@@ -28,7 +28,7 @@ def _user(user_id: int, first_name: str):
 class FakeTelegram:
     """Just enough of TelegramClient for backfill.run(): a dialog list, per-chat history, and a record of which chats history was requested for."""
 
-    def __init__(self, history: dict[int, list[str]]):
+    def __init__(self, history: dict[int, list]):
         self.users = {uid: _user(uid, f"chat{uid}") for uid in history}
         self.history = history
         self.fetched: list[int] = []
@@ -51,11 +51,14 @@ class FakeTelegram:
 
     async def iter_messages(self, chat, reverse=True, limit=None, min_id=0):
         self.fetched.append(chat.id)  # the moment history is requested - for a blocked chat this must never happen
-        for i, text in enumerate(self.history[chat.id], start=1):
+        for i, item in enumerate(self.history[chat.id], start=1):
+            # An item is the text, or (text, media) for a message that carries a file (its text is then a caption).
+            text, media = item if isinstance(item, tuple) else (item, None)
+
             async def get_sender(_chat=chat):
                 return _user(7, "Sender")
 
-            yield SimpleNamespace(id=i, message=text, action=None, sender_id=7, date=T0, get_sender=get_sender)
+            yield SimpleNamespace(id=i, message=text, media=media, action=None, sender_id=7, date=T0, get_sender=get_sender)
 
 
 @pytest.fixture
@@ -77,7 +80,7 @@ def telegram(archive, monkeypatch, tmp_path):
 
     previous_sigterm = signal.getsignal(signal.SIGTERM)  # run() installs its own handler; do not leak it into other tests
 
-    def go(history: dict[int, list[str]], chat_selector: str | None = None):
+    def go(history: dict[int, list], chat_selector: str | None = None):
         fake = FakeTelegram(history)
         monkeypatch.setattr(backfill, "TelegramClient", lambda *args, **kwargs: fake)
         asyncio.run(backfill.run(1, chat_selector, None))

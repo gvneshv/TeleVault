@@ -7,15 +7,16 @@ Why we bother archiving edits:
   Without the edit history, the archive shows only the final text before deletion. With it, you get the full picture.
 
 Flow per event:
-  0. Skip the event if its chat is on the ingest blocklist, before anything else - see handlers/ingest_filter.py.
+  1. Skip the event if its chat is on the ingest blocklist, or if the edited text matches a message ignore rule, before anything else -
+     see handlers/ingest_filter.py (which also says what happens to a message edited INTO or OUT OF a rule).
      An edit is NOT harmless to ignore the filter for: it stores the new text of a known message, and for an unknown one it inserts the whole message,
      so a blocked chat would otherwise keep leaking its content through edits.
-  1. Confirm the edited message has text (skip media caption changes for now).
-  2. Call queries.record_edit, which:
+  2. Confirm the edited message has text (skip media caption changes for now).
+  3. Call queries.record_edit, which:
        a. Fetches the current text from the DB (becomes old_text).
        b. Writes a row to message_edits with old -> new.
        c. Updates messages with the new text and sets is_edited = TRUE.
-  3. Ensure the chat and sender are in the DB first, same as on_message.
+  4. Ensure the chat and sender are in the DB first, same as on_message.
      (Edge case: a message could be edited in a chat we somehow missed archiving - the FK would fail without the upsert guard.)
 
 Threading note (Postgres migration):
@@ -124,6 +125,16 @@ def register(client) -> None:
         if await ingest_filter.should_skip(chat_id):
             logger.debug(
                 "Skipping edit of message %s in chat %s - chat is blocked (or the blocklist could not be read).",
+                message.id,
+                chat_id,
+            )
+            return
+
+        # The edited text matches an ignore rule: drop the edit, so the stored version keeps its last text.
+        # Ids only in the log - never the text or the phrase.
+        if await ingest_filter.should_ignore_text(chat_id, message):
+            logger.debug(
+                "Skipping edit of message %s in chat %s - ignored by a rule (or the rules could not be read).",
                 message.id,
                 chat_id,
             )
