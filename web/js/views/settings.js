@@ -1,13 +1,20 @@
 /**
  * Settings view.
  *
- * Three cards:
+ * Four cards:
  *   1. A link out to the dedicated telegram-setup.html page (see that file's own module docstring for why the Telegram/archive wizard lives there instead of here).
  *   2. "Chats not archived": the ingestion blocklist (api/routes/ingest.py, policy in handlers/ingest_filter.py) -
  *      pick an already-archived chat to stop archiving it, or take one off the list.
  *      It is a cheap database read, so unlike the devices card it loads as soon as the tab opens.
  *      Only chats the archive already knows are offered: a new chat is always archived until you block it here.
- *   3. "Telegram devices": the account's Telegram sessions (the same list as Telegram's own Settings -> Devices)
+ *   3. "Ignore rules": message ignore rules (api/routes/ingest.py, policy in handlers/ingest_filter.py) - a phrase, and either every chat or the chats ticked in the form.
+ *      A message whose TEXT contains the phrase (ignoring case; plain substring, never a regex; captions are not matched) is no longer archived.
+ *      Only future messages are affected.
+ *      Loads with the tab like the blocklist card.
+ *      The form's own state (what was typed, ticked, filtered) lives in settingsViewState so a re-render does not reset it;
+ *      typing, ticking and filtering update the page directly instead of re-rendering, so focus and the scroll position of the chat list are never lost mid-edit.
+ *      The size limits come from the server's response (max_length, max_chats, max_count) - nothing here repeats utils/validation.py's numbers.
+ *   4. "Telegram devices": the account's Telegram sessions (the same list as Telegram's own Settings -> Devices)
  *      with buttons to end one device or every device except TeleVault's own.
  *      Every link creates a new Telegram session and nothing used to end the old ones, so they piled up.
  *
@@ -43,6 +50,24 @@ const settingsViewState = {
     busy: null,
     // What the picker currently shows; kept here so a re-render (language change, a finished request) does not reset it.
     selected: "",
+    error: null,
+    // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
+    fix: null,
+  },
+  ignore: {
+    // null = not loaded (yet, or the load failed - see `error`), otherwise the rules from GET /api/ingest/ignore-rules.
+    items: null,
+    // Every archived chat as {chat_id, name} (GET /api/chats/options): what the "only these chats" list offers.
+    chats: [],
+    // Same as blocklist.labels: the owner's own names for private chats.
+    labels: new Map(),
+    // {maxCount, maxLength, maxChats} from the same response; null until loaded.
+    limits: null,
+    loading: false,
+    // "add" while a rule is being created, the rule id (string) while one is being removed, or null.
+    busy: null,
+    // The form, kept here so a re-render (language change, a finished request) does not reset what was typed or ticked.
+    form: { pattern: "", scope: "all", chatIds: new Set(), filter: "" },
     error: null,
     // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
     fix: null,
@@ -172,10 +197,13 @@ function renderDevicesCard() {
   `;
 }
 
-/** A chat as the owner knows it: "label (Telegram name)" for a private chat that has a label, otherwise its name, otherwise `fallback`. */
-function labelled(chat, fallback) {
+/**
+ * A chat as the owner knows it: "label (Telegram name)" for a private chat that has a label, otherwise its name, otherwise `fallback`.
+ * `labels` is the card's own copy of the owner's labels (each card loads its own); the blocklist's by default.
+ */
+function labelled(chat, fallback, labels = settingsViewState.blocklist.labels) {
   const name = chat.name || "";
-  const label = chatDisplayName(settingsViewState.blocklist.labels, chat, "");
+  const label = chatDisplayName(labels, chat, "");
   if (!label) return name || fallback;
   return name ? `${label} (${name})` : label;
 }
@@ -268,10 +296,12 @@ function renderRoot(root) {
       <a href="/telegram-setup.html" class="modal__btn modal__btn--primary">${t("settings.telegramCardLink")}</a>
     </section>
     ${renderBlocklistCard()}
+    ${renderIgnoreCard()}
     ${renderDataCard()}
     ${renderDevicesCard()}
   `;
   attachBlocklistHandlers(root);
+  attachIgnoreHandlers(root);
   attachDataHandlers(root);
   attachDevicesHandlers(root);
 }
@@ -378,6 +408,305 @@ function attachBlocklistHandlers(root) {
   document.querySelectorAll("[data-unblock-id]").forEach((btn) => {
     btn.addEventListener("click", () =>
       changeBlock(root, btn.dataset.unblockId, false),
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Ignore rules card
+// ---------------------------------------------------------------------------
+
+// A rule limited to many chats would make one row a wall of names; show this many and count the rest.
+const IGNORE_CHATS_SHOWN = 5;
+
+/** Where a rule applies, as one line: "All chats", or "Chats: A, B, C and 4 more". */
+function ignoreScopeText(rule) {
+  if (rule.all_chats) return t("settings.ignoreScopeAll");
+  const labels = settingsViewState.ignore.labels;
+  const names = rule.chats.map((c) => labelled(c, `ID ${c.chat_id}`, labels));
+  const shown = names.slice(0, IGNORE_CHATS_SHOWN).join(", ");
+  const rest = names.length - IGNORE_CHATS_SHOWN;
+  return `${t("settings.ignoreScopeChats")}: ${shown}${
+    rest > 0 ? ` ${t("settings.ignoreMore").replace("{n}", String(rest))}` : ""
+  }`;
+}
+
+/** One rule: its phrase as typed, where it applies and when it was added, and the button that removes it. */
+function renderIgnoreRow(rule) {
+  const s = settingsViewState.ignore;
+  const id = String(rule.id);
+  const busy = s.busy !== null || s.loading;
+  const facts = [
+    ignoreScopeText(rule),
+    `${t("settings.ignoreAddedOn")}: ${formatDate(rule.created_at)}`,
+  ];
+  return `
+    <li class="device-row">
+      <div class="device-row__body">
+        <div class="device-row__name ignore-rule__pattern">${escapeHtml(rule.pattern)}</div>
+        <div class="device-row__meta">${facts.map(escapeHtml).join(" · ")}</div>
+      </div>
+      <div class="device-row__action">
+        <button type="button" class="modal__btn" data-ignore-remove-id="${escapeHtml(id)}" ${busy ? "disabled" : ""}>
+          ${s.busy === id ? t("settings.ignoreRemoving") : t("settings.ignoreRemove")}
+        </button>
+      </div>
+    </li>
+  `;
+}
+
+/** True when the form holds something the server would accept (it still checks everything itself). */
+function ignoreFormComplete() {
+  const f = settingsViewState.ignore.form;
+  return (
+    f.pattern.trim().length > 0 && (f.scope === "all" || f.chatIds.size > 0)
+  );
+}
+
+function renderIgnoreForm() {
+  const s = settingsViewState.ignore;
+  const f = s.form;
+  const busy = s.busy !== null || s.loading;
+  const limits = s.limits;
+  const filter = f.filter.trim().toLocaleLowerCase();
+
+  const boxes = s.chats
+    .map((c) => {
+      const id = String(c.chat_id);
+      const name = labelled(c, `ID ${id}`, s.labels);
+      const shown = !filter || name.toLocaleLowerCase().includes(filter);
+      return `<label class="ignore-chat" data-ignore-chat-name="${escapeHtml(name.toLocaleLowerCase())}" ${shown ? "" : "hidden"}>
+          <input type="checkbox" value="${escapeHtml(id)}" data-ignore-chat ${f.chatIds.has(id) ? "checked" : ""} ${busy ? "disabled" : ""}>
+          <span>${escapeHtml(name)}</span>
+        </label>`;
+    })
+    .join("");
+
+  // With no archived chat to pick there is nothing to limit a rule to: "all chats" is the only choice.
+  const canPick = s.chats.length > 0;
+  const scope = canPick ? f.scope : "all";
+
+  return `
+    <form class="ignore-form" id="ignore-form" novalidate>
+      <label class="settings-field ignore-field">
+        <span>${t("settings.ignorePatternLabel")}</span>
+        <input type="text" id="ignore-pattern" maxlength="${limits.maxLength}" autocomplete="off" spellcheck="false"
+               placeholder="${escapeHtml(t("settings.ignorePatternPlaceholder"))}" value="${escapeHtml(f.pattern)}" ${busy ? "disabled" : ""}>
+      </label>
+      <fieldset class="ignore-scope">
+        <legend>${t("settings.ignoreScopeLegend")}</legend>
+        <label><input type="radio" name="ignore-scope" value="all" ${scope === "all" ? "checked" : ""} ${busy ? "disabled" : ""}> ${t("settings.ignoreScopeAllChats")}</label>
+        <label><input type="radio" name="ignore-scope" value="chats" ${scope === "chats" ? "checked" : ""} ${busy || !canPick ? "disabled" : ""}> ${t("settings.ignoreScopeSelected")}</label>
+      </fieldset>
+      ${canPick ? "" : `<p class="settings-help ignore-nochats">${t("settings.ignoreNoChats")}</p>`}
+      <div class="ignore-chats" id="ignore-chats" ${scope === "chats" ? "" : "hidden"}>
+        <input type="search" id="ignore-chat-filter" class="ignore-chat-filter" autocomplete="off"
+               placeholder="${escapeHtml(t("settings.ignoreFilterPlaceholder"))}" aria-label="${escapeHtml(t("settings.ignoreFilterPlaceholder"))}" value="${escapeHtml(f.filter)}">
+        <div class="ignore-chat-list">${boxes}</div>
+      </div>
+      <button type="submit" id="ignore-add" class="modal__btn modal__btn--primary" ${busy || !ignoreFormComplete() ? "disabled" : ""}>
+        ${s.busy === "add" ? t("settings.ignoreAdding") : t("settings.ignoreAdd")}
+      </button>
+    </form>
+  `;
+}
+
+function renderIgnoreCard() {
+  const s = settingsViewState.ignore;
+
+  const error = s.error
+    ? `<p class="settings-error" role="alert">${escapeHtml(s.error)}${
+        s.fix
+          ? ` <a href="${s.fix.href}" class="settings-fix-link">${escapeHtml(s.fix.label)}</a>`
+          : ""
+      }</p>`
+    : "";
+
+  let body =
+    s.loading && s.items === null
+      ? `<p class="settings-help">${t("common.loading")}</p>`
+      : "";
+  if (s.items !== null && s.limits) {
+    body =
+      renderIgnoreForm() +
+      (s.items.length
+        ? `<ul class="device-list">${s.items.map(renderIgnoreRow).join("")}</ul>`
+        : `<p class="settings-help">${t("settings.ignoreEmpty")}</p>`);
+  }
+
+  return `
+    <section class="settings-card settings-card--ignore" id="ignore-card">
+      <h2>${t("settings.ignoreTitle")}</h2>
+      <p class="settings-help">${t("settings.ignoreIntro")}</p>
+      ${error}
+      ${body}
+    </section>
+  `;
+}
+
+/** Put an error response into the ignore-rules card: translated, and with the "create your archive" link when that is what is missing. */
+async function failIgnore(res) {
+  const s = settingsViewState.ignore;
+  const body = await res.json().catch(() => ({}));
+  s.error = describeError(body.detail);
+  s.fix = archiveFixLink(body.detail);
+}
+
+/**
+ * (Re)load the rules and the chats the form offers.
+ * Never throws; problems land in the card.
+ * What was typed and ticked is kept, except for chats that no longer exist.
+ *
+ * @param {HTMLElement} root
+ */
+async function loadIgnoreRules(root) {
+  const s = settingsViewState.ignore;
+  s.error = null;
+  s.fix = null;
+  s.loading = true;
+  renderRoot(root);
+
+  try {
+    const [rules, chats, labels] = await Promise.all([
+      apiFetch("/api/ingest/ignore-rules"),
+      apiFetch("/api/chats/options"),
+      fetchDisplayNames(),
+    ]);
+    if (!rules.ok) {
+      s.items = null;
+      await failIgnore(rules);
+    } else if (!chats.ok) {
+      s.items = null;
+      await failIgnore(chats);
+    } else {
+      const data = await rules.json();
+      s.items = data.items;
+      s.limits = {
+        maxCount: data.max_count,
+        maxLength: data.max_length,
+        maxChats: data.max_chats,
+      };
+      s.chats = await chats.json();
+      s.labels = labels;
+      const known = new Set(s.chats.map((c) => String(c.chat_id)));
+      s.form.chatIds = new Set(
+        [...s.form.chatIds].filter((id) => known.has(id)),
+      );
+    }
+  } catch {
+    s.items = null;
+    s.error = t("common.error");
+  }
+  s.loading = false;
+  renderRoot(root);
+}
+
+/**
+ * Create the rule in the form (POST), or remove one (DELETE) - then reload so the screen shows what the server now holds.
+ * A rejected request keeps the form exactly as it was, so a typo costs nothing.
+ *
+ * @param {HTMLElement} root
+ * @param {{ remove?: string }} [opts] remove = the id of the rule to remove; omitted = add the form's rule
+ */
+async function changeIgnoreRules(root, { remove } = {}) {
+  const s = settingsViewState.ignore;
+  s.error = null;
+  s.fix = null;
+  s.busy = remove ?? "add";
+  renderRoot(root);
+
+  let ok = false;
+  try {
+    const f = s.form;
+    const res = remove
+      ? await apiFetch(
+          `/api/ingest/ignore-rules/${encodeURIComponent(remove)}`,
+          { method: "DELETE" },
+        )
+      : await apiFetch("/api/ingest/ignore-rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pattern: f.pattern,
+            all_chats: f.scope === "all",
+            // The form keeps ids as strings (checkbox values); the API wants numbers.
+            // Telegram's marked chat ids (the largest, supergroups, are around -1e12) sit far inside the range a JS number holds exactly.
+            chat_ids: f.scope === "chats" ? [...f.chatIds].map(Number) : [],
+          }),
+        });
+    if (res.ok) ok = true;
+    else await failIgnore(res);
+  } catch {
+    s.error = t("common.error");
+  }
+  s.busy = null;
+  if (!ok) {
+    renderRoot(root);
+    return;
+  }
+  if (!remove)
+    s.form = {
+      pattern: "",
+      scope: s.form.scope,
+      chatIds: new Set(),
+      filter: "",
+    };
+  await loadIgnoreRules(root);
+}
+
+function attachIgnoreHandlers(root) {
+  const s = settingsViewState.ignore;
+  const f = s.form;
+  const addButton = () => document.getElementById("ignore-add");
+  // Enable/disable the button without re-rendering: a re-render would drop focus from the field being typed in.
+  const syncAdd = () => {
+    const btn = addButton();
+    if (btn)
+      btn.disabled = s.busy !== null || s.loading || !ignoreFormComplete();
+  };
+
+  document.getElementById("ignore-pattern")?.addEventListener("input", (e) => {
+    f.pattern = e.target.value;
+    syncAdd();
+  });
+
+  document.querySelectorAll('input[name="ignore-scope"]').forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      f.scope = e.target.value;
+      const list = document.getElementById("ignore-chats");
+      if (list) list.hidden = f.scope !== "chats";
+      syncAdd();
+    });
+  });
+
+  document
+    .getElementById("ignore-chat-filter")
+    ?.addEventListener("input", (e) => {
+      f.filter = e.target.value;
+      const needle = f.filter.trim().toLocaleLowerCase();
+      document.querySelectorAll("[data-ignore-chat-name]").forEach((label) => {
+        label.hidden =
+          !!needle && !label.dataset.ignoreChatName.includes(needle);
+      });
+    });
+
+  document.querySelectorAll("[data-ignore-chat]").forEach((box) => {
+    box.addEventListener("change", (e) => {
+      if (e.target.checked) f.chatIds.add(e.target.value);
+      else f.chatIds.delete(e.target.value);
+      syncAdd();
+    });
+  });
+
+  document.getElementById("ignore-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (ignoreFormComplete() && s.busy === null && !s.loading)
+      changeIgnoreRules(root);
+  });
+
+  document.querySelectorAll("[data-ignore-remove-id]").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      changeIgnoreRules(root, { remove: btn.dataset.ignoreRemoveId }),
     );
   });
 }
@@ -515,6 +844,7 @@ function initSettingsView() {
 
   renderRoot(root);
   loadBlocklist(root);
+  loadIgnoreRules(root);
 }
 
 export { initSettingsView };

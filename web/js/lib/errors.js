@@ -58,6 +58,8 @@ const ERROR_REASON_KEYS = {
   // Ingest blocklist (api/routes/ingest.py)
   archive_outdated: "error.archiveOutdated",
   blocklist_full: "error.blocklistFull",
+  ignore_rule_exists: "error.ignoreRuleExists",
+  ignore_rules_full: "error.ignoreRulesFull",
   chat_not_found: "error.chatNotFound",
   sender_not_found: "error.senderNotFound",
   display_names_full: "error.displayNamesFull",

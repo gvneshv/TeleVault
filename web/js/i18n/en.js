@@ -212,6 +212,26 @@ export const en = {
   "settings.blocklistNoChats": "No archived chats to choose from yet.",
   "settings.blocklistUnnamed": "Unnamed chat",
   "settings.blocklistBlockedOn": "Blocked",
+  "settings.ignoreTitle": "Ignore rules",
+  "settings.ignoreIntro":
+    'A message whose text contains one of these phrases is not archived. The phrase can be anywhere in the text and capital letters do not matter, but everything else does: word endings, spelling and spaces ("microsoft" and "rnicrosoft" are different phrases). Only the text of a message is checked, so a photo or file with a caption is still archived. A rule affects only new messages and edits: what is already archived stays, and what is ignored is never stored, so it can\'t be recovered later. It takes effect with the next message, no restart needed.',
+  "settings.ignorePatternLabel": "Phrase to ignore",
+  "settings.ignorePatternPlaceholder": "e.g. That's what she said",
+  "settings.ignoreScopeLegend": "Where to apply it",
+  "settings.ignoreScopeAllChats": "All chats",
+  "settings.ignoreScopeSelected": "Only these chats",
+  "settings.ignoreFilterPlaceholder": "Search chats…",
+  "settings.ignoreNoChats":
+    "No archived chats to choose from yet, so a rule can only apply to all chats.",
+  "settings.ignoreAdd": "Add rule",
+  "settings.ignoreAdding": "Adding…",
+  "settings.ignoreRemove": "Remove",
+  "settings.ignoreRemoving": "Removing…",
+  "settings.ignoreEmpty": "No rules yet - no message is being ignored.",
+  "settings.ignoreScopeAll": "All chats",
+  "settings.ignoreScopeChats": "Chats",
+  "settings.ignoreMore": "and {n} more",
+  "settings.ignoreAddedOn": "Added",
   "settings.dataTitle": "Delete all stored data",
   "settings.dataIntro":
     "Empties the archive: every stored message (with edit history and deleted-message copies), every chat and the people seen. Kept: the list of chats not archived, your own names for people, and which account this archive belongs to. Messages that arrive later are stored again as usual. This cannot be undone. It does not delete your TeleVault account.",
@@ -378,9 +398,13 @@ export const en = {
     "Stop the archiver (and any backfill) first - it is using this Telegram session.",
   "error.telegramCodeExpired": "That code expired. Sending a new one.",
   "error.archiveOutdated":
-    "Your archive database needs updating before this can be saved (blocking a chat, naming a sender). Ask whoever runs this TeleVault to apply the database update (python scripts/migrate_archives.py).",
+    "Your archive database needs updating before this can be saved (blocking a chat, an ignore rule, naming a sender). Ask whoever runs this TeleVault to apply the database update (python scripts/migrate_archives.py).",
   "error.blocklistFull":
     "The blocked-chats list is full. Unblock a chat first.",
+  "error.ignoreRuleExists":
+    "There is already a rule with this text. Remove it first if you want to change where it applies.",
+  "error.ignoreRulesFull":
+    "The list of ignore rules is full. Remove a rule first.",
   "error.chatNotFound": "That chat isn't in your archive.",
   "error.senderNotFound": "That sender isn't in your archive.",
   "error.displayNamesFull":

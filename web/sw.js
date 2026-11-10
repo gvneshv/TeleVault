@@ -81,10 +81,12 @@
  * js/views/settings.js (labels in the blocklist), js/lib/dialog.js, js/lib/icons.js, css/base.css and i18n/{en,uk}.js.
  * v51 (clear all data): changed js/views/settings.js (the "Delete all stored data" card), js/views/chat-view.js (drops the open chat after a clear),
  * css/base.css and i18n/{en,uk}.js; no file was added or removed.
+ * v52 (message ignore rules): changed js/views/settings.js (the "Ignore rules" card), js/lib/errors.js (two new error reasons),
+ * css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v51";
+const CACHE_NAME = "televault-shell-v52";
 const SHELL_FILES = [
   "/",
   "/index.html",

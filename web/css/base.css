@@ -1307,6 +1307,91 @@ Shared by the collapsed rail and the phone top bar below. */
   color: var(--color-ink);
 }
 
+/* Settings -> "Ignore rules": same width as the blocklist card; its rows reuse .device-list / .device-row* like that card does. */
+.settings-card--ignore {
+  max-width: 620px;
+}
+
+/* The form is one column that fills the card (the generic ".settings-card form" would shrink every child to its content). */
+.settings-card .ignore-form {
+  align-items: stretch;
+  margin: 0 0 14px;
+}
+
+.ignore-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ignore-scope {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 13px;
+}
+
+.ignore-scope legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+}
+
+.ignore-scope label,
+.ignore-chat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The chat picker: a search box over a short scrolling list of checkboxes. */
+.ignore-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ignore-chat-filter {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-raised);
+  color: var(--color-ink);
+}
+
+.ignore-chat-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  font-size: 13px;
+}
+
+.ignore-chat {
+  padding: 4px 0;
+}
+
+.ignore-chat span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* display:flex above would otherwise beat the browser's own [hidden] rule, and the picker/filter rely on that attribute. */
+.ignore-chats[hidden],
+.ignore-chat[hidden] {
+  display: none;
+}
+
+/* A phrase can be up to 200 characters with no spaces. */
+.ignore-rule__pattern {
+  overflow-wrap: anywhere;
+}
+
 .settings-card h2 {
   font-family: var(--font-display);
   font-size: 15px;
