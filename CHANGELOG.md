@@ -10,11 +10,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 The **display names + name history** release (Roadmap Phase 3). Give any sender your own label ("Mum"), and see the names TeleVault has seen them under.
+Also in this release: **delete all stored data** and **message ignore rules** (skip messages by text before they are archived).
 
 **Upgrading from 3.1.0** (each step is safe to repeat):
-1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables to every existing archive; **nothing migrates them automatically**).
+1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables and the two ignore-rule tables to every existing archive; **nothing migrates them automatically**).
 2. Reload the web page once (the service worker cache is now v51; it updates itself, a reload just makes it immediate). No archiver restart is needed.
-Until step 1 is done nothing breaks: the archiver records no name history, labels read as "none", and saving a label answers 409 `archive_outdated`.
+Until step 1 is done nothing breaks: the archiver records no name history and ignores no message, labels read as "none", and saving a label or an ignore rule answers 409 `archive_outdated`.
 
 ### Added - display names and name history
 - **Your own name for a sender.** Click a name (it carries a small pencil) above a message bubble (someone else's; "You" and channel posts have nothing to rename) to open a dialog: type your label, or remove it.
@@ -41,14 +42,34 @@ Until step 1 is done nothing breaks: the archiver records no name history, label
 - New: `db.queries.clear_all_data()`, `DELETE /api/archive/data`, `ArchiveClearedOut`; no migration (the sender-name tables are optional: an archive without them clears too). `web/sw.js` cache v51.
 - Tests: `tests/integration/test_clear_all_data_db.py`, `tests/api/test_clear_archive_api.py` (including a test that the clear waits for a message being stored); each rule was shown to fail with its code reverted. The Settings card was exercised in Chromium against a mocked API, not against a real server.
 
+### Added - message ignore rules
+- **Settings -> "Ignore rules"**: a phrase, and either *All chats* or *Only these chats* (a searchable list of checkboxes). From the next message on, a message whose **text contains the phrase** is not archived.
+  It is a plain substring, **ignoring case** (also for Cyrillic): `оголошена повітряна тривога` matches `🚨 М. ХАРКІВ - ОГОЛОШЕНА ПОВІТРЯНА ТРИВОГА`, and the emoji need not be in the rule.
+  Everything else counts: word endings (the all-clear needs its own rule), spelling, spaces, and `тривога` vs `тревога` are two phrases. **Not a regular expression** (a bad one could hang the archiver on every message; characters like `.*` are ordinary characters).
+- **Text only** (owner's decision): a photo, file or voice note is never matched, **not even by its caption**, and neither are call labels or service messages. A pasted link is still plain text. The phrase is compared with Telegram's raw text, so bold or links in the message do not break a match.
+- **New messages only** (owner's decision): messages already archived stay as they are, and what was ignored is never stored, so removing a rule does not bring it back.
+- **Edits**: an edit that makes the text match a rule is dropped (the stored version keeps its last text); an edit that makes an ignored message stop matching is stored like an edit of a message we never held, i.e. it arrives as a new record.
+- **Backfill** applies the rules to the history it fetches (otherwise every backfill would bring back what a rule keeps out). The rules of a chat are read once per chat; a read failure fails that chat instead of archiving it.
+- A rule limited to a group follows it when it is upgraded to a supergroup (as the blocklist does). A rule survives its chat's data being deleted, and "Delete all stored data" keeps the rules (they are settings, like the blocklist).
+- **Failure policy** as for the blocklist: if the rules cannot be read the message is skipped, never archived on a guess; an archive without the tables has no rules (one warning). The missing table is found with a quiet `to_regclass()` probe, like the name-history table, so an un-migrated archive does not make Postgres log an error per message, and an archive migrated while the archiver runs starts applying rules on the next message without a restart.
+- **Privacy**: neither a rule's phrase nor any message text is ever logged; the log lines carry chat and message ids only (tests check this).
+- Limits (`utils/validation.py`): 200 characters per phrase (trimmed first), 200 rules, 200 chats per rule; a NUL character is refused (Postgres cannot store it). The web form takes the limits from the API response and repeats no number.
+- New archive tables (migration `b94e2d7a1c63`, **run `python scripts/migrate_archives.py`**): `ingest_ignore_rules` (the phrase as typed, its folded key, which is UNIQUE, so `Тривога` and `тривога` are one rule) and `ingest_ignore_rule_chats` (no foreign key to `chats`, on purpose).
+  Matching is done in Python (`utils/text_matching.py`: NFC + `casefold()`), not in SQL, because Postgres' case-insensitive operators depend on the database's locale.
+- New API: `GET /api/ingest/ignore-rules`, `POST /api/ingest/ignore-rules` (404 `chat_not_found`, 409 `ignore_rule_exists`, 409 `ignore_rules_full`, 422), `DELETE /api/ingest/ignore-rules/{id}`; 409 `archive_outdated` on an archive that has not been migrated.
+- UI: English and Ukrainian strings, `web/sw.js` cache v52.
+- Not verified: a real Telegram account (live messages, edits, a group upgrade), a real server-backed browser (the card was exercised in Chromium against a mocked API), Windows, Docker.
+
 ### Changed
+- Roadmap: "Message ignore rules" is done and removed from "Planned - Phase 3"; the dropped item **"delete for everyone after deleting for me"** is recorded there (see "Dropped").
 - Roadmap: "Data management: clear all data" is done and removed from "Planned - Phase 3".
-- The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender).
+- The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender and ignore rules).
 - Roadmap: dropped the chat allowlist and the `deletions_only` storage mode (reasons in "Planned - Phase 3"), added "Show the last read message", and moved auto-read policies to the end of Phase 3.
 - Removed four items from "Planned - Phase 3" that had shipped or were stale: the chat view (3.1.0), display name overrides and username change tracking (this release), and the `resolved_name` item (already a computed API field).
 
 ### Tests
 - New `tests/integration/test_sender_names_db.py` and `tests/api/test_senders_api.py`; `tests/conftest.py` and `make_old_archive()` know the new tables. Each rule was shown to fail with its code reverted.
+- New for the ignore rules: `tests/unit/test_text_matching.py`, `tests/integration/test_ignore_rules_db.py`, `tests/integration/test_backfill_ignore_rules.py`, `tests/api/test_ingest_ignore_rules.py`; extended `test_ingest_filter.py`, `test_event_handlers.py` (an autouse fixture keeps every other test free of rules), `test_clear_all_data_db.py`, `tests/conftest.py`'s table list, and `FakeTelegram` in `test_backfill_blocklist.py` (a message may carry media). Every piece of the feature was reverted once and its tests went red; two first survived (a test that used an empty text to check a guard, and a mutation that changed nothing) and were fixed.
 - Not verified: a real Telegram account (names seen live), a real server-backed browser session (the dialog was exercised in Chromium against a mocked API), Windows, Docker.
 
 ## [3.1.0] - 2026-11-07
@@ -792,8 +813,6 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Message ignore rules: filter by text pattern before archiving (filtering by chat shipped
-  as the ingest blocklist)
 - TTL / retention policy: auto-delete archived messages older than N months
 - Show the last read message: a bar in the conversation, like Telegram's own, marking where the
   messages you have read in Telegram end; everything after it is unread. Mirrors Telegram's read
@@ -807,7 +826,10 @@ this chat", and an allowlist would only be its mirror image) and the **`deletion
 (Telegram's deletion event carries only message ids, never the text, so a deleted message can be
 recovered only if it was stored BEFORE the deletion, and any message, even one years old, can be
 deleted later: "store only what will be deleted" cannot be known in advance. What it was meant to
-save is what the TTL / retention policy does, openly).
+save is what the TTL / retention policy does, openly) and **"delete for everyone after deleting for
+me"** (the owner's conclusion, not verified: Telegram checks the caller's own history first, so
+`revoke=true` on an id already deleted for oneself does nothing; the update carries no revoke flag
+either, so TeleVault also cannot tell "deleted for me" from "deleted for everyone").
 
 ### Planned - Phase 4 (Infrastructure & Expansion)
 

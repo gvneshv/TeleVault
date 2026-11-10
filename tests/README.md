@@ -47,7 +47,11 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `unit/test_archive_login.py` | decrypting the stored archive login: none, complete, half-written, undecryptable - and never printing the password |
 | `api/test_archive_login_api.py` | provisioning stores the encrypted login; requests authenticate as the archive's role; a broken login is a 503, not a fall-back; deleting an account drops its role |
 | `integration/test_migrate_archives.py` | `scripts/migrate_archives.py`: dry run, migrate and repeat, one broken archive does not stop the rest, no URL or password in output |
-| `unit/test_ingest_filter.py` | the blocklist's failure policy: unreadable rules mean "skip", never "archive" |
+| `unit/test_ingest_filter.py` | the blocklist's failure policy: unreadable rules mean "skip", never "archive"; which messages an ignore rule may look at (plain text only, never a caption or a service message) and the same failure policy for the ignore rules |
+| `unit/test_text_matching.py` | how an ignore rule matches: substring, ignoring case, Unicode-normalized, spaces and word endings significant, no regex |
+| `integration/test_ignore_rules_db.py` | the ignore-rule tables and migration (incl. downgrade round trip and drift check), which rules apply to which chat, how a scoped rule follows a group's upgrade to a supergroup, a rule outliving its chat, and an archive that has not been migrated yet |
+| `integration/test_backfill_ignore_rules.py` | the real `backfill.run()` with ignore rules: a matching message is not stored, a caption is not matched, unreadable rules fail the chat instead of archiving it, nothing is logged |
+| `api/test_ingest_ignore_rules.py` | ignore-rule API: add / list / remove, limits and 422s, duplicate phrase, unknown chat, per-account isolation, the read-only/write connection split, an unmigrated archive, nothing logged |
 | `api/test_ingest_blocklist.py` | block / unblock API: idempotency, limits and cap, per-account isolation, the read-only/write connection split, an unmigrated archive |
 | `api/test_auth_flow.py` | register / login / throttling / refresh rotation and reuse detection / logout |
 | `api/test_gate_chain.py` | every endpoint behind the right gate, with the right status and reason code; the "no archive yet" message is about the database, not about linking Telegram |
