@@ -27,7 +27,16 @@ from .telegram import (
     TelegramDeviceEndedOut,
 )
 from .archive import ArchiveClearedOut, ArchiveOwnerOut, ArchiveProvisionOut
-from .ingest import BlockedChatOut, BlocklistOut, BlockedChatRemovedOut
+from .ingest import (
+    BlockedChatOut,
+    BlocklistOut,
+    BlockedChatRemovedOut,
+    IgnoreRuleIn,
+    IgnoreRuleChatOut,
+    IgnoreRuleOut,
+    IgnoreRulesOut,
+    IgnoreRuleRemovedOut,
+)
 from .sender import (
     DisplayNameIn,
     DisplayNameOut,
@@ -94,6 +103,12 @@ __all__ = [
     "BlockedChatOut",
     "BlocklistOut",
     "BlockedChatRemovedOut",
+    # ingest ignore rules
+    "IgnoreRuleIn",
+    "IgnoreRuleChatOut",
+    "IgnoreRuleOut",
+    "IgnoreRulesOut",
+    "IgnoreRuleRemovedOut",
     # senders
     "DisplayNameIn",
     "DisplayNameOut",
