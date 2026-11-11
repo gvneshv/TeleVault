@@ -39,7 +39,7 @@ from telethon.sessions import StringSession
 import db
 from config import settings
 from utils.logging_setup import setup_logging
-from handlers import on_message, on_delete, on_edit
+from handlers import on_message, on_delete, on_edit, on_read
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
 from utils.telethon_compat import disconnect_client, get_authenticated_user, run_until_disconnected
@@ -121,6 +121,7 @@ def register_handlers(client: TelegramClient, self_id: int) -> None:
     on_message.register(client)
     on_delete.register(client, self_id)
     on_edit.register(client)
+    on_read.register(client)
     logger.info("Event handlers registered.")
 
 
@@ -217,6 +218,10 @@ async def main(user_id: int) -> None:
             type(exc).__name__,
         )
 
+    # Copy the owner's read positions from Telegram's chat list, so the chat view can draw its "Unread messages" bar.
+    # In the background and best effort (handlers/on_read.py): a slow or failing chat list must neither delay nor stop archiving.
+    read_sync_task = asyncio.create_task(on_read.sync_read_state(client))
+
     # ------------------------------------------------------------------ #
     # 5. Heartbeat loop
     # ------------------------------------------------------------------ #
@@ -249,6 +254,9 @@ async def main(user_id: int) -> None:
     # ------------------------------------------------------------------ #
     logger.info("Shutting down...")
 
+    read_sync_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await read_sync_task
     heartbeat_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await heartbeat_task
