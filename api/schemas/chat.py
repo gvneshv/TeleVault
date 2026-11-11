@@ -49,6 +49,7 @@ class ChatOut(BaseModel):
     `edited_count`   - how many of those were edited at least once (the chat view shows it next to the deleted count).
     `last_message_at` - ISO 8601 datetime of the most recent archived message, used to sort the chat list by recency (like Telegram itself).
     `last_message_preview` - first 80 chars of the most recent message text, shown in the sidebar. Null if the message had no text.
+    `read_inbox_max_id` - how far the owner has read the chat in Telegram itself (a mirror; TeleVault never marks anything as read).
     """
 
     chat_id: int
@@ -69,6 +70,11 @@ class ChatOut(BaseModel):
         None,
         max_length=80,
         description="Truncated preview of the most recent message.",
+    )
+    read_inbox_max_id: int | None = Field(
+        None,
+        description="Telegram's own read position for the account owner in this chat: every message with a Telegram id up to it has been read. "
+        "The chat view draws its 'Unread messages' bar after it. Null when not known yet (the archiver has not reported it, or the archive has not been migrated).",
     )
 
     model_config = {"from_attributes": True}

@@ -101,6 +101,29 @@ class TestEditCountsInResponses:
 
 
 # ---------------------------------------------------------------------------
+# The owner's Telegram reading position (drives the chat view's "Unread messages" bar)
+# ---------------------------------------------------------------------------
+
+
+class TestReadPositionInTheChatRecord:
+    def test_it_is_null_until_the_archiver_has_reported_one(self, client, world):
+        chat = client.get(f"{CHATS}/200", headers=auth(world["alice"])).json()
+        assert chat["read_inbox_max_id"] is None
+        assert all(c["read_inbox_max_id"] is None for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"])
+
+    def test_the_chat_and_the_chat_list_carry_it(self, client, world):
+        archive_scalar(world["archives"]["alice"], "UPDATE chats SET read_inbox_max_id = 7 WHERE chat_id = 200")
+        assert client.get(f"{CHATS}/200", headers=auth(world["alice"])).json()["read_inbox_max_id"] == 7
+        listed = {c["chat_id"]: c["read_inbox_max_id"] for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"]}
+        assert listed == {200: 7, 201: None}
+
+    def test_another_accounts_position_is_never_visible(self, client, world):
+        archive_scalar(world["archives"]["bob"], "UPDATE chats SET read_inbox_max_id = 2 WHERE chat_id = 300")
+        assert client.get(f"{CHATS}/300", headers=auth(world["alice"])).status_code == 404
+        assert {c["chat_id"] for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"]} == {200, 201}
+
+
+# ---------------------------------------------------------------------------
 # A2 - GET /api/chats/{chat_id}/window
 # ---------------------------------------------------------------------------
 
