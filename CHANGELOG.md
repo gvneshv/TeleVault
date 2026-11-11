@@ -10,12 +10,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 The **display names + name history** release (Roadmap Phase 3). Give any sender your own label ("Mum"), and see the names TeleVault has seen them under.
-Also in this release: **delete all stored data** and **message ignore rules** (skip messages by text before they are archived).
+Also in this release: **delete all stored data**, **message ignore rules** (skip messages by text before they are archived) and the **"Unread messages" bar** in the chat view.
 
 **Upgrading from 3.1.0** (each step is safe to repeat):
-1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables and the two ignore-rule tables to every existing archive; **nothing migrates them automatically**).
-2. Reload the web page once (the service worker cache is now v51; it updates itself, a reload just makes it immediate). No archiver restart is needed.
-Until step 1 is done nothing breaks: the archiver records no name history and ignores no message, labels read as "none", and saving a label or an ignore rule answers 409 `archive_outdated`.
+1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables, the two ignore-rule tables and one column on `chats` to every existing archive; **nothing migrates them automatically**).
+2. Restart the archiver once: it copies your Telegram reading positions into the new column when it starts (the name-history and ignore-rule features need no restart).
+3. Reload the web page once (the service worker cache is now v53; it updates itself, a reload just makes it immediate).
+Until step 1 is done nothing breaks: the archiver records no name history, ignores no message and tracks no reading position (one warning), labels read as "none", the chat view draws no unread bar, and saving a label or an ignore rule answers 409 `archive_outdated`.
 
 ### Added - display names and name history
 - **Your own name for a sender.** Click a name (it carries a small pencil) above a message bubble (someone else's; "You" and channel posts have nothing to rename) to open a dialog: type your label, or remove it.
@@ -58,9 +59,23 @@ Until step 1 is done nothing breaks: the archiver records no name history and ig
   Matching is done in Python (`utils/text_matching.py`: NFC + `casefold()`), not in SQL, because Postgres' case-insensitive operators depend on the database's locale.
 - New API: `GET /api/ingest/ignore-rules`, `POST /api/ingest/ignore-rules` (404 `chat_not_found`, 409 `ignore_rule_exists`, 409 `ignore_rules_full`, 422), `DELETE /api/ingest/ignore-rules/{id}`; 409 `archive_outdated` on an archive that has not been migrated.
 - UI: English and Ukrainian strings, `web/sw.js` cache v52.
+- **A small "?" hint, "How rules affect edits"**, sits under the card's intro (added after the owner's test): hover it, focus it with the keyboard, or tap it, and it explains the two edit rules above in plain words. A real button with `aria-describedby`, not a native `title` (which cannot hold two paragraphs and does not work on touch or keyboard); Escape or a click elsewhere closes it, and Escape works even while the pointer is still on it. Cache v53.
 - Not verified: a real Telegram account (live messages, edits, a group upgrade), a real server-backed browser (the card was exercised in Chromium against a mocked API), Windows, Docker.
 
+### Added - the "Unread messages" bar
+- In a chat, a full-width bar labelled **Unread messages** (*Непрочитані повідомлення*) is drawn before the first message you have not read **in Telegram itself** and did not write yourself (owner's decision: Telegram's own read state, not a TeleVault-side "last looked here"). It is a mirror: read the chat on your phone and the bar moves (the open chat checks every 10 s, like new messages do, and moves only the bar, without redrawing the messages); read everything and it disappears.
+- **It never marks anything as read.** TeleVault only listens to what Telegram reports and stores one number per chat; no read acknowledgement is ever sent. (Marking chats read on a schedule stays the separate, last item of Phase 3.)
+- Kept up to date from two sources (`handlers/on_read.py`): the chat list (`iter_dialogs`), read once in the background when the archiver starts, picks up whatever was read while it was off; the live `MessageRead(inbox=True)` event follows reads made on another device afterwards. A read made while the archiver was disconnected is only picked up at its next start (there is no periodic re-sync; say if you want one).
+- Handled on purpose (each has a test): playing a voice note produces the same Telegram event with that one message's id, which is **not** a reading position, so it is ignored; reads of *other people* (outbox) are not recorded; a chat on the blocklist is not recorded; the position only moves **forward**; a chat the archive does not hold is never created from a read report; a report under the old id of an upgraded group is not written onto the supergroup (its message ids use another numbering).
+- Where the bar is **not** drawn: the position is unknown; the owner's own Telegram id is unknown; the list is narrowed (Edited / Deleted / in-chat search); every loaded message is unread but older ones exist (the real boundary is further up, in a page not loaded yet); or nothing unread was written by somebody else (your own messages are never "unread"). Deleted messages count like any other.
+- Storage: migration `c5e9a1d3f742` (**run `python scripts/migrate_archives.py`, then restart the archiver**): a nullable `chats.read_inbox_max_id` (NULL = not known yet; adding it is instant). A quiet `pg_attribute` probe, cached once seen, finds an un-migrated archive (one warning; the chat list then reports `null`), like the ignore-rule tables. API: `read_inbox_max_id` on the chat record (`GET /api/chats`, `GET /api/chats/{id}`). "Delete all stored data" and deleting one chat remove the chat's row and with it the position; the next archiver start fills it again for chats that are archived again.
+- Neither the position nor any message text is logged (chat ids and counts only). The number is the owner's own data, kept in their own archive and returned only to them.
+- UI: English and Ukrainian strings, `web/sw.js` cache v53.
+- Known limits: in a chat that was once a basic group, older messages carry ids of the old numbering, so the bar is placed by the unbroken unread run at the end of the chat, not by comparing every id; forum-style supergroups (topics) have a reading position per topic in Telegram and I have not checked which one the chat-level value reflects. Both would need a real account to confirm.
+- Not verified: a real Telegram account (that reads on another device reach the archiver as the Telethon documentation says, channels, forum chats), a real server-backed browser (the bar was exercised in Chromium against a mocked API, light and dark, desktop and phone width), Windows, Docker.
+
 ### Changed
+- Roadmap: "Show the last read message" is done (the "Unread messages" bar) and removed from "Planned - Phase 3".
 - Roadmap: "Message ignore rules" is done and removed from "Planned - Phase 3"; the dropped item **"delete for everyone after deleting for me"** is recorded there (see "Dropped").
 - Roadmap: "Data management: clear all data" is done and removed from "Planned - Phase 3".
 - The "archive database needs updating" message is no longer specific to blocking chats (it now also covers naming a sender and ignore rules).
@@ -70,6 +85,7 @@ Until step 1 is done nothing breaks: the archiver records no name history and ig
 ### Tests
 - New `tests/integration/test_sender_names_db.py` and `tests/api/test_senders_api.py`; `tests/conftest.py` and `make_old_archive()` know the new tables. Each rule was shown to fail with its code reverted.
 - New for the ignore rules: `tests/unit/test_text_matching.py`, `tests/integration/test_ignore_rules_db.py`, `tests/integration/test_backfill_ignore_rules.py`, `tests/api/test_ingest_ignore_rules.py`; extended `test_ingest_filter.py`, `test_event_handlers.py` (an autouse fixture keeps every other test free of rules), `test_clear_all_data_db.py`, `tests/conftest.py`'s table list, and `FakeTelegram` in `test_backfill_blocklist.py` (a message may carry media). Every piece of the feature was reverted once and its tests went red; two first survived (a test that used an empty text to check a guard, and a mutation that changed nothing) and were fixed.
+- New for the unread bar: `tests/unit/test_on_read.py` (real Telethon updates through the real builder: a played voice note, outbox reads, blocked chats, the start-up sync, cancellation), `tests/integration/test_read_state_db.py` (migration round trip, forward-only, no chat created, an un-migrated archive, migrated while running); extended `tests/api/test_chat_view_api.py` and `test_migrate_archives.py` (`make_old_archive()` drops the column). The bar's placement rules (44 checks) were exercised in Chromium against a mocked API, not committed as tests (the repository has no browser test harness).
 - Not verified: a real Telegram account (names seen live), a real server-backed browser session (the dialog was exercised in Chromium against a mocked API), Windows, Docker.
 
 ## [3.1.0] - 2026-11-07
@@ -814,10 +830,6 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 ### Planned - Phase 3 (Advanced Features)
 
 - TTL / retention policy: auto-delete archived messages older than N months
-- Show the last read message: a bar in the conversation, like Telegram's own, marking where the
-  messages you have read in Telegram end; everything after it is unread. Mirrors Telegram's read
-  state (`read_inbox_max_id`) and never marks anything as read itself. Related to the Phase 4
-  item "Read receipt inference", which is about the other side's reading
 - Auto-read policies: mark selected chats as read on a schedule - deliberately LAST, only wanted
   for one group; it acts on the real Telegram account, so check the Telegram ToS first
 

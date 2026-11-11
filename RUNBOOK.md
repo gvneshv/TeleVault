@@ -102,6 +102,7 @@ Until an archive is migrated nothing breaks - the code that needs a new table tr
 (for the ingest blocklist, Settings -> Chats not archived says the archive needs updating, and the archiver logs one warning).
 For the archive owner table (own messages on the right in the chat view), migrate and then **restart the archiver once**: it records your Telegram id when it starts. Until then every message is drawn on the left.
 For the message ignore rules (Settings -> Ignore rules), migrate and you are done - no restart: the archiver notices the new tables on the next text message. Until then nothing is ignored, the archiver logs one warning, and the card says the archive needs updating.
+For the "Unread messages" bar in the chat view, migrate and then **restart the archiver once**: it copies your Telegram reading positions into the new `chats.read_inbox_max_id` column when it starts, and follows reads you make on other devices afterwards. Until then the chat view draws no bar, and an un-migrated archive makes the archiver log one warning. A read made while the archiver was stopped or disconnected shows up at its next start. TeleVault only listens to Telegram's read state; it never marks anything as read.
 For the sender-name tables (your own names for senders, and the names seen over time), migrate and you are done - no restart: the archiver notices the new table on the next message. Name changes are only recorded from then on, and saving a name before the migration answers "archive needs updating".
 
 ---
