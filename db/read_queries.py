@@ -25,6 +25,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import ProgrammingError
 
 from db.connection import is_undefined_table_error
+from db.queries import chats_have_read_state
 from utils.validation import SENDER_HISTORY_MAX_ENTRIES
 
 # ---------------------------------------------------------------------------
@@ -168,6 +169,15 @@ def _paginate_filtered(
 # ---------------------------------------------------------------------------
 
 
+def _read_state_column(conn: Connection) -> str:
+    """
+    The SQL expression for a chat's read position: the column itself, or a typed NULL on an archive that predates it (migration c5e9a1d3f742),
+    so the chat list keeps working until `python scripts/migrate_archives.py` has been run.
+    Fixed strings only - no user input.
+    """
+    return "read_inbox_max_id" if chats_have_read_state(conn) else "CAST(NULL AS BIGINT)"
+
+
 def get_chats(
     conn: Connection,
     page: int = 1,
@@ -188,13 +198,15 @@ def get_chats(
     and surfacing empty chats first on an asc sort would be more confusing than helpful. (NULLS LAST works identically in Postgres and SQLite here.)
 
     Columns returned:
-        chat_id, name, username, chat_type, first_seen, message_count, deleted_count, edited_count, last_message_at, last_message_preview
+        chat_id, name, username, chat_type, first_seen, message_count, deleted_count, edited_count, last_message_at, last_message_preview,
+        read_inbox_max_id (the owner's read position in Telegram; null when unknown or on an archive that has not been migrated)
     """
     direction = "ASC" if order == "asc" else "DESC"
     sql = f"""
         SELECT
             chat_id, name, username, chat_type, first_seen,
-            message_count, deleted_count, edited_count, last_message_at, last_message_preview
+            message_count, deleted_count, edited_count, last_message_at, last_message_preview,
+            {_read_state_column(conn)} AS read_inbox_max_id
         FROM chats
         ORDER BY last_message_at {direction} NULLS LAST
     """
@@ -363,10 +375,11 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
 
     See get_chats()'s docstring - counts are denormalized columns, not computed here.
     """
-    sql = """
+    sql = f"""
         SELECT
             chat_id, name, username, chat_type, first_seen,
-            message_count, deleted_count, edited_count, last_message_at, last_message_preview
+            message_count, deleted_count, edited_count, last_message_at, last_message_preview,
+            {_read_state_column(conn)} AS read_inbox_max_id
         FROM chats
         WHERE chat_id = :chat_id
     """

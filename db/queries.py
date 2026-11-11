@@ -63,6 +63,37 @@ def _ignore_rules_ready(conn: Connection) -> bool:
     return present
 
 
+# The read position column (chats.read_inbox_max_id) came with a later migration than the chats table, so an archive can lack it.
+# Probed like the ignore-rule tables: quietly, positive answers cached per database for the life of the process
+# (an archive migrated while the archiver runs starts tracking on the next read event), and one warning - never one per event - when it is missing.
+_archives_with_read_state: set[str] = set()
+_read_state_missing_warned = False
+
+
+def chats_have_read_state(conn: Connection) -> bool:
+    """
+    True when this archive has chats.read_inbox_max_id (migration c5e9a1d3f742).
+    Quiet when it has not; once seen, never probed again for that database.
+
+    pg_attribute instead of information_schema: the answer must not depend on which privileges the connection's login happens to hold
+    (the web UI reads through a different, read-only login than the archiver writes with).
+    """
+    name = conn.engine.url.database or ""
+    if name in _archives_with_read_state:
+        return True
+    present = bool(
+        conn.execute(
+            sql_text(
+                "SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.chats') "
+                "AND attname = 'read_inbox_max_id' AND NOT attisdropped)"
+            )
+        ).scalar()
+    )
+    if present:
+        _archives_with_read_state.add(name)
+    return present
+
+
 def get_last_archived_message_id(conn: Connection, chat_id: int) -> int | None:
     """
     Return the highest tg_message_id already archived for a chat, or None if nothing has been archived for it yet (a brand-new chat).
@@ -538,6 +569,55 @@ def _move_ignore_rule_chats(conn: Connection, old_chat_id: int, new_chat_id: int
     except Exception:
         conn.rollback()
         raise
+
+
+def record_read_inboxes(conn: Connection, positions: Sequence[tuple[int, int]]) -> bool:
+    """
+    Remember how far the owner has read each chat in Telegram: `positions` is (chat_id, read_inbox_max_id) pairs.
+    Returns False when nothing could be stored because the archive predates the column (warned about once; `python scripts/migrate_archives.py` fixes it), True otherwise.
+
+    Three rules, each one a way this could silently go wrong:
+      - Only chats the archive ALREADY holds are updated.
+        A position for a chat with no row is dropped, not turned into an empty chat:
+        that would put chats in the list that were never archived (a blocked chat above all).
+      - The value only moves FORWARD.
+        Telegram's read position never goes back, so an older report that arrives late (or a dialog list fetched before a newer live event) must not pull the bar back up.
+        Equal or lower values change nothing, and write nothing.
+      - The chat id is NOT canonicalized (resolve_chat_id) like everywhere else.
+        A report under the id of a group that has since become a supergroup counts message ids of the OLD numbering;
+        writing it onto the new chat would draw the bar in the wrong place.
+        That chat's row was merged away, so such a report simply matches nothing.
+    Read-only towards Telegram: this stores what Telegram reported and sends nothing back.
+    """
+    global _read_state_missing_warned
+    if not positions:
+        return True
+    if not chats_have_read_state(conn):
+        if not _read_state_missing_warned:
+            _read_state_missing_warned = True
+            logger.warning(
+                "This archive predates the read-position column (chats.read_inbox_max_id), so the 'Unread messages' bar cannot be kept up to date. "
+                "Run `python scripts/migrate_archives.py` (see RUNBOOK.md, 'Updating existing archives') and restart the archiver."
+            )
+        return False
+    try:
+        conn.execute(
+            sql_text(
+                "UPDATE chats SET read_inbox_max_id = :max_id "
+                "WHERE chat_id = :chat_id AND (read_inbox_max_id IS NULL OR read_inbox_max_id < :max_id)"
+            ),
+            [{"chat_id": chat_id, "max_id": max_id} for chat_id, max_id in positions],
+        )
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
+
+def record_read_inbox(conn: Connection, chat_id: int, max_id: int) -> bool:
+    """One chat's read position (see record_read_inboxes(), whose rules apply)."""
+    return record_read_inboxes(conn, [(chat_id, max_id)])
 
 
 def record_archive_owner(conn: Connection, owner_id: int, commit: bool = True) -> None:

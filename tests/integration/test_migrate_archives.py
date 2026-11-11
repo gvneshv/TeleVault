@@ -25,11 +25,12 @@ def add_account(control_conn, username: str, archive: str | None) -> int:
 
 def make_old_archive(user_id: int) -> str:
     """A real archive taken back to the revision before the blocklist (and so before the owner and sender-name tables) -
-    what every archive created before those releases looks like (the ignore-rule tables are another that must go)."""
+    what every archive created before those releases looks like (the ignore-rule tables and the read-position column are others that must go)."""
     name = provisioning.provision_archive_database(user_id).db_name
     engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
     with engine.begin() as conn:
         # Every table added by a revision AFTER PREVIOUS_REVISION must go too, or re-running those migrations would find them already there.
+        conn.execute(sa.text("ALTER TABLE chats DROP COLUMN read_inbox_max_id"))  # a column, not a table, but it came with a later revision all the same
         conn.execute(sa.text("DROP TABLE ingest_ignore_rule_chats"))  # before ingest_ignore_rules: it references it
         conn.execute(sa.text("DROP TABLE ingest_ignore_rules"))
         conn.execute(sa.text("DROP TABLE sender_display_names"))
@@ -55,6 +56,19 @@ def has_table(name: str, table: str) -> bool:
     try:
         with engine.connect() as conn:
             return conn.execute(sa.text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar() is not None
+    finally:
+        engine.dispose()
+
+
+def has_read_state_column(name: str) -> bool:
+    engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            return bool(
+                conn.execute(
+                    sa.text("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'read_inbox_max_id')")
+                ).scalar()
+            )
     finally:
         engine.dispose()
 
@@ -98,6 +112,7 @@ def test_an_outdated_archive_is_migrated_and_a_second_run_finds_nothing_to_do(ac
     assert has_blocklist_table(name)
     assert has_table(name, "sender_name_history") and has_table(name, "sender_display_names")
     assert has_table(name, "ingest_ignore_rules") and has_table(name, "ingest_ignore_rule_chats")
+    assert has_read_state_column(name)
     assert provisioning.archive_revision(name) == provisioning.head_revision()
 
     assert migrate_archives.main([]) == 0

@@ -103,6 +103,12 @@ chats = Table(
     Column("first_message_at", TIMESTAMP(timezone=True)),
     Column("last_message_at", TIMESTAMP(timezone=True)),
     Column("last_message_preview", Text),
+    # How far the account owner has read this chat IN TELEGRAM: Telegram's own read_inbox_max_id, mirrored by handlers/on_read.py.
+    # Every message of the chat with an id up to it is read; the chat view draws its "Unread messages" bar after it.
+    # NULL = not known yet (never reported, or the archiver has not run since the migration), and the view draws no bar.
+    # Only ever moves forward (db.queries.record_read_inbox) and is never written by anything but Telegram's own reports:
+    # TeleVault reads this state, it never marks a message as read.
+    Column("read_inbox_max_id", BigInteger),
     CheckConstraint(
         "chat_type IN ('group', 'supergroup', 'channel', 'private')",
         name="ck_chats_chat_type",
