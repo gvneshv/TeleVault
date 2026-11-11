@@ -943,6 +943,60 @@ function renderMessage(message) {
     </li>`;
 }
 
+/**
+ * Internal id of the message the "Unread messages" bar goes right before, or null for no bar.
+ *
+ * The bar mirrors the owner's reading position IN TELEGRAM (chat.read_inbox_max_id: every message with a Telegram id up to it is read).
+ * It marks the first message the owner has not read AND did not write themselves (their own messages are never "unread").
+ * It is found by walking back from the newest loaded message to the first read one, so only the unbroken run of unread messages at the end counts.
+ * That keeps it right in a chat that was once a group and became a supergroup, whose older messages carry ids of another numbering.
+ *
+ * No bar - on purpose, not by accident - when:
+ *   - the position is unknown (null: not reported yet, or an archive that has not been migrated),
+ *   - the owner's id is unknown (their own messages cannot be told apart, so the bar could sit before one of them),
+ *   - the list is narrowed to edited/deleted messages or a search (a bar in the middle of a filtered list would mean nothing),
+ *   - every loaded message is unread but older ones exist (the real boundary is further up, in a page that is not loaded yet),
+ *   - nothing unread was written by anybody else.
+ * Display only: nothing here, or anywhere in TeleVault, marks a message as read in Telegram.
+ */
+function findUnreadStartId() {
+  const position = state.chat?.read_inbox_max_id;
+  if (typeof position !== "number" || state.ownerId === null) return null;
+  if (filtersActive()) return null;
+
+  let start = null;
+  let reachedRead = false;
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const message = state.messages[i];
+    if (message.tg_message_id <= position) {
+      reachedRead = true;
+      break;
+    }
+    if (!isOwnMessage(message)) start = message.id;
+  }
+  if (!reachedRead && state.hasOlder) return null;
+  return start;
+}
+
+/** The bar itself: a full-width line with a label, as a list item between messages. */
+function renderUnreadBar() {
+  return `<li class="cv-unread" id="cv-unread" role="separator" aria-label="${escapeHtml(t("cv.unreadBar"))}"><span>${escapeHtml(t("cv.unreadBar"))}</span></li>`;
+}
+
+/**
+ * Move, add or remove the bar WITHOUT redrawing the messages - for when only the reading position changed
+ * (the owner read the chat on their phone; the live refresh noticed).
+ * A full redraw would be harmless but could jump the scroll position.
+ */
+function syncUnreadBar() {
+  document.getElementById("cv-unread")?.remove();
+  const id = findUnreadStartId();
+  if (id === null) return;
+  document
+    .querySelector(`.cv-msg[data-id="${id}"]`)
+    ?.insertAdjacentHTML("beforebegin", renderUnreadBar());
+}
+
 /** All loaded messages with a day heading wherever the (local) day changes. */
 function renderMessageList() {
   if (state.messages.length === 0) {
@@ -955,6 +1009,7 @@ function renderMessageList() {
   }
   let previousDay = "";
   const parts = [];
+  const unreadStartId = findUnreadStartId();
   for (const message of state.messages) {
     const day = dayKey(message.date);
     if (day && day !== previousDay) {
@@ -963,6 +1018,8 @@ function renderMessageList() {
       );
       previousDay = day;
     }
+    // After the day heading: when the first unread message starts a day, the bar sits between the heading and it, as in Telegram.
+    if (message.id === unreadStartId) parts.push(renderUnreadBar());
     parts.push(renderMessage(message));
   }
   return parts.join("");
@@ -1798,8 +1855,13 @@ async function refreshChatView() {
       ]);
       if (seq !== state.convSeq || !windowRes.ok) return;
       const data = await windowRes.json();
+      // The reading position travels with the chat record.
+      // When it moved (the owner read the chat elsewhere) the bar moves with it;
+      // new messages need no special case - mergeNewest() redraws the list, and the bar with it.
+      const previousPosition = state.chat.read_inbox_max_id;
       if (chatRes.ok) state.chat = await chatRes.json();
       mergeNewest(data.items);
+      if (state.chat.read_inbox_max_id !== previousPosition) syncUnreadBar();
     } catch {
       // Keep what is shown.
     }

@@ -538,9 +538,32 @@ function renderIgnoreCard() {
     <section class="settings-card settings-card--ignore" id="ignore-card">
       <h2>${t("settings.ignoreTitle")}</h2>
       <p class="settings-help">${t("settings.ignoreIntro")}</p>
+      ${renderIgnoreEditTip()}
       ${error}
       ${body}
     </section>
+  `;
+}
+
+/**
+ * The small "? How rules affect edits" hint under the card's intro.
+ *
+ * What an edit does is the least obvious part of the feature and too long for the intro, so it sits behind a button instead.
+ * The bubble is shown by CSS on hover and on keyboard focus; a click (the only way on a touch screen) pins it open, see attachIgnoreEditTip().
+ * It is a plain button + aria-describedby, not a native title="", because a title cannot hold two paragraphs, is not reachable by touch or keyboard, and cannot be styled.
+ */
+function renderIgnoreEditTip() {
+  return `
+    <div class="info-tip" id="ignore-edit-tip">
+      <button type="button" class="info-tip__btn" id="ignore-edit-tip-btn"
+        aria-expanded="false" aria-describedby="ignore-edit-tip-bubble"
+        aria-label="${escapeHtml(t("settings.ignoreEditsLabel"))}">?</button>
+      <span class="info-tip__label">${t("settings.ignoreEditsLabel")}</span>
+      <div class="info-tip__bubble" id="ignore-edit-tip-bubble" role="tooltip">
+        <p>${t("settings.ignoreEditsDropped")}</p>
+        <p>${t("settings.ignoreEditsRevived")}</p>
+      </div>
+    </div>
   `;
 }
 
@@ -601,6 +624,59 @@ async function loadIgnoreRules(root) {
   renderRoot(root);
 }
 
+let ignoreEditTipBound = false;
+
+/** Open or close the edit hint and keep aria-expanded and the CSS state in step.
+ *  Opening clears an earlier Escape. */
+function setIgnoreEditTip(open) {
+  const tip = document.getElementById("ignore-edit-tip");
+  const btn = document.getElementById("ignore-edit-tip-btn");
+  if (!tip || !btn) return;
+  tip.classList.toggle("is-open", open);
+  if (open) tip.classList.remove("is-dismissed");
+  btn.setAttribute("aria-expanded", String(open));
+}
+
+/**
+ * Wire the "?" hint. Hover is pure CSS; everything else is here:
+ *  - a click pins it open or closed (the only way on a touch screen);
+ *  - keyboard focus opens it and leaving the button closes it.
+ *    Only focus that matches :focus-visible counts, so a mouse click (which also focuses a button) is left to the click handler instead of being opened twice;
+ *  - Escape closes it, even while the pointer still hovers it (WCAG 1.4.13: a hint must be dismissible without moving the pointer).
+ *    CSS alone cannot do that, because the focused button keeps matching :focus-visible after any key press,
+ *    so Escape also sets .is-dismissed, which beats :hover until the pointer leaves;
+ *  - a click anywhere else closes it.
+ * The document-level listeners are added once for the page's lifetime: this runs on every render of the Settings view,
+ * and they look the elements up when the event fires, so they keep working after a re-render replaces the markup.
+ */
+function attachIgnoreEditTip() {
+  const tip = document.getElementById("ignore-edit-tip");
+  const btn = document.getElementById("ignore-edit-tip-btn");
+  btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setIgnoreEditTip(!tip?.classList.contains("is-open"));
+  });
+  btn?.addEventListener("focus", () => {
+    if (btn.matches(":focus-visible")) setIgnoreEditTip(true);
+  });
+  btn?.addEventListener("blur", () => setIgnoreEditTip(false));
+  tip?.addEventListener("mouseleave", () =>
+    tip.classList.remove("is-dismissed"),
+  );
+
+  if (ignoreEditTipBound) return;
+  ignoreEditTipBound = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    setIgnoreEditTip(false);
+    document.getElementById("ignore-edit-tip")?.classList.add("is-dismissed");
+  });
+  document.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element) || !e.target.closest("#ignore-edit-tip"))
+      setIgnoreEditTip(false);
+  });
+}
+
 /**
  * Create the rule in the form (POST), or remove one (DELETE) - then reload so the screen shows what the server now holds.
  * A rejected request keeps the form exactly as it was, so a typo costs nothing.
@@ -657,6 +733,7 @@ async function changeIgnoreRules(root, { remove } = {}) {
 function attachIgnoreHandlers(root) {
   const s = settingsViewState.ignore;
   const f = s.form;
+  attachIgnoreEditTip();
   const addButton = () => document.getElementById("ignore-add");
   // Enable/disable the button without re-rendering: a re-render would drop focus from the field being typed in.
   const syncAdd = () => {
