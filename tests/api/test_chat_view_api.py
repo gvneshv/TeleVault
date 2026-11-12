@@ -117,6 +117,23 @@ class TestReadPositionInTheChatRecord:
         listed = {c["chat_id"]: c["read_inbox_max_id"] for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"]}
         assert listed == {200: 7, 201: None}
 
+    def test_the_unread_count_reaches_the_chat_record_and_the_chat_list(self, client, world):
+        """Chat 200 holds ten messages by somebody else (ids 1-10); the owner has read up to 7."""
+        eng = sa.create_engine(db.server_database_url(world["archives"]["alice"]), poolclass=NullPool)
+        try:
+            with eng.connect() as conn:
+                q.record_archive_owner(conn, 999)
+        finally:
+            eng.dispose()
+        archive_scalar(world["archives"]["alice"], "UPDATE chats SET read_inbox_max_id = 7 WHERE chat_id = 200")
+        assert client.get(f"{CHATS}/200", headers=auth(world["alice"])).json()["unread_count"] == 3
+        listed = {c["chat_id"]: c["unread_count"] for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"]}
+        assert listed == {200: 3, 201: None}  # 201 has no known position
+
+    def test_the_unread_count_is_null_when_it_cannot_be_told(self, client, world):
+        archive_scalar(world["archives"]["alice"], "UPDATE chats SET read_inbox_max_id = 7 WHERE chat_id = 200")  # position known, owner id not recorded
+        assert client.get(f"{CHATS}/200", headers=auth(world["alice"])).json()["unread_count"] is None
+
     def test_another_accounts_position_is_never_visible(self, client, world):
         archive_scalar(world["archives"]["bob"], "UPDATE chats SET read_inbox_max_id = 2 WHERE chat_id = 300")
         assert client.get(f"{CHATS}/300", headers=auth(world["alice"])).status_code == 404
