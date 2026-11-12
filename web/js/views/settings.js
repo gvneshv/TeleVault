@@ -68,6 +68,14 @@ const settingsViewState = {
     busy: null,
     // The form, kept here so a re-render (language change, a finished request) does not reset what was typed or ticked.
     form: { pattern: "", scope: "all", chatIds: new Set(), filter: "" },
+    // The list of existing rules is collapsed until asked for ("Show all rules"):
+    // with a few dozen rules it pushed the rest of Settings off the screen and grew with every rule added.
+    // Not remembered across page loads on purpose - collapsed is the default every time.
+    showList: false,
+    // "added" | "removed" | null: a one-line confirmation of the last change.
+    // With the list collapsed, adding a rule would otherwise change nothing the person can see but a number on a button.
+    // Cleared by the next change, by typing in the phrase field, and by opening or closing the list.
+    notice: null,
     error: null,
     // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
     fix: null,
@@ -529,8 +537,9 @@ function renderIgnoreCard() {
   if (s.items !== null && s.limits) {
     body =
       renderIgnoreForm() +
+      renderIgnoreNotice() +
       (s.items.length
-        ? `<ul class="device-list">${s.items.map(renderIgnoreRow).join("")}</ul>`
+        ? renderIgnoreList()
         : `<p class="settings-help">${t("settings.ignoreEmpty")}</p>`);
   }
 
@@ -542,6 +551,37 @@ function renderIgnoreCard() {
       ${error}
       ${body}
     </section>
+  `;
+}
+
+/** One line confirming the last add or remove.
+ *  Always in the markup (hidden when empty) so attachIgnoreHandlers can clear it without a re-render. */
+function renderIgnoreNotice() {
+  const key = {
+    added: "settings.ignoreAdded",
+    removed: "settings.ignoreRemoved",
+  }[settingsViewState.ignore.notice ?? ""];
+  return `<p class="settings-help ignore-notice" id="ignore-notice" role="status" ${key ? "" : "hidden"}>${key ? t(key) : ""}</p>`;
+}
+
+/** The label of the show/hide button: the count belongs on the collapsed state, where the rules themselves are out of sight. */
+function ignoreToggleLabel() {
+  const s = settingsViewState.ignore;
+  return s.showList
+    ? t("settings.ignoreHide")
+    : t("settings.ignoreShowAll").replace("{n}", String(s.items?.length ?? 0));
+}
+
+/**
+ * The existing rules behind a "Show all rules (N)" button.
+ * The list is always in the markup and only hidden, so aria-controls points at a real element and opening it does not need a re-render
+ * (which would drop focus from the button).
+ */
+function renderIgnoreList() {
+  const s = settingsViewState.ignore;
+  return `
+    <button type="button" class="ignore-toggle" id="ignore-toggle" aria-expanded="${s.showList}" aria-controls="ignore-list">${escapeHtml(ignoreToggleLabel())}</button>
+    <ul class="device-list" id="ignore-list" ${s.showList ? "" : "hidden"}>${(s.items ?? []).map(renderIgnoreRow).join("")}</ul>
   `;
 }
 
@@ -688,6 +728,7 @@ async function changeIgnoreRules(root, { remove } = {}) {
   const s = settingsViewState.ignore;
   s.error = null;
   s.fix = null;
+  s.notice = null;
   s.busy = remove ?? "add";
   renderRoot(root);
 
@@ -727,6 +768,7 @@ async function changeIgnoreRules(root, { remove } = {}) {
       chatIds: new Set(),
       filter: "",
     };
+  s.notice = remove ? "removed" : "added";
   await loadIgnoreRules(root);
 }
 
@@ -742,9 +784,30 @@ function attachIgnoreHandlers(root) {
       btn.disabled = s.busy !== null || s.loading || !ignoreFormComplete();
   };
 
+  const clearNotice = () => {
+    s.notice = null;
+    const el = document.getElementById("ignore-notice");
+    if (el) {
+      el.hidden = true;
+      el.textContent = "";
+    }
+  };
+
   document.getElementById("ignore-pattern")?.addEventListener("input", (e) => {
     f.pattern = e.target.value;
+    clearNotice();
     syncAdd();
+  });
+
+  // Show or hide the list of rules without a re-render, so the button keeps focus.
+  document.getElementById("ignore-toggle")?.addEventListener("click", (e) => {
+    s.showList = !s.showList;
+    clearNotice();
+    const list = document.getElementById("ignore-list");
+    if (list) list.hidden = !s.showList;
+    const button = /** @type {HTMLElement} */ (e.currentTarget);
+    button.setAttribute("aria-expanded", String(s.showList));
+    button.textContent = ignoreToggleLabel();
   });
 
   document.querySelectorAll('input[name="ignore-scope"]').forEach((radio) => {

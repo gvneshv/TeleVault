@@ -85,10 +85,12 @@
  * css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * v53 (unread bar, ignore-rule edit hint): changed js/views/chat-view.js (the "Unread messages" bar drawn from the chat's read position),
  * js/views/settings.js (the "?" hint on how ignore rules treat edits), css/base.css and i18n/{en,uk}.js; no file was added or removed.
+ * v54 (unread badges, collapsible ignore rules): changed js/views/chat-view.js (the unread-count badge on each chat row),
+ * js/views/settings.js (the rules list is hidden behind a "Show all rules" button), css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v53";
+const CACHE_NAME = "televault-shell-v54";
 const SHELL_FILES = [
   "/",
   "/index.html",

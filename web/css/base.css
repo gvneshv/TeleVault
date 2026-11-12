@@ -1392,6 +1392,23 @@ Shared by the collapsed rail and the phone top bar below. */
   overflow-wrap: anywhere;
 }
 
+/* The collapsible list of ignore rules: a quiet text-style button above the list, and the list itself hidden until asked for. */
+.ignore-toggle {
+  margin: 10px 0 0;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--color-focus);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ignore-notice {
+  margin: 8px 0 0;
+}
+
 /* A small "?" hint (see renderIgnoreEditTip in views/settings.js): a square button,
    and a bubble under it that CSS shows on hover and the .is-open class shows after a click,
    a tap or keyboard focus (set by script; .is-dismissed is Escape beating the hover).
@@ -2572,6 +2589,32 @@ mark.legal-placeholder {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--color-ink-muted);
+}
+
+/* The preview and the unread badge share a line: the preview takes what the badge leaves. */
+.cv-row__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cv-row__line .cv-row__preview {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The unread badge: the accent colour with the page background as text, which keeps the contrast in both themes. */
+.cv-unread-badge {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-focus);
+  color: var(--color-bg);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
 }
 
 .cv-row__preview {

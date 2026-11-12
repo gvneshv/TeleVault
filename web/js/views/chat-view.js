@@ -311,6 +311,27 @@ function visibleChats() {
 
 /** One row of the chat list.
  *  `<a href>` so keyboard, middle-click and the Back button all work without extra code. */
+/**
+ * The API caps a chat's unread count at UNREAD_COUNT_CAP (utils/validation.py) and the cap means "that many or more", so it is shown as 999+.
+ * The number is repeated here on purpose: a chat list that counted past it would make the server walk that many rows per chat on every refresh.
+ */
+const UNREAD_BADGE_CAP = 1000;
+
+/**
+ * The unread badge of a chat row, or "" when there is nothing to show.
+ * A mirror of Telegram's read state like the "Unread messages" bar:
+ * it appears when you have unread messages in Telegram and goes away when you read them on your phone (the list refreshes every 10 s).
+ * Counted from the archive, so it can be lower than the number in the Telegram app.
+ * null = cannot be told (unknown position or owner) and 0 = all read: both show nothing.
+ */
+function renderUnreadBadge(chat) {
+  const n = chat.unread_count;
+  if (typeof n !== "number" || n <= 0) return "";
+  const shown = n >= UNREAD_BADGE_CAP ? `${UNREAD_BADGE_CAP - 1}+` : String(n);
+  const label = escapeHtml(fill(t("cv.unreadCount"), { n: shown }));
+  return `<span class="cv-unread-badge" role="img" aria-label="${label}" title="${label}">${shown}</span>`;
+}
+
 function renderChatRow(chat) {
   const active = state.route?.chatId === chat.chat_id;
   const edited =
@@ -333,7 +354,10 @@ function renderChatRow(chat) {
             <span class="cv-row__name">${escapeHtml(chatName(chat))}</span>
             <span class="cv-row__time">${escapeHtml(formatShortStamp(chat.last_message_at))}</span>
           </span>
-          <span class="cv-row__preview">${preview}</span>
+          <span class="cv-row__line">
+            <span class="cv-row__preview">${preview}</span>
+            ${renderUnreadBadge(chat)}
+          </span>
           ${edited || deleted ? `<span class="cv-row__chips">${edited}${deleted}</span>` : ""}
         </span>
       </a>

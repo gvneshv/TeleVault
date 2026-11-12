@@ -215,6 +215,10 @@ export const en = {
   "settings.ignoreTitle": "Ignore rules",
   "settings.ignoreIntro":
     'A message whose text contains one of these phrases is not archived. The phrase can be anywhere in the text and capital letters do not matter, but everything else does: word endings, spelling and spaces ("microsoft" and "rnicrosoft" are different phrases). Only the text of a message is checked, so a photo or file with a caption is still archived. A rule affects only new messages and edits: what is already archived stays, and what is ignored is never stored, so it can\'t be recovered later. It takes effect with the next message, no restart needed.',
+  "settings.ignoreShowAll": "Show all rules ({n})",
+  "settings.ignoreHide": "Hide rules",
+  "settings.ignoreAdded": "Rule added.",
+  "settings.ignoreRemoved": "Rule removed.",
   "settings.ignoreEditsLabel": "How rules affect edits",
   "settings.ignoreEditsDropped":
     "If the new text of an edited message matches a rule, the edit is dropped: the archive keeps the last version it already had, and the edit is not added to the message's history.",
@@ -522,6 +526,7 @@ export const en = {
   "cv.deletedShort": "Deleted",
   "cv.editedCount": "{n} edited",
   "cv.deletedCount": "{n} deleted",
+  "cv.unreadCount": "Unread: {n}",
   "cv.messagesCount.one": "{n} message",
   "cv.messagesCount.other": "{n} messages",
   "cv.editedTimes.one": "Edited once",
