@@ -20,13 +20,13 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import text as sql_text
+from sqlalchemy import bindparam, text as sql_text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import ProgrammingError
 
 from db.connection import is_undefined_table_error
 from db.queries import chats_have_read_state
-from utils.validation import SENDER_HISTORY_MAX_ENTRIES
+from utils.validation import SENDER_HISTORY_MAX_ENTRIES, UNREAD_COUNT_CAP
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -178,6 +178,50 @@ def _read_state_column(conn: Connection) -> str:
     return "read_inbox_max_id" if chats_have_read_state(conn) else "CAST(NULL AS BIGINT)"
 
 
+def _attach_unread_counts(conn: Connection, chats: list[dict[str, Any]]) -> None:
+    """
+    Add `unread_count` to every chat dict in place: how many messages of the chat the owner has not read in Telegram, capped at UNREAD_COUNT_CAP.
+
+    Counted from the ARCHIVE, not asked of Telegram, so it is what TeleVault can show: messages that were ignored (ignore rules),
+    arrived while the chat was blocked, or predate the archive are not in it, and it can be lower than the number in the Telegram app.
+    Same definition as the "Unread messages" bar in the chat view:
+    archived messages with a Telegram id above chats.read_inbox_max_id that the owner did not write themselves.
+    A message that was deleted since still counts (the bar is drawn before it too) - for an archive of deleted messages, a missed one is the point.
+
+    `unread_count` is None, never 0, when it cannot be told: the read position is unknown (not reported yet, or an archive that has not been migrated)
+    or the owner's own Telegram id is unknown (their own messages could not be left out, so the number would be wrong).
+
+    Done AFTER pagination, for the rows of the page only, and in one statement: _paginate() runs its query twice (a COUNT over all rows, then the page),
+    and a subquery per chat inside it would be evaluated for every chat of the archive on every request.
+    """
+    for chat in chats:
+        chat["unread_count"] = None
+    owner_id = get_archive_owner(conn)
+    candidates = [c["chat_id"] for c in chats if c.get("read_inbox_max_id") is not None]
+    if owner_id is None or not candidates:
+        return
+    rows = conn.execute(
+        sql_text(
+            """
+            SELECT c.chat_id,
+                   (SELECT COUNT(*) FROM (
+                        SELECT 1 FROM messages m
+                        WHERE m.chat_id = c.chat_id
+                          AND m.tg_message_id > c.read_inbox_max_id
+                          AND m.sender_id IS DISTINCT FROM :owner_id
+                        LIMIT :cap
+                    ) AS unread) AS unread_count
+            FROM chats c
+            WHERE c.chat_id IN :chat_ids AND c.read_inbox_max_id IS NOT NULL
+            """
+        ).bindparams(bindparam("chat_ids", expanding=True)),
+        {"owner_id": owner_id, "cap": UNREAD_COUNT_CAP, "chat_ids": candidates},
+    ).all()
+    counts = {int(r[0]): int(r[1]) for r in rows}
+    for chat in chats:
+        chat["unread_count"] = counts.get(chat["chat_id"])
+
+
 def get_chats(
     conn: Connection,
     page: int = 1,
@@ -199,7 +243,8 @@ def get_chats(
 
     Columns returned:
         chat_id, name, username, chat_type, first_seen, message_count, deleted_count, edited_count, last_message_at, last_message_preview,
-        read_inbox_max_id (the owner's read position in Telegram; null when unknown or on an archive that has not been migrated)
+        read_inbox_max_id (the owner's read position in Telegram; null when unknown or on an archive that has not been migrated),
+        unread_count (see _attach_unread_counts; null when it cannot be told)
     """
     direction = "ASC" if order == "asc" else "DESC"
     sql = f"""
@@ -210,7 +255,9 @@ def get_chats(
         FROM chats
         ORDER BY last_message_at {direction} NULLS LAST
     """
-    return _paginate(sql, {}, conn, page, per_page)
+    result = _paginate(sql, {}, conn, page, per_page)
+    _attach_unread_counts(conn, result["items"])
+    return result
 
 
 def get_chat_options(conn: Connection) -> list[dict[str, Any]]:
@@ -373,7 +420,7 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
     Return a single chat record with aggregate counts.
     Returns None if the chat_id is not in the database.
 
-    See get_chats()'s docstring - counts are denormalized columns, not computed here.
+    See get_chats()'s docstring - counts are denormalized columns, not computed here (except unread_count, see _attach_unread_counts).
     """
     sql = f"""
         SELECT
@@ -384,7 +431,11 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
         WHERE chat_id = :chat_id
     """
     row = conn.execute(sql_text(sql), {"chat_id": chat_id}).mappings().first()
-    return dict(row) if row else None
+    if row is None:
+        return None
+    chat = dict(row)
+    _attach_unread_counts(conn, [chat])
+    return chat
 
 
 # ---------------------------------------------------------------------------

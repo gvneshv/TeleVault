@@ -74,6 +74,12 @@ IGNORE_RULE_MAX_COUNT = 200
 # How many chats one rule may be restricted to ("apply to all chats" is a separate flag, not a list of every chat).
 IGNORE_RULE_MAX_CHATS = 200
 
+# --- Chat list: unread badges (db/read_queries.py) ---------------------------------------------------------------------
+# The unread badge of a chat counts messages after the owner's Telegram read position, but never past this many:
+# a chat that was never opened could otherwise make every refresh of the list (every 10 s) count tens of thousands of rows per chat.
+# The API reports min(real count, UNREAD_COUNT_CAP); web/ shows the cap as "999+" (UNREAD_BADGE_MAX in views/chat-view.js repeats the number).
+UNREAD_COUNT_CAP = 1000
+
 # --- Senders: display names and name history (api/routes/senders.py) --------------------------------------------------
 
 # A sender id is a Telegram user id, or a negative channel id for anonymous admin posts (see db/queries.py's upsert_sender()): the same 64-bit range as chat ids.

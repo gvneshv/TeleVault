@@ -161,6 +161,9 @@ messages = Table(
     # Was a UNIQUE INDEX in SQLite;
     # a unique Index does the same job here and keeps the exact original name instead of renaming it to a constraint.
     Index("idx_messages_tg_id_chat", "tg_message_id", "chat_id", unique=True),
+    # The same two columns the other way round: the chat list's unread badge counts "messages of THIS chat with an id above the read position",
+    # a range scan that needs chat_id first (the unique index above leads with tg_message_id, so it would walk every chat's ids).
+    Index("idx_messages_chat_tg_id", "chat_id", "tg_message_id"),
     # Read-path indexes (SQLite migration 004's rationale, unchanged):
     # covers get_chat_messages()'s WHERE chat_id = ? ORDER BY date DESC, and get_chats()'s per-chat aggregation.
     Index("idx_messages_chat_date", "chat_id", "date"),
