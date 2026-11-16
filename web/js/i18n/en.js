@@ -210,6 +210,10 @@ export const en = {
   "settings.blocklistEmpty":
     "No chat is blocked - every chat is being archived.",
   "settings.blocklistNoChats": "No archived chats to choose from yet.",
+  "settings.blocklistShowAll": "Show all blocked chats ({n})",
+  "settings.blocklistHide": "Hide blocked chats",
+  "settings.blocklistBlocked": "Chat blocked.",
+  "settings.blocklistUnblocked": "Chat is archived again.",
   "settings.blocklistUnnamed": "Unnamed chat",
   "settings.blocklistBlockedOn": "Blocked",
   "settings.ignoreTitle": "Ignore rules",

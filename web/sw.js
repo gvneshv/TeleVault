@@ -92,7 +92,7 @@
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v56";
+const CACHE_NAME = "televault-shell-v57";
 const SHELL_FILES = [
   "/",
   "/index.html",

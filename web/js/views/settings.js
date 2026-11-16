@@ -55,6 +55,12 @@ const settingsViewState = {
     busy: null,
     // What the picker currently shows; kept here so a re-render (language change, a finished request) does not reset it.
     selected: "",
+    // Whether the list of blocked chats is open.
+    // Closed by default so a long list does not stretch the page (same as the ignore rules);
+    // kept while the app stays open, not across a reload.
+    showList: false,
+    // "blocked" | "unblocked" | null: a one-line confirmation of the last change, because the list that shows it is usually closed.
+    notice: null,
     error: null,
     // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
     fix: null,
@@ -264,6 +270,38 @@ function renderBlockedRow(rule) {
   `;
 }
 
+/** One line confirming the last block or unblock (always in the markup, hidden when empty, so it can be cleared without a re-render). */
+function renderBlocklistNotice() {
+  const key = {
+    blocked: "settings.blocklistBlocked",
+    unblocked: "settings.blocklistUnblocked",
+  }[settingsViewState.blocklist.notice ?? ""];
+  return `<p class="settings-help ignore-notice" id="blocklist-notice" role="status" ${key ? "" : "hidden"}>${key ? t(key) : ""}</p>`;
+}
+
+/** The label of the show/hide button: the count belongs on the closed state, where the chats themselves are out of sight. */
+function blocklistToggleLabel() {
+  const s = settingsViewState.blocklist;
+  return s.showList
+    ? t("settings.blocklistHide")
+    : t("settings.blocklistShowAll").replace(
+        "{n}",
+        String(s.items?.length ?? 0),
+      );
+}
+
+/**
+ * The blocked chats behind a "Show all blocked chats (N)" button - the same pattern as the ignore rules.
+ * The list is always in the markup and only hidden, so aria-controls points at a real element and opening it needs no re-render (the button keeps focus).
+ */
+function renderBlockedList() {
+  const s = settingsViewState.blocklist;
+  return `
+    <button type="button" class="ignore-toggle" id="blocklist-toggle" aria-expanded="${s.showList}" aria-controls="blocklist-list">${escapeHtml(blocklistToggleLabel())}</button>
+    <ul class="device-list" id="blocklist-list" ${s.showList ? "" : "hidden"}>${(s.items ?? []).map(renderBlockedRow).join("")}</ul>
+  `;
+}
+
 function renderBlocklistCard() {
   const s = settingsViewState.blocklist;
   const busy = s.busy !== null || s.loading;
@@ -305,8 +343,9 @@ function renderBlocklistCard() {
          </div>`
       : `<p class="settings-help">${t("settings.blocklistNoChats")}</p>`;
 
+    body += renderBlocklistNotice();
     body += s.items.length
-      ? `<ul class="device-list">${s.items.map(renderBlockedRow).join("")}</ul>`
+      ? renderBlockedList()
       : `<p class="settings-help">${t("settings.blocklistEmpty")}</p>`;
   }
 
@@ -399,6 +438,7 @@ async function changeBlock(root, chatId, block) {
   const s = settingsViewState.blocklist;
   s.error = null;
   s.fix = null;
+  s.notice = null;
   s.busy = block ? "add" : chatId;
   renderRoot(root);
 
@@ -420,6 +460,7 @@ async function changeBlock(root, chatId, block) {
     return;
   }
   s.selected = "";
+  s.notice = block ? "blocked" : "unblocked";
   await loadBlocklist(root);
   // The chat view keeps its own copy of the list (its header badge and block button) - tell it to re-read.
   document.dispatchEvent(new CustomEvent("televault:blocklistchanged"));
@@ -432,7 +473,26 @@ function attachBlocklistHandlers(root) {
     .getElementById("blocklist-select")
     ?.addEventListener("change", (e) => {
       s.selected = e.target.value;
+      s.notice = null;
       renderRoot(root);
+    });
+
+  // Show or hide the list without a re-render, so the button keeps focus.
+  document
+    .getElementById("blocklist-toggle")
+    ?.addEventListener("click", (e) => {
+      s.showList = !s.showList;
+      s.notice = null;
+      const notice = document.getElementById("blocklist-notice");
+      if (notice) {
+        notice.hidden = true;
+        notice.textContent = "";
+      }
+      const list = document.getElementById("blocklist-list");
+      if (list) list.hidden = !s.showList;
+      const button = /** @type {HTMLElement} */ (e.currentTarget);
+      button.setAttribute("aria-expanded", String(s.showList));
+      button.textContent = blocklistToggleLabel();
     });
 
   document.getElementById("blocklist-add")?.addEventListener("click", () => {
