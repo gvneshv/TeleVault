@@ -541,6 +541,12 @@ export const en = {
   "cv.jumpLatest": "Latest messages",
   "cv.readOnly": "Archive view - read-only",
   "cv.unreadBar": "Unread messages",
+  "cv.receiptRead": "Read",
+  "cv.receiptSent":
+    "Sent. Not read yet - or the person has hidden their read receipts.",
+  "cv.unreadDismiss": "Dismiss",
+  "cv.unreadDismissHint":
+    "Treat everything shown here as read in TeleVault. Nothing is marked as read in Telegram, so nobody sees a read receipt.",
   "cv.blockedBadge": "Not archived",
   "cv.block": "Block this chat",
   "cv.blockTitle": "Block “{name}”?",

@@ -2820,6 +2820,54 @@ mark.legal-placeholder {
   font-size: 12.5px;
   font-weight: 600;
   text-align: center;
+  /* The label stays centred; the "Dismiss" button sits at the right edge without pushing it off centre. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.cv-unread__label {
+  grid-column: 2;
+}
+
+.cv-unread__dismiss {
+  grid-column: 3;
+  justify-self: end;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--color-focus);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cv-unread__dismiss:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The check marks after the time of the owner's own message in a private chat (see receiptState in views/chat-view.js): one tick = sent, two = read.
+   Muted while not read; the accent colour once read, as in Telegram. */
+.cv-receipt {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 6px;
+  color: var(--color-ink-muted);
+}
+
+.cv-receipt svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cv-receipt--read {
+  color: var(--color-focus);
 }
 
 .cv-msg {
@@ -2883,6 +2931,12 @@ mark.legal-placeholder {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 2px;
+}
+
+/* The time and, on the owner's own messages in a private chat, the check marks: one flex item, so the meta line's space-between keeps them together at the right. */
+.cv-msg__when {
+  display: inline-flex;
+  align-items: center;
 }
 
 .cv-msg__sender {

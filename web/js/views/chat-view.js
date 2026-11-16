@@ -917,6 +917,55 @@ function renderSenderName(message) {
   return `<button type="button" class="cv-msg__sender cv-msg__sender--btn" data-action="sender" data-sender-id="${message.sender.sender_id}" title="${escapeHtml(t("sender.open"))}" aria-label="${escapeHtml(`${name} - ${t("sender.open")}`)}">${escapeHtml(name)}${PENCIL_SVG}</button>`;
 }
 
+/**
+ * Whether the owner's message has been read by the other person, for the check marks: "read", "sent" (not read, as far as Telegram says), or null for no marks.
+ *
+ * Mirrors Telegram's own double check mark (chat.read_outbox_max_id: every message of the owner's up to that id has been read).
+ * No marks - on purpose - when:
+ *   - it is not a private chat (the server never reports it for groups or channels: following many people's reading is out of scope),
+ *   - the message is not the owner's own, or the chat is the owner's Saved Messages (nobody else reads there),
+ *   - the position is unknown (null: not reported yet, or an archive that has not been migrated), so "not read" would be a guess.
+ * "sent" cannot be told apart from "read, but the person hides read receipts": Telegram does not report those reads.
+ * Display only: TeleVault sends no read receipt of its own and marks nothing as read anywhere.
+ */
+function receiptState(message) {
+  const chat = state.chat;
+  if (!chat || chat.chat_type !== "private") return null;
+  if (!isOwnMessage(message) || chat.chat_id === state.ownerId) return null;
+  const position = chat.read_outbox_max_id;
+  if (typeof position !== "number") return null;
+  return message.tg_message_id <= position ? "read" : "sent";
+}
+
+/** The check marks after the time of an own message: one tick = sent, two = read.
+ *  An SVG, so they look the same on every device and in both themes. */
+function renderReceipt(message) {
+  const receipt = receiptState(message);
+  if (receipt === null) return "";
+  const label = escapeHtml(
+    t(receipt === "read" ? "cv.receiptRead" : "cv.receiptSent"),
+  );
+  const second = receipt === "read" ? '<path d="M6 9.6l1 1L14.5 3"/>' : "";
+  return `<span class="cv-receipt cv-receipt--${receipt}" role="img" aria-label="${label}" title="${label}"><svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true" focusable="false"><path d="M1 6.8l3 3L10 3"/>${second}</svg></span>`;
+}
+
+/**
+ * Redraw the check marks of the loaded messages WITHOUT redrawing the messages -
+ * for when only the other person's reading position changed (they read the chat; the live refresh noticed).
+ * A full redraw would be harmless but could jump the scroll position.
+ */
+function syncReceipts() {
+  for (const message of state.messages) {
+    const li = document.querySelector(`.cv-msg[data-id="${message.id}"]`);
+    if (!li) continue;
+    li.querySelector(".cv-receipt")?.remove();
+    li.querySelector(".cv-msg__time")?.insertAdjacentHTML(
+      "afterend",
+      renderReceipt(message),
+    );
+  }
+}
+
 function renderMessage(message) {
   const edits = message.edit_count ?? 0;
   const isEdited = message.is_edited || edits > 0;
@@ -959,7 +1008,7 @@ function renderMessage(message) {
     <li class="${classes}" data-id="${message.id}">
       <div class="cv-msg__meta">
         ${renderSenderName(message)}
-        <time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>
+        <span class="cv-msg__when"><time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>${renderReceipt(message)}</span>
       </div>
       <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
       ${editedChip || deletedChip || contextLink ? `<div class="cv-msg__chips">${editedChip}${deletedChip}${contextLink}</div>` : ""}
@@ -1002,9 +1051,69 @@ function findUnreadStartId() {
   return start;
 }
 
-/** The bar itself: a full-width line with a label, as a list item between messages. */
+/**
+ * The bar itself: a full-width line with a label and a "Dismiss" button, as a list item between messages.
+ * It is not role="separator": a separator may not contain a control, and the button is the point of the line.
+ * "Dismiss" is the fallback for a Telegram reading position that stays behind for good (see dismissUnreadBar()).
+ */
 function renderUnreadBar() {
-  return `<li class="cv-unread" id="cv-unread" role="separator" aria-label="${escapeHtml(t("cv.unreadBar"))}"><span>${escapeHtml(t("cv.unreadBar"))}</span></li>`;
+  return `<li class="cv-unread" id="cv-unread">
+    <span class="cv-unread__label">${escapeHtml(t("cv.unreadBar"))}</span>
+    <button type="button" class="cv-unread__dismiss" title="${escapeHtml(t("cv.unreadDismissHint"))}">${escapeHtml(t("cv.unreadDismiss"))}</button>
+  </li>`;
+}
+
+/**
+ * "Dismiss" on the unread bar: count every message in front of the owner as read, in TeleVault only.
+ *
+ * Telegram's own reading position can stay behind for good (a message deleted before it was read may leave it short of that message),
+ * and then the bar, and the chat list's badge, keep claiming unread messages.
+ * This does NOT mark anything as read in Telegram:
+ * the server only remembers the number (POST /api/chats/{id}/unread/dismiss), so the other person sees no read receipt.
+ * The newest message currently loaded is what gets dismissed; one that arrives later is unread as usual.
+ */
+async function dismissUnreadBar(button) {
+  const chat = state.chat;
+  if (!chat) return;
+  const upTo = state.messages.reduce(
+    (max, message) => Math.max(max, message.tg_message_id),
+    0,
+  );
+  if (upTo < 1) return;
+
+  const seq = state.convSeq;
+  button.disabled = true;
+  try {
+    const res = await apiFetch(`/api/chats/${chat.chat_id}/unread/dismiss`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ up_to: upTo }),
+    });
+    if (!res.ok) {
+      button.disabled = false;
+      // 409 archive_outdated and 404 chat_not_found have translated texts (lib/errors.js).
+      await showAlert(describeError(await readErrorDetail(res)));
+      return;
+    }
+    const updated = await res.json();
+    if (seq !== state.convSeq) return; // another chat was opened meanwhile; the next refresh of this one shows the truth
+    state.chat = updated;
+    syncUnreadBar();
+
+    // The chat list's badge follows at once instead of waiting for the next refresh.
+    const row = state.chats.items.find((c) => c.chat_id === updated.chat_id);
+    if (row) {
+      row.read_inbox_max_id = updated.read_inbox_max_id;
+      row.unread_count = updated.unread_count;
+      const body = panelBody();
+      const top = body?.scrollTop ?? 0;
+      renderPanel();
+      if (body) body.scrollTop = top;
+    }
+  } catch {
+    button.disabled = false;
+    await showAlert(t("common.error"));
+  }
 }
 
 /**
@@ -1677,6 +1786,11 @@ async function loadNewer() {
 /** Click on a chip: open or close that message's edit history / deletion note, fetching the detail the first time.
  *  Click on a sender's name: the rename dialog. */
 async function onMessageClick(event) {
+  const dismissButton = event.target.closest?.(".cv-unread__dismiss");
+  if (dismissButton) {
+    dismissUnreadBar(dismissButton);
+    return;
+  }
   const senderButton = event.target.closest?.(".cv-msg__sender--btn");
   if (senderButton) {
     openSenderDialog(Number(senderButton.dataset.senderId));
@@ -1883,9 +1997,12 @@ async function refreshChatView() {
       // When it moved (the owner read the chat elsewhere) the bar moves with it;
       // new messages need no special case - mergeNewest() redraws the list, and the bar with it.
       const previousPosition = state.chat.read_inbox_max_id;
+      const previousReceipts = state.chat.read_outbox_max_id;
       if (chatRes.ok) state.chat = await chatRes.json();
       mergeNewest(data.items);
       if (state.chat.read_inbox_max_id !== previousPosition) syncUnreadBar();
+      // The same for the other person's reading: the check marks move without a redraw.
+      if (state.chat.read_outbox_max_id !== previousReceipts) syncReceipts();
     } catch {
       // Keep what is shown.
     }

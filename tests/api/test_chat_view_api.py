@@ -140,6 +140,97 @@ class TestReadPositionInTheChatRecord:
         assert {c["chat_id"] for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"]} == {200, 201}
 
 
+class TestReadReceiptsInTheChatRecord:
+    """How far the other person has read the owner's messages: reported for private chats, never for groups."""
+
+    def test_it_is_null_until_the_archiver_has_reported_one(self, client, world):
+        assert client.get(f"{CHATS}/200", headers=auth(world["alice"])).json()["read_outbox_max_id"] is None
+
+    def test_a_private_chat_carries_it_in_the_record_and_in_the_list(self, client, world):
+        archive_scalar(world["archives"]["alice"], "UPDATE chats SET read_outbox_max_id = 6 WHERE chat_id = 200")
+        assert client.get(f"{CHATS}/200", headers=auth(world["alice"])).json()["read_outbox_max_id"] == 6
+        listed = {c["chat_id"]: c["read_outbox_max_id"] for c in client.get(CHATS, headers=auth(world["alice"])).json()["items"]}
+        assert listed == {200: 6, 201: None}
+
+    def test_a_group_never_reports_it_even_if_a_number_is_stored(self, client, world):
+        seed_archive_by_name(world["archives"]["alice"], chat_id=-9, name="team", chat_type="group", messages=[(1, 11, "g1")])
+        archive_scalar(world["archives"]["alice"], "UPDATE chats SET read_outbox_max_id = 1 WHERE chat_id = -9")
+        assert client.get(f"{CHATS}/-9", headers=auth(world["alice"])).json()["read_outbox_max_id"] is None
+
+    def test_another_accounts_receipts_are_never_visible(self, client, world):
+        archive_scalar(world["archives"]["bob"], "UPDATE chats SET read_outbox_max_id = 2 WHERE chat_id = 300")
+        assert client.get(f"{CHATS}/300", headers=auth(world["alice"])).status_code == 404
+
+
+class TestDismissUnread:
+    """POST /api/chats/{chat_id}/unread/dismiss - the fallback for a bar that will not go away.
+    Chat 200 holds ten messages by somebody else (ids 1-10); the owner has read up to 7 in Telegram."""
+
+    @pytest.fixture
+    def ready(self, client, world):
+        eng = sa.create_engine(db.server_database_url(world["archives"]["alice"]), poolclass=NullPool)
+        try:
+            with eng.connect() as conn:
+                q.record_archive_owner(conn, 999)
+        finally:
+            eng.dispose()
+        archive_scalar(world["archives"]["alice"], "UPDATE chats SET read_inbox_max_id = 7 WHERE chat_id = 200")
+        return world
+
+    def dismiss(self, client, token, chat_id=200, up_to=10):
+        return client.post(f"{CHATS}/{chat_id}/unread/dismiss", headers=auth(token), json={"up_to": up_to})
+
+    def test_it_returns_the_chat_with_the_bar_and_the_badge_already_updated(self, client, ready):
+        assert client.get(f"{CHATS}/200", headers=auth(ready["alice"])).json()["unread_count"] == 3
+        resp = self.dismiss(client, ready["alice"])
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert (body["chat_id"], body["read_inbox_max_id"], body["unread_count"]) == (200, 10, 0)
+
+    def test_what_it_stores_is_what_the_chat_record_serves_afterwards(self, client, ready):
+        self.dismiss(client, ready["alice"], up_to=8)
+        again = client.get(f"{CHATS}/200", headers=auth(ready["alice"])).json()
+        assert (again["read_inbox_max_id"], again["unread_count"]) == (8, 2)
+        listed = {c["chat_id"]: c["unread_count"] for c in client.get(CHATS, headers=auth(ready["alice"])).json()["items"]}
+        assert listed[200] == 2
+
+    def test_telegrams_own_position_is_left_alone(self, client, ready):
+        self.dismiss(client, ready["alice"])
+        assert archive_scalar(ready["archives"]["alice"], "SELECT read_inbox_max_id FROM chats WHERE chat_id = 200") == 7
+
+    def test_a_number_beyond_the_newest_message_cannot_hide_future_messages(self, client, ready):
+        resp = self.dismiss(client, ready["alice"], up_to=10**15)
+        assert resp.json()["read_inbox_max_id"] == 10
+        assert archive_scalar(ready["archives"]["alice"], "SELECT unread_dismissed_id FROM chats WHERE chat_id = 200") == 10
+
+    def test_an_unknown_chat_is_a_404(self, client, ready):
+        resp = self.dismiss(client, ready["alice"], chat_id=424242)
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["reason"] == "chat_not_found"
+
+    def test_another_accounts_chat_is_a_404_and_untouched(self, client, ready):
+        assert self.dismiss(client, ready["alice"], chat_id=300).status_code == 404
+        assert archive_scalar(ready["archives"]["bob"], "SELECT unread_dismissed_id FROM chats WHERE chat_id = 300") is None
+
+    @pytest.mark.parametrize("body", [{"up_to": 0}, {"up_to": -5}, {"up_to": 2**63}, {"up_to": "seven"}, {"up_to": 1.5}, {"up_to": None}, {}, None])
+    def test_every_value_the_client_sends_is_bounded(self, client, ready, body):
+        resp = client.post(f"{CHATS}/200/unread/dismiss", headers=auth(ready["alice"]), json=body)
+        assert resp.status_code == 422, resp.text
+        assert archive_scalar(ready["archives"]["alice"], "SELECT unread_dismissed_id FROM chats WHERE chat_id = 200") is None
+
+    def test_a_chat_id_outside_the_column_range_is_a_422(self, client, ready):
+        assert self.dismiss(client, ready["alice"], chat_id=2**70).status_code == 422
+
+    def test_it_needs_a_login(self, client, ready):
+        assert client.post(f"{CHATS}/200/unread/dismiss", json={"up_to": 3}).status_code == 401
+
+    def test_an_archive_that_is_not_migrated_gets_a_clear_409(self, client, ready, monkeypatch):
+        monkeypatch.setattr(chats_routes, "chats_have_unread_dismissal", lambda conn: False)
+        resp = self.dismiss(client, ready["alice"])
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["reason"] == "archive_outdated"
+
+
 # ---------------------------------------------------------------------------
 # A2 - GET /api/chats/{chat_id}/window
 # ---------------------------------------------------------------------------
@@ -380,7 +471,7 @@ class TestPurgeAccess:
         assert purge(client, world["alice"], -(2**63) - 1).status_code == 422
 
     def test_it_uses_the_write_connection_and_only_here(self, client, world):
-        """DELETE is the one route in this file that may modify an archive; every GET must stay on the read-only connection."""
+        """DELETE (purge) and POST (dismiss the unread bar) are the only routes in this file that may modify an archive; every GET must stay on the read-only connection."""
         import inspect
 
         from api import dependencies
@@ -394,7 +485,7 @@ class TestPurgeAccess:
             for r in chats_routes.router.routes
             if uses(r, dependencies.get_archive_write_connection)
         ]
-        assert writers == [(["DELETE"], "/chats/{chat_id}")]
+        assert sorted(writers) == [(["DELETE"], "/chats/{chat_id}"), (["POST"], "/chats/{chat_id}/unread/dismiss")]
 
 
 class TestPurgeAndBackfill:
