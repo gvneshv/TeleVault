@@ -6,7 +6,8 @@ Chat-related endpoints:
     GET /api/chats/{chat_id}            - single chat with aggregate counts
     GET /api/chats/{chat_id}/messages   - paginated messages within one chat
     GET /api/chats/{chat_id}/window     - an anchored, cursor-based window of one chat's conversation (the chat view)
-    DELETE /api/chats/{chat_id}         - remove everything stored for one chat (irreversible; the one write route in this module)
+    POST /api/chats/{chat_id}/unread/dismiss - "Dismiss" the unread bar: count everything shown as read, in TeleVault only
+    DELETE /api/chats/{chat_id}         - remove everything stored for one chat (irreversible)
 """
 
 from sqlalchemy.engine import Connection
@@ -18,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from api.dependencies import get_archive_connection, get_archive_write_connection, get_current_user
 from api.process_utils import is_backfill_running
-from api.schemas import ChatOut, ChatOption, ChatPurgedOut, ChatWindowOut, MessageOut, PaginatedResponse
+from api.schemas import ChatOut, ChatOption, ChatPurgedOut, ChatWindowOut, MessageOut, PaginatedResponse, UnreadDismissIn
 from utils.validation import (
     CHAT_WINDOW_DEFAULT,
     CHAT_WINDOW_MAX,
@@ -29,7 +30,7 @@ from utils.validation import (
     TELEGRAM_CHAT_ID_MAX,
     TELEGRAM_CHAT_ID_MIN,
 )
-from db.queries import purge_chat as purge_chat_data  # not `import db`: the older routes here name their connection parameter `db`
+from db.queries import chats_have_unread_dismissal, dismiss_unread, purge_chat as purge_chat_data  # not `import db`: the older routes here name their connection parameter `db`
 from db.read_queries import get_chat, get_chats, get_chat_options, get_chat_messages, get_chat_window
 from utils.security import DecodedAccessToken
 from utils.worker_paths import backfill_status_path
@@ -253,6 +254,45 @@ def get_chat_window_route(
             detail={"message": "That message is not in this chat.", "reason": "message_not_found"},
         )
     return result
+
+
+@router.post(
+    "/chats/{chat_id}/unread/dismiss",
+    response_model=ChatOut,
+    summary="Dismiss the unread bar of a chat (TeleVault only; nothing is marked as read in Telegram)",
+)
+def dismiss_unread_bar(
+    body: UnreadDismissIn,
+    chat_id: int = _ChatId,
+    conn: Connection = Depends(get_archive_write_connection),
+) -> dict[str, Any]:
+    """
+    The fallback for an "Unread messages" bar that will not go away:
+    Telegram's own reading position can stay behind for good (a message deleted before it was read may leave it short of that message),
+    and the bar and the chat list's badge then keep claiming unread messages.
+
+    From now on every message up to `up_to` counts as read - in TeleVault only.
+    Nothing is sent to Telegram and nothing is marked as read there, so the other person sees no read receipt.
+    A message that arrives later is unread as usual.
+    Returns the chat record, so the page can redraw the bar and the badge from one answer.
+
+        404 "chat_not_found"
+        409 "archive_outdated"  - the archive has not been migrated yet (migration e4a8c2b6d913)
+    """
+    if not chats_have_unread_dismissal(conn):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Your archive database needs updating before the unread bar can be dismissed. Run `python scripts/migrate_archives.py` - see RUNBOOK.md.",
+                "reason": "archive_outdated",
+            },
+        )
+    if dismiss_unread(conn, chat_id, body.up_to) is None:
+        raise HTTPException(status_code=404, detail={"message": f"Chat {chat_id} not found.", "reason": "chat_not_found"})
+    chat = get_chat(conn, chat_id)
+    if chat is None:  # removed between the two statements
+        raise HTTPException(status_code=404, detail={"message": f"Chat {chat_id} not found.", "reason": "chat_not_found"})
+    return chat
 
 
 @router.delete(

@@ -6,7 +6,7 @@ Import from here rather than from individual submodules so callers are insulated
     from api.schemas import MessageOut, ChatSummary, StatsOut
 """
 
-from .chat import ChatOut, ChatSummary, ChatOption, ChatPurgedOut
+from .chat import ChatOut, ChatSummary, ChatOption, ChatPurgedOut, UnreadDismissIn
 from .message import SenderOut, EditOut, DeletionOut, MessageOut, MessageDetail, ChatWindowOut
 from .stats import ChatStatRow, StatsOut
 from .common import PaginatedResponse, HealthOut
@@ -63,6 +63,7 @@ __all__ = [
     "ChatSummary",
     "ChatOption",
     "ChatPurgedOut",
+    "UnreadDismissIn",
     # message
     "SenderOut",
     "EditOut",

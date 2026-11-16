@@ -1,15 +1,18 @@
 """
-Response models for chat-related endpoints.
+Request and response models for chat-related endpoints.
  
 Two levels of detail are provided:
 - `ChatOut`     - full chat record, used in the chat list sidebar
 - `ChatSummary` - lightweight embed used inside MessageOut to avoid repeating the full chat object for every message in a list
 - `ChatPurgedOut` - what DELETE /api/chats/{chat_id} reports after removing a chat's stored data
+- `UnreadDismissIn` - the request body of POST /api/chats/{chat_id}/unread/dismiss
 """
 
 from datetime import datetime
 
 from pydantic import BaseModel, Field
+
+from utils.validation import TELEGRAM_MESSAGE_ID_MAX, TELEGRAM_MESSAGE_ID_MIN
 
 
 class ChatSummary(BaseModel):
@@ -49,7 +52,11 @@ class ChatOut(BaseModel):
     `edited_count`   - how many of those were edited at least once (the chat view shows it next to the deleted count).
     `last_message_at` - ISO 8601 datetime of the most recent archived message, used to sort the chat list by recency (like Telegram itself).
     `last_message_preview` - first 80 chars of the most recent message text, shown in the sidebar. Null if the message had no text.
-    `read_inbox_max_id` - how far the owner has read the chat in Telegram itself (a mirror; TeleVault never marks anything as read).
+    `read_inbox_max_id` - how far the chat counts as read: Telegram's own position for the owner, or the owner's local "Dismiss" of the unread bar,
+                          whichever is further (TeleVault never marks anything as read in Telegram).
+    `read_outbox_max_id` - private chats only: how far the OTHER person has read the owner's messages (Telegram's "double check mark");
+                           null in groups, channels and when not known yet.
+                           The chat view draws the check marks from it.
     `unread_count` - messages after that position that the owner did not write, counted from the archive and capped (the chat list's badge).
     """
 
@@ -74,18 +81,36 @@ class ChatOut(BaseModel):
     )
     read_inbox_max_id: int | None = Field(
         None,
-        description="Telegram's own read position for the account owner in this chat: every message with a Telegram id up to it has been read. "
-        "The chat view draws its 'Unread messages' bar after it. Null when not known yet (the archiver has not reported it, or the archive has not been migrated).",
+        description="How far this chat counts as read for the account owner: every message with a Telegram id up to it. It is Telegram's own read position, "
+        "or the owner's local 'Dismiss' of the unread bar when that is further. The chat view draws its 'Unread messages' bar after it. "
+        "Null when not known yet (the archiver has not reported it, or the archive has not been migrated).",
+    )
+
+    read_outbox_max_id: int | None = Field(
+        None,
+        description="Private chats only: every message the owner sent with a Telegram id up to this has been read by the other person "
+        "(Telegram's own read_outbox_max_id). Null for groups and channels (never tracked), when not reported yet, or on an archive that has not been migrated.",
     )
 
     unread_count: int | None = Field(
         None,
-        description="How many archived messages of this chat the owner has not read in Telegram (after read_inbox_max_id, not written by the owner), "
+        description="How many archived messages of this chat the owner has not read (after read_inbox_max_id, not written by the owner), "
         "at most UNREAD_COUNT_CAP: a value equal to the cap means 'that many or more'. Counted from the archive, so it can be lower than the number "
         "in the Telegram app. Null when it cannot be told (read position or owner id unknown, archive not migrated).",
     )
 
     model_config = {"from_attributes": True}
+
+
+class UnreadDismissIn(BaseModel):
+    """
+    Body of POST /api/chats/{chat_id}/unread/dismiss: the owner pressed "Dismiss" on the unread bar.
+
+    `up_to` - the Telegram id of the newest message the page is showing; everything up to it counts as read from now on, in TeleVault only.
+    The server clamps it to the newest archived message of the chat, so a larger number cannot hide messages that have not arrived yet.
+    """
+
+    up_to: int = Field(ge=TELEGRAM_MESSAGE_ID_MIN, le=TELEGRAM_MESSAGE_ID_MAX, description="Telegram id of the newest message the owner has in front of them.")
 
 
 class ChatPurgedOut(BaseModel):
