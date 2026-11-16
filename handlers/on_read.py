@@ -21,8 +21,11 @@ Pitfalls this module exists to avoid
     and then `max_id` is that one message's id, not a reading position.
     Treating it as one would mark everything up to that message as read.
     Those events are ignored.
-  - Outbox events (someone else read the owner's messages) are the opposite direction and a different feature (Phase 4, "read receipt inference");
-    inbox=True keeps them out, and a test pins that.
+  - Outbox events (someone else read the owner's messages) are the opposite direction:
+    a different column, a different rule (private chats only) and a different module, handlers/on_outbox_read.py.
+    inbox=True keeps them out of THIS handler, and a test pins that:
+    recording another person's position as the owner's would draw the "Unread messages" bar in the wrong place.
+    Only the start-up sync below reads both numbers, because it walks the chat list anyway.
   - A chat on the ingest blocklist is not archived, and neither is the owner's reading activity in it: blocked chats are skipped.
   - A position is stored only for chats the archive already holds, and only moves forward - see db.queries.record_read_inboxes().
 
@@ -77,23 +80,45 @@ def _persist_positions(positions: list[tuple[int, int]]) -> int:
     return len(allowed)
 
 
+def _persist_outbox_positions(positions: list[tuple[int, int]]) -> int:
+    """
+    Synchronous DB work for the start-up sync, outbox half: store how far the other person has read the owner's messages, for private chats.
+    Same blocklist rule as _persist_positions(); the database layer drops anything that is not a private chat.
+    Returns how many were handed over.
+    """
+    with db.get_connection() as conn:
+        allowed = [(chat_id, max_id) for chat_id, max_id in positions if not db.queries.is_chat_blocked(conn, chat_id)]
+        db.queries.record_read_outboxes(conn, allowed)
+    return len(allowed)
+
+
 async def sync_read_state(client) -> None:
     """
-    Copy the read position of every chat from Telegram's chat list into the archive.
+    Copy the read position of every chat from Telegram's chat list into the archive: how far the owner has read (every chat),
+    and how far the other person has read the owner's messages (private chats only - the same single pass over the list, no extra request).
     Run once, in the background, after the handlers are registered.
 
     Best effort and never raises (except CancelledError, so shutdown still works): see the module docstring.
     """
     try:
         positions: list[tuple[int, int]] = []
+        outbox_positions: list[tuple[int, int]] = []
         async for dialog in client.iter_dialogs():
             # The custom Dialog object does not carry the read position; the raw TL dialog it wraps does.
-            position = _valid_position(getattr(getattr(dialog, "dialog", None), "read_inbox_max_id", None))
+            raw = getattr(dialog, "dialog", None)
+            position = _valid_position(getattr(raw, "read_inbox_max_id", None))
             chat_id = getattr(dialog, "id", None)
             if position is not None and isinstance(chat_id, int):
                 positions.append((chat_id, position))
+            # Private chats only (see handlers/on_outbox_read.py); is_user is False for groups and channels.
+            outbox = _valid_position(getattr(raw, "read_outbox_max_id", None))
+            if outbox is not None and isinstance(chat_id, int) and getattr(dialog, "is_user", False) is True:
+                outbox_positions.append((chat_id, outbox))
         stored = await asyncio.to_thread(_persist_positions, positions)
         logger.info("Read positions synced from Telegram's chat list (%d of %d chats).", stored, len(positions))
+        if outbox_positions:
+            receipts = await asyncio.to_thread(_persist_outbox_positions, outbox_positions)
+            logger.info("Read receipts synced from Telegram's chat list (%d private chats).", receipts)
     except asyncio.CancelledError:
         raise
     except OperationalError:

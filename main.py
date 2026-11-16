@@ -39,7 +39,7 @@ from telethon.sessions import StringSession
 import db
 from config import settings
 from utils.logging_setup import setup_logging
-from handlers import on_message, on_delete, on_edit, on_read
+from handlers import on_message, on_delete, on_edit, on_read, on_outbox_read
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
 from utils.telethon_compat import disconnect_client, get_authenticated_user, run_until_disconnected
@@ -122,6 +122,7 @@ def register_handlers(client: TelegramClient, self_id: int) -> None:
     on_delete.register(client, self_id)
     on_edit.register(client)
     on_read.register(client)
+    on_outbox_read.register(client)
     logger.info("Event handlers registered.")
 
 

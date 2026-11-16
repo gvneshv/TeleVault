@@ -40,9 +40,9 @@ class FakeClient:
             yield dialog
 
 
-def dialog(chat_id, position):
-    """The shape of Telethon's custom Dialog: `.id`, and the raw TL dialog (which carries the position) as `.dialog`."""
-    return SimpleNamespace(id=chat_id, dialog=SimpleNamespace(read_inbox_max_id=position))
+def dialog(chat_id, position, outbox=None, is_user=False):
+    """The shape of Telethon's custom Dialog: `.id`, `.is_user`, and the raw TL dialog (which carries both positions) as `.dialog`."""
+    return SimpleNamespace(id=chat_id, is_user=is_user, dialog=SimpleNamespace(read_inbox_max_id=position, read_outbox_max_id=outbox))
 
 
 def run(coro):
@@ -61,6 +61,8 @@ def stored(monkeypatch):
     calls = {"one": [], "many": []}
     monkeypatch.setattr(on_read, "_persist_position", lambda chat_id, max_id: calls["one"].append((chat_id, max_id)))
     monkeypatch.setattr(on_read, "_persist_positions", lambda positions: calls["many"].append(list(positions)) or len(positions))
+    calls["outbox"] = []
+    monkeypatch.setattr(on_read, "_persist_outbox_positions", lambda positions: calls["outbox"].append(list(positions)) or len(positions))
     return calls
 
 
@@ -179,6 +181,17 @@ class TestStartupSync:
         run(on_read.sync_read_state(c))
         assert stored["many"] == [[(7, 12)]]
 
+    def test_how_far_the_other_person_has_read_is_taken_for_private_chats_only(self, stored):
+        """The same pass over the chat list; a group or channel (is_user False) never contributes, whatever number Telegram reports for it."""
+        c = FakeClient([dialog(5, 10, outbox=8, is_user=True), dialog(-9, 3, outbox=2), dialog(-1000000000077, 40, outbox=39), dialog(6, 1, outbox=None, is_user=True)])
+        run(on_read.sync_read_state(c))
+        assert stored["outbox"] == [[(5, 8)]]
+        assert stored["many"] == [[(5, 10), (-9, 3), (-1000000000077, 40), (6, 1)]]  # the owner's own positions are unchanged
+
+    def test_nothing_is_stored_for_receipts_when_there_are_none(self, stored):
+        run(on_read.sync_read_state(FakeClient([dialog(5, 10), dialog(6, 2, outbox=1)])))
+        assert stored["outbox"] == []
+
     def test_a_failing_chat_list_is_logged_and_swallowed(self, stored, caplog):
         c = FakeClient(dialogs_error=RuntimeError("flood"))
         with caplog.at_level(logging.ERROR, logger="handlers.on_read"):
@@ -240,10 +253,43 @@ class TestPersistPositions:
         assert database == []
 
 
+class TestPersistOutboxPositions:
+    """The synchronous half of the receipt sync, with the database replaced by a recorder."""
+
+    @pytest.fixture
+    def database(self, monkeypatch):
+        written: list[list[tuple[int, int]]] = []
+
+        class Conn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(db, "get_connection", lambda: Conn())
+        monkeypatch.setattr(db.queries, "record_read_outboxes", lambda conn, positions: written.append(list(positions)) or True)
+        return written
+
+    def test_blocked_chats_are_filtered_out_before_anything_is_written(self, database, monkeypatch):
+        monkeypatch.setattr(db.queries, "is_chat_blocked", lambda conn, chat_id: chat_id == 6)
+        assert on_read._persist_outbox_positions([(5, 10), (6, 20), (7, 30)]) == 2
+        assert database == [[(5, 10), (7, 30)]]
+
+    def test_an_unreadable_blocklist_abandons_the_whole_sync(self, database, monkeypatch):
+        def boom(conn, chat_id):
+            raise RuntimeError("blocklist unreadable")
+
+        monkeypatch.setattr(db.queries, "is_chat_blocked", boom)
+        with pytest.raises(RuntimeError):
+            on_read._persist_outbox_positions([(5, 10)])
+        assert database == []
+
+
 class TestWiring:
     """main.py: the handler is registered with the others, and the start-up sync runs in the background and is stopped on shutdown."""
 
-    def test_register_handlers_includes_the_read_handler(self):
+    def test_register_handlers_includes_both_read_handlers(self):
         import main
 
         class Recorder:
@@ -257,7 +303,7 @@ class TestWiring:
         recorder = Recorder()
         main.register_handlers(recorder, self_id=1)  # type: ignore[arg-type]
         reads = [b for b in recorder.builders if isinstance(b, events.MessageRead)]
-        assert len(reads) == 1 and reads[0].inbox is True
+        assert sorted(b.inbox for b in reads) == [False, True]  # the owner's reading (on_read) and the other person's (on_outbox_read), one handler each
 
     def test_the_sync_is_a_background_task_that_shutdown_cancels(self):
         """Running main() needs a real Telegram login, so this pins the wiring by reading the source (as the archive-owner test does)."""

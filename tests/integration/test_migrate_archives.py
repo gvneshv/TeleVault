@@ -31,6 +31,8 @@ def make_old_archive(user_id: int) -> str:
     with engine.begin() as conn:
         # Every table added by a revision AFTER PREVIOUS_REVISION must go too, or re-running those migrations would find them already there.
         conn.execute(sa.text("DROP INDEX idx_messages_chat_tg_id"))  # the unread badge's index
+        conn.execute(sa.text("ALTER TABLE chats DROP COLUMN read_outbox_max_id"))  # how far the other person has read (read receipts)
+        conn.execute(sa.text("ALTER TABLE chats DROP COLUMN unread_dismissed_id"))  # the local "Dismiss" of the unread bar
         conn.execute(sa.text("ALTER TABLE chats DROP COLUMN read_inbox_max_id"))  # a column, not a table, but it came with a later revision all the same
         conn.execute(sa.text("DROP TABLE ingest_ignore_rule_chats"))  # before ingest_ignore_rules: it references it
         conn.execute(sa.text("DROP TABLE ingest_ignore_rules"))
@@ -68,6 +70,32 @@ def has_read_state_column(name: str) -> bool:
             return bool(
                 conn.execute(
                     sa.text("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'read_inbox_max_id')")
+                ).scalar()
+            )
+    finally:
+        engine.dispose()
+
+
+def has_unread_dismissed_column(name: str) -> bool:
+    engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            return bool(
+                conn.execute(
+                    sa.text("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'unread_dismissed_id')")
+                ).scalar()
+            )
+    finally:
+        engine.dispose()
+
+
+def has_read_outbox_column(name: str) -> bool:
+    engine = sa.create_engine(db.server_database_url(name), poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            return bool(
+                conn.execute(
+                    sa.text("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'read_outbox_max_id')")
                 ).scalar()
             )
     finally:
@@ -124,6 +152,8 @@ def test_an_outdated_archive_is_migrated_and_a_second_run_finds_nothing_to_do(ac
     assert has_table(name, "ingest_ignore_rules") and has_table(name, "ingest_ignore_rule_chats")
     assert has_read_state_column(name)
     assert has_chat_tg_id_index(name)
+    assert has_unread_dismissed_column(name)
+    assert has_read_outbox_column(name)
     assert provisioning.archive_revision(name) == provisioning.head_revision()
 
     assert migrate_archives.main([]) == 0
