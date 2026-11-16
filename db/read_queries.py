@@ -25,7 +25,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import ProgrammingError
 
 from db.connection import is_undefined_table_error
-from db.queries import chats_have_read_state
+from db.queries import chats_have_read_outbox, chats_have_read_state, chats_have_unread_dismissal
 from utils.validation import SENDER_HISTORY_MAX_ENTRIES, UNREAD_COUNT_CAP
 
 # ---------------------------------------------------------------------------
@@ -169,13 +169,33 @@ def _paginate_filtered(
 # ---------------------------------------------------------------------------
 
 
-def _read_state_column(conn: Connection) -> str:
+def _read_state_column(conn: Connection, alias: str = "") -> str:
     """
-    The SQL expression for a chat's read position: the column itself, or a typed NULL on an archive that predates it (migration c5e9a1d3f742),
-    so the chat list keeps working until `python scripts/migrate_archives.py` has been run.
+    The SQL expression for a chat's EFFECTIVE read position: how far the chat counts as read, for the bar and the badge alike.
+    That is the larger of Telegram's own position (chats.read_inbox_max_id) and the owner's local "Dismiss" (chats.unread_dismissed_id).
+    Each column came with its own migration (c5e9a1d3f742, e4a8c2b6d913), so on an archive that lacks one the expression degrades:
+    only the read position, or a typed NULL, so the chat list keeps working until `python scripts/migrate_archives.py` has been run.
+    GREATEST() ignores a NULL argument, so a dismissal alone (no position reported yet) still counts, and two NULLs stay NULL ("unknown").
+    `alias` is the table alias to qualify the columns with, "" for none.
     Fixed strings only - no user input.
     """
-    return "read_inbox_max_id" if chats_have_read_state(conn) else "CAST(NULL AS BIGINT)"
+    if not chats_have_read_state(conn):
+        return "CAST(NULL AS BIGINT)"
+    prefix = f"{alias}." if alias else ""
+    if chats_have_unread_dismissal(conn):
+        return f"GREATEST({prefix}read_inbox_max_id, {prefix}unread_dismissed_id)"
+    return f"{prefix}read_inbox_max_id"
+
+
+def _read_outbox_column(conn: Connection) -> str:
+    """
+    The SQL expression for how far the other person has read the owner's messages (chats.read_outbox_max_id), PRIVATE chats only:
+    NULL for any other chat even if a number were somehow stored, and a typed NULL on an archive that predates the column (migration f1c6d8a39b27).
+    The third guard of three (see handlers/on_outbox_read.py): groups never reach the page. Fixed strings only - no user input.
+    """
+    if not chats_have_read_outbox(conn):
+        return "CAST(NULL AS BIGINT)"
+    return "CASE WHEN chat_type = 'private' THEN read_outbox_max_id END"
 
 
 def _attach_unread_counts(conn: Connection, chats: list[dict[str, Any]]) -> None:
@@ -185,7 +205,7 @@ def _attach_unread_counts(conn: Connection, chats: list[dict[str, Any]]) -> None
     Counted from the ARCHIVE, not asked of Telegram, so it is what TeleVault can show: messages that were ignored (ignore rules),
     arrived while the chat was blocked, or predate the archive are not in it, and it can be lower than the number in the Telegram app.
     Same definition as the "Unread messages" bar in the chat view:
-    archived messages with a Telegram id above chats.read_inbox_max_id that the owner did not write themselves.
+    archived messages with a Telegram id above the chat's effective read position (see _read_state_column) that the owner did not write themselves.
     A message that was deleted since still counts (the bar is drawn before it too) - for an archive of deleted messages, a missed one is the point.
 
     `unread_count` is None, never 0, when it cannot be told: the read position is unknown (not reported yet, or an archive that has not been migrated)
@@ -198,21 +218,22 @@ def _attach_unread_counts(conn: Connection, chats: list[dict[str, Any]]) -> None
         chat["unread_count"] = None
     owner_id = get_archive_owner(conn)
     candidates = [c["chat_id"] for c in chats if c.get("read_inbox_max_id") is not None]
+    position = _read_state_column(conn, "c")
     if owner_id is None or not candidates:
         return
     rows = conn.execute(
         sql_text(
-            """
+            f"""
             SELECT c.chat_id,
                    (SELECT COUNT(*) FROM (
                         SELECT 1 FROM messages m
                         WHERE m.chat_id = c.chat_id
-                          AND m.tg_message_id > c.read_inbox_max_id
+                          AND m.tg_message_id > {position}
                           AND m.sender_id IS DISTINCT FROM :owner_id
                         LIMIT :cap
                     ) AS unread) AS unread_count
             FROM chats c
-            WHERE c.chat_id IN :chat_ids AND c.read_inbox_max_id IS NOT NULL
+            WHERE c.chat_id IN :chat_ids AND {position} IS NOT NULL
             """
         ).bindparams(bindparam("chat_ids", expanding=True)),
         {"owner_id": owner_id, "cap": UNREAD_COUNT_CAP, "chat_ids": candidates},
@@ -243,7 +264,9 @@ def get_chats(
 
     Columns returned:
         chat_id, name, username, chat_type, first_seen, message_count, deleted_count, edited_count, last_message_at, last_message_preview,
-        read_inbox_max_id (the owner's read position in Telegram; null when unknown or on an archive that has not been migrated),
+        read_inbox_max_id (how far the chat counts as read: Telegram's own position or the owner's local "Dismiss", whichever is further;
+        null when unknown or on an archive that has not been migrated),
+        read_outbox_max_id (how far the other person has read the owner's messages; private chats only, null otherwise or when unknown),
         unread_count (see _attach_unread_counts; null when it cannot be told)
     """
     direction = "ASC" if order == "asc" else "DESC"
@@ -251,7 +274,8 @@ def get_chats(
         SELECT
             chat_id, name, username, chat_type, first_seen,
             message_count, deleted_count, edited_count, last_message_at, last_message_preview,
-            {_read_state_column(conn)} AS read_inbox_max_id
+            {_read_state_column(conn)} AS read_inbox_max_id,
+            {_read_outbox_column(conn)} AS read_outbox_max_id
         FROM chats
         ORDER BY last_message_at {direction} NULLS LAST
     """
@@ -426,7 +450,8 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
         SELECT
             chat_id, name, username, chat_type, first_seen,
             message_count, deleted_count, edited_count, last_message_at, last_message_preview,
-            {_read_state_column(conn)} AS read_inbox_max_id
+            {_read_state_column(conn)} AS read_inbox_max_id,
+            {_read_outbox_column(conn)} AS read_outbox_max_id
         FROM chats
         WHERE chat_id = :chat_id
     """

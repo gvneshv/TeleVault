@@ -70,28 +70,57 @@ _archives_with_read_state: set[str] = set()
 _read_state_missing_warned = False
 
 
-def chats_have_read_state(conn: Connection) -> bool:
+def _chats_column_exists(conn: Connection, column: str, known: set[str]) -> bool:
     """
-    True when this archive has chats.read_inbox_max_id (migration c5e9a1d3f742).
-    Quiet when it has not; once seen, never probed again for that database.
+    True when the `chats` table of this archive has `column`.
+    `known` is the per-column cache of database names where the answer was already yes.
+    Fixed column names only - no user input.
 
     pg_attribute instead of information_schema: the answer must not depend on which privileges the connection's login happens to hold
     (the web UI reads through a different, read-only login than the archiver writes with).
     """
     name = conn.engine.url.database or ""
-    if name in _archives_with_read_state:
+    if name in known:
         return True
     present = bool(
         conn.execute(
             sql_text(
                 "SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.chats') "
-                "AND attname = 'read_inbox_max_id' AND NOT attisdropped)"
-            )
+                "AND attname = :column AND NOT attisdropped)"
+            ),
+            {"column": column},
         ).scalar()
     )
     if present:
-        _archives_with_read_state.add(name)
+        known.add(name)
     return present
+
+
+def chats_have_read_state(conn: Connection) -> bool:
+    """True when this archive has chats.read_inbox_max_id (migration c5e9a1d3f742).
+    Quiet when it has not; once seen, never probed again for that database."""
+    return _chats_column_exists(conn, "read_inbox_max_id", _archives_with_read_state)
+
+
+# The owner's local "Dismiss" of the unread bar (chats.unread_dismissed_id) came with the next migration (e4a8c2b6d913); probed the same way.
+_archives_with_unread_dismissal: set[str] = set()
+
+
+def chats_have_unread_dismissal(conn: Connection) -> bool:
+    """True when this archive has chats.unread_dismissed_id (migration e4a8c2b6d913).
+    Quiet when it has not."""
+    return _chats_column_exists(conn, "unread_dismissed_id", _archives_with_unread_dismissal)
+
+
+# How far the other person has read the owner's messages (chats.read_outbox_max_id) came with the migration after that (f1c6d8a39b27); probed the same way.
+_archives_with_read_outbox: set[str] = set()
+_read_outbox_missing_warned = False
+
+
+def chats_have_read_outbox(conn: Connection) -> bool:
+    """True when this archive has chats.read_outbox_max_id (migration f1c6d8a39b27).
+    Quiet when it has not."""
+    return _chats_column_exists(conn, "read_outbox_max_id", _archives_with_read_outbox)
 
 
 def get_last_archived_message_id(conn: Connection, chat_id: int) -> int | None:
@@ -618,6 +647,85 @@ def record_read_inboxes(conn: Connection, positions: Sequence[tuple[int, int]]) 
 def record_read_inbox(conn: Connection, chat_id: int, max_id: int) -> bool:
     """One chat's read position (see record_read_inboxes(), whose rules apply)."""
     return record_read_inboxes(conn, [(chat_id, max_id)])
+
+
+def dismiss_unread(conn: Connection, chat_id: int, up_to: int) -> bool | None:
+    """
+    The owner pressed "Dismiss" on a chat's "Unread messages" bar: treat every message with a Telegram id up to `up_to` as read, in TeleVault only.
+
+    Returns True when the chat exists and the dismissal is stored (it may already have been there), None when there is no such chat.
+    The caller checks chats_have_unread_dismissal() first: on an archive that has not been migrated (e4a8c2b6d913) the column does not exist.
+
+    Rules, each one a way this could silently go wrong:
+      - `up_to` is clamped to the newest message the archive holds for the chat.
+        A larger number would pre-dismiss messages that have not arrived yet, so they would never show as unread.
+        (The page sends the newest message it is showing; a message that arrived after that stays unread.)
+      - The value only moves FORWARD, like the read position: dismissing an older place never brings back a bar the owner already dismissed.
+      - A chat with no archived messages has nothing to dismiss; the call succeeds and stores nothing.
+    Sends nothing to Telegram and marks nothing as read there: the number lives in this archive and nowhere else.
+    """
+    try:
+        exists = conn.execute(sql_text("SELECT 1 FROM chats WHERE chat_id = :chat_id"), {"chat_id": chat_id}).first() is not None
+        if not exists:
+            conn.rollback()
+            return None
+        conn.execute(
+            sql_text(
+                # LEAST() ignores a NULL argument, so "no messages" (newest IS NULL) is excluded explicitly, not by the clamp.
+                "UPDATE chats SET unread_dismissed_id = LEAST(:up_to, target.newest) "
+                "FROM (SELECT MAX(tg_message_id) AS newest FROM messages WHERE chat_id = :chat_id) AS target "
+                "WHERE chats.chat_id = :chat_id AND target.newest IS NOT NULL "
+                "AND (chats.unread_dismissed_id IS NULL OR chats.unread_dismissed_id < LEAST(:up_to, target.newest))"
+            ),
+            {"chat_id": chat_id, "up_to": up_to},
+        )
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
+
+def record_read_outboxes(conn: Connection, positions: Sequence[tuple[int, int]]) -> bool:
+    """
+    Remember how far the OTHER person has read the owner's messages: `positions` is (chat_id, read_outbox_max_id) pairs.
+    The counterpart of record_read_inboxes() (which is how far the OWNER has read), with the same rules plus one:
+      - PRIVATE chats only.
+        A group's or channel's position is dropped here, in the database layer, whatever a caller passes:
+        a group would mean following many people's reading (flood limits, legal exposure - the owner decided against it).
+      - Only chats the archive already holds, and only moving forward (an older report that arrives late must not take a check mark back).
+    Returns False when nothing could be stored because the archive predates the column (warned about once), True otherwise.
+    Read-only towards Telegram: this stores what Telegram reported and sends nothing, so nobody sees a read receipt of ours.
+    """
+    global _read_outbox_missing_warned
+    if not positions:
+        return True
+    if not chats_have_read_outbox(conn):
+        if not _read_outbox_missing_warned:
+            _read_outbox_missing_warned = True
+            logger.warning(
+                "This archive predates the read-receipt column (chats.read_outbox_max_id), so the check marks on your messages cannot be kept up to date. "
+                "Run `python scripts/migrate_archives.py` (see RUNBOOK.md, 'Updating existing archives') and restart the archiver."
+            )
+        return False
+    try:
+        conn.execute(
+            sql_text(
+                "UPDATE chats SET read_outbox_max_id = :max_id "
+                "WHERE chat_id = :chat_id AND chat_type = 'private' AND (read_outbox_max_id IS NULL OR read_outbox_max_id < :max_id)"
+            ),
+            [{"chat_id": chat_id, "max_id": max_id} for chat_id, max_id in positions],
+        )
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
+
+def record_read_outbox(conn: Connection, chat_id: int, max_id: int) -> bool:
+    """One chat's outbox position (see record_read_outboxes(), whose rules apply)."""
+    return record_read_outboxes(conn, [(chat_id, max_id)])
 
 
 def record_archive_owner(conn: Connection, owner_id: int, commit: bool = True) -> None:

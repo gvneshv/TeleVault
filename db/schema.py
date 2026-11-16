@@ -109,6 +109,20 @@ chats = Table(
     # Only ever moves forward (db.queries.record_read_inbox) and is never written by anything but Telegram's own reports:
     # TeleVault reads this state, it never marks a message as read.
     Column("read_inbox_max_id", BigInteger),
+    # The owner's local "Dismiss" on the unread bar: the Telegram id up to which the bar and the badge treat messages as read, whatever Telegram says.
+    # A fallback for a read position that stays behind for good (a message deleted before it was read can leave it short of that message).
+    # NULL = never dismissed.
+    # Written only by db.queries.dismiss_unread, only ever moves forward, never longer than the newest archived message,
+    # and - like everything here - never sent to Telegram: it marks nothing as read there.
+    Column("unread_dismissed_id", BigInteger),
+    # How far the OTHER person has read the owner's messages in this chat: Telegram's own read_outbox_max_id (the "double check mark"),
+    # mirrored by handlers/on_outbox_read.py and the start-up sync in handlers/on_read.py.
+    # Every message of the owner's with an id up to it is read.
+    # PRIVATE chats only (db.queries.record_read_outboxes refuses anything else):
+    # in a group it would mean tracking many people's reading (owner's decision: flood limits and legal exposure).
+    # NULL = not known yet, and the chat view draws no check marks.
+    # Only ever moves forward; one number, no times. TeleVault reads this state, it never sends a read receipt of its own.
+    Column("read_outbox_max_id", BigInteger),
     CheckConstraint(
         "chat_type IN ('group', 'supergroup', 'channel', 'private')",
         name="ck_chats_chat_type",

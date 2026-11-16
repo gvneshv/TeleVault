@@ -108,6 +108,10 @@ CHAT_WINDOW_MAX = 200
 # Bounded for the same reason as the chat ids above: a value outside the column's range would make Postgres raise an overflow error, and that must be a 422.
 MESSAGE_ID_MIN = 1
 MESSAGE_ID_MAX = 2**63 - 1
+# Telegram's own message ids (messages.tg_message_id), as a client may send them (POST /api/chats/{chat_id}/unread/dismiss).
+# The bound is the column's range, not Telegram's: real ids are far smaller, and db.queries.dismiss_unread clamps the value to the newest archived id anyway.
+TELEGRAM_MESSAGE_ID_MIN = 1
+TELEGRAM_MESSAGE_ID_MAX = 2**63 - 1
 
 # --- Search ------------------------------------------------------------------------------------------------------------
 
