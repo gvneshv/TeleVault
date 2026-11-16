@@ -189,6 +189,10 @@ async def backfill_chat(
     # A failure here ends this chat as "failed" in run()'s per-chat handler - never archived on a guess; an archive without the tables has no rules.
     ignore_patterns = db.queries.get_ignore_patterns(conn, utils.get_peer_id(chat))
 
+    # The retention policy's cutoff (None = no active policy): messages older than it would be deleted again by the archiver's next run,
+    # so importing them is wasted work and would briefly bring back what the owner chose to forget.
+    retention_cutoff = db.queries.active_retention_cutoff(conn)
+
     stored = 0
     skipped = 0
     processed = 0
@@ -217,6 +221,10 @@ async def backfill_chat(
         # Same rule as the live handlers (handlers/ingest_filter.py): a plain-text message whose text matches an ignore rule is not archived.
         # Counted as skipped. Nothing about the message or the rule is logged.
         if matches_any(ignore_patterns, matchable_text(message)):
+            skipped += 1
+            continue
+
+        if retention_cutoff is not None and message.date < retention_cutoff:
             skipped += 1
             continue
 

@@ -26,7 +26,15 @@ from .telegram import (
     TelegramDevicesOut,
     TelegramDeviceEndedOut,
 )
-from .archive import ArchiveClearedOut, ArchiveOwnerOut, ArchiveProvisionOut
+from .archive import (
+    ArchiveClearedOut,
+    ArchiveOwnerOut,
+    ArchiveProvisionOut,
+    RetentionIn,
+    RetentionOut,
+    RetentionPreviewIn,
+    RetentionPreviewOut,
+)
 from .ingest import (
     BlockedChatOut,
     BlocklistOut,

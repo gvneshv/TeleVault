@@ -25,7 +25,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import ProgrammingError
 
 from db.connection import is_undefined_table_error
-from db.queries import chats_have_read_outbox, chats_have_read_state, chats_have_unread_dismissal
+from db.queries import chats_have_read_outbox, chats_have_read_state, chats_have_unread_dismissal, retention_cutoff
 from utils.validation import SENDER_HISTORY_MAX_ENTRIES, UNREAD_COUNT_CAP
 
 # ---------------------------------------------------------------------------
@@ -437,6 +437,38 @@ def get_archive_owner(conn: Connection) -> int | None:
             raise
         return None
     return None if row is None else int(row[0])
+
+
+def get_retention_policy(conn: Connection) -> dict[str, Any] | None:
+    """
+    The owner's retention policy and the outcome of its last run, or None when nothing is saved yet (= off).
+
+    Raises ProgrammingError (undefined table) on an archive that predates the migration; the route turns that into 409 `archive_outdated`.
+    """
+    row = conn.execute(
+        sql_text(
+            "SELECT enabled, months, keep_deleted, confirmed_messages, updated_at, last_run_at, last_run_status, last_run_deleted "
+            "FROM retention_policy WHERE singleton"
+        )
+    ).mappings().first()
+    return None if row is None else dict(row)
+
+
+def count_retention_candidates(conn: Connection, months: int, keep_deleted: bool) -> dict[str, Any]:
+    """
+    What the policy would delete RIGHT NOW with these settings: how many messages, and the date of the oldest and newest of them.
+    The preview behind the confirmation (POST /api/archive/retention/preview): counts and dates only, never any content.
+
+    `total` (the whole archive) is returned too, because the job's per-run limit is a share of it.
+    """
+    cutoff = retention_cutoff(conn, months)
+    deleted_filter = "AND NOT is_deleted" if keep_deleted else ""
+    row = conn.execute(
+        sql_text(f"SELECT COUNT(*), MIN(date), MAX(date) FROM messages WHERE date < :cutoff {deleted_filter}"),
+        {"cutoff": cutoff},
+    ).one()
+    total = int(conn.execute(sql_text("SELECT COUNT(*) FROM messages")).scalar() or 0)
+    return {"cutoff": cutoff, "count": int(row[0]), "oldest": row[1], "newest": row[2], "total": total}
 
 
 def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:

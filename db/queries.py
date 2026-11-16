@@ -38,6 +38,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from db.connection import is_undefined_table_error
 from utils.text_matching import fold
+from utils.validation import RETENTION_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -752,6 +753,168 @@ def record_archive_owner(conn: Connection, owner_id: int, commit: bool = True) -
     except Exception:
         conn.rollback()
         raise
+
+
+# ---------------------------------------------------------------------------
+# Retention (automatic deletion of old archived messages)
+# ---------------------------------------------------------------------------
+# The policy is a setting (db/schema.py's retention_policy); utils/retention_rules.py holds its safeguards; retention.py is the job that applies it.
+# The functions here are the database half.
+# Deleting is IRREVERSIBLE, so every one of them is built so that "nothing happened" is the safe failure.
+
+
+def retention_table_exists(conn: Connection) -> bool:
+    """True when this archive has the retention_policy table (migration a9d2e5c7b814).
+    A cheap catalogue lookup, never an error on an old archive."""
+    return bool(conn.execute(sql_text("SELECT to_regclass('public.retention_policy') IS NOT NULL")).scalar())
+
+
+def retention_cutoff(conn: Connection, months: int) -> datetime:
+    """
+    The moment before which a message counts as expired: now minus `months` calendar months, as the DATABASE computes it
+    (one clock, and month arithmetic that knows a month is not 30 days).
+    Compared with messages.date, i.e. when the message was SENT.
+    """
+    return conn.execute(sql_text("SELECT now() - make_interval(months => :months)"), {"months": months}).scalar_one()
+
+
+def active_retention_cutoff(conn: Connection) -> datetime | None:
+    """
+    The cutoff of the ENABLED retention policy, or None when there is none (no table, no row, or switched off).
+    Used by the backfill to skip messages the policy would delete again on its next run (otherwise a backfill would re-import what retention removed).
+    Never raises on an archive that predates the migration.
+    Ends its own read transaction.
+    """
+    if not retention_table_exists(conn):
+        conn.rollback()
+        return None
+    row = conn.execute(sql_text("SELECT months FROM retention_policy WHERE singleton AND enabled")).first()
+    cutoff = None if row is None else retention_cutoff(conn, int(row[0]))
+    conn.rollback()
+    return cutoff
+
+
+def save_retention_policy(
+    conn: Connection, *, enabled: bool, months: int, keep_deleted: bool, confirmed_messages: int | None
+) -> None:
+    """
+    Store the owner's policy (insert or replace the single row) and stamp `updated_at`, which makes a run due at once and releases a 'blocked' one.
+
+    `confirmed_messages` is the count the owner saw in the preview; pass None when the policy is being switched OFF (nothing was confirmed, nothing will run).
+    The caller (the API) has already checked the confirmation against a fresh count - see utils/retention_rules.preview_is_stale().
+    The previous run's outcome is kept for the settings card.
+    """
+    try:
+        conn.execute(
+            sql_text(
+                "INSERT INTO retention_policy (singleton, enabled, months, keep_deleted, confirmed_messages) "
+                "VALUES (TRUE, :enabled, :months, :keep_deleted, :confirmed) "
+                "ON CONFLICT (singleton) DO UPDATE SET enabled = EXCLUDED.enabled, months = EXCLUDED.months, "
+                "keep_deleted = EXCLUDED.keep_deleted, confirmed_messages = EXCLUDED.confirmed_messages, updated_at = now()"
+            ),
+            {"enabled": enabled, "months": months, "keep_deleted": keep_deleted, "confirmed": confirmed_messages},
+        )
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def record_retention_run(conn: Connection, *, status: str, deleted: int, clear_confirmation: bool) -> None:
+    """
+    Write down what a run did (`status` 'ok' | 'blocked' | 'error'; `deleted` = how many messages it removed) and stamp `last_run_at`.
+    `clear_confirmation` drops `confirmed_messages` once the confirmed first run has completed, so later runs use the steady-state limit.
+    An 'error' or 'blocked' run keeps the confirmation: nothing was settled.
+    """
+    if status not in ("ok", "blocked", "error"):
+        raise ValueError(f"unknown retention run status: {status!r}")
+    try:
+        conn.execute(
+            sql_text(
+                "UPDATE retention_policy SET last_run_at = now(), last_run_status = :status, last_run_deleted = :deleted, "
+                "confirmed_messages = CASE WHEN :clear THEN NULL ELSE confirmed_messages END WHERE singleton"
+            ),
+            {"status": status, "deleted": deleted, "clear": clear_confirmation},
+        )
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: bool, limit: int) -> dict[str, Any]:
+    """
+    Delete messages sent before `cutoff`, in small batches (utils/validation.RETENTION_BATCH_SIZE), at most `limit` of them.
+    Returns counts only.
+
+    The caller has already decided the run is allowed (retention.py checks the limit against a count first); `limit` is the backstop that makes
+    "more than allowed" impossible even if the data changes between that check and now.
+
+    Each batch is its own short transaction: it picks the oldest expired messages (FOR UPDATE SKIP LOCKED: never waits on a row the archiver is editing),
+    deletes their edit history and deletion snapshots first (no ON DELETE CASCADE on those), then the messages,
+    and then any sender left without a message and without a display name of the owner's (labels and their name history are never removed here).
+    The per-row counter trigger (chats_counters_ad) keeps the chat counters right; small batches keep it cheap.
+
+    `keep_deleted=True` leaves messages flagged deleted alone: the policy then only forgets what Telegram still shows.
+    Chats, the blocklist, the ignore rules and the owner's labels are never touched.
+
+    A failure rolls back the CURRENT batch only;
+    batches already committed stay (each is a consistent state) and the exception propagates, carrying nothing about the content.
+    """
+    if limit <= 0:
+        return {"messages_deleted": 0, "edits_deleted": 0, "deletions_deleted": 0, "senders_deleted": 0}
+    has_labels = bool(conn.execute(sql_text("SELECT to_regclass('public.sender_display_names') IS NOT NULL")).scalar())
+    deleted_filter = "AND NOT is_deleted" if keep_deleted else ""
+    label_guard = "AND NOT EXISTS (SELECT 1 FROM sender_display_names d WHERE d.sender_id = s.sender_id)" if has_labels else ""
+    totals = {"messages_deleted": 0, "edits_deleted": 0, "deletions_deleted": 0, "senders_deleted": 0}
+    while totals["messages_deleted"] < limit:
+        batch = min(RETENTION_BATCH_SIZE, limit - totals["messages_deleted"])
+        try:
+            ids = [
+                row[0]
+                for row in conn.execute(
+                    sql_text(
+                        f"SELECT id FROM messages WHERE date < :cutoff {deleted_filter} ORDER BY date, id LIMIT :batch FOR UPDATE SKIP LOCKED"
+                    ),
+                    {"cutoff": cutoff, "batch": batch},
+                )
+            ]
+            if not ids:
+                conn.rollback()
+                break
+            params = {"ids": ids}
+            totals["deletions_deleted"] += conn.execute(sql_text("DELETE FROM message_deletions WHERE message_id = ANY(:ids)"), params).rowcount
+            totals["edits_deleted"] += conn.execute(sql_text("DELETE FROM message_edits WHERE message_id = ANY(:ids)"), params).rowcount
+            # Messages and the senders that became unreferenced, in ONE statement (same reasoning as purge_chat()): the sender foreign key is checked
+            # at the end of the statement, and `m.id <> ALL(:ids)` hides the rows this very statement deletes from the NOT EXISTS.
+            result = conn.execute(
+                sql_text(
+                    f"""
+                    WITH gone AS (
+                        DELETE FROM messages WHERE id = ANY(:ids) RETURNING sender_id
+                    ),
+                    candidates AS (
+                        SELECT DISTINCT sender_id FROM gone WHERE sender_id IS NOT NULL
+                    ),
+                    orphans AS (
+                        DELETE FROM senders s USING candidates c
+                        WHERE s.sender_id = c.sender_id
+                          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.sender_id = s.sender_id AND m.id <> ALL(:ids))
+                          {label_guard}
+                        RETURNING s.sender_id
+                    )
+                    SELECT (SELECT COUNT(*) FROM gone), (SELECT COUNT(*) FROM orphans)
+                    """
+                ),
+                params,
+            ).one()
+            conn.commit()
+            totals["messages_deleted"] += int(result[0])
+            totals["senders_deleted"] += int(result[1])
+        except Exception:
+            conn.rollback()
+            raise
+    return totals
 
 
 def _move_blocklist_rule(conn: Connection, old_chat_id: int, new_chat_id: int) -> None:

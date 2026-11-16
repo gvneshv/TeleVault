@@ -16,6 +16,7 @@ Table overview:
   - ingest_blocked_chats: chats the account owner chose NOT to archive (the ingestion-time blocklist)
   - ingest_ignore_rules / ingest_ignore_rule_chats: text patterns that keep a message out of the archive, and the chats each one is limited to
   - archive_owner       : the Telegram user id of the account this archive belongs to (one row; lets the UI tell "my" messages from the rest)
+  - retention_policy    : the owner's "delete messages older than N months" setting and the outcome of its last run (one row)
   - sender_name_history : every time a sender was seen under a different username / first name / last name (see upsert_sender() in db/queries.py)
   - sender_display_names: the owner's own friendly label for a sender (PUT /api/senders/{id}/display-name)
 
@@ -393,6 +394,43 @@ archive_owner = Table(
     Column("owner_id", BigInteger, nullable=False, autoincrement=False),
     Column("recorded_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
     CheckConstraint("singleton", name="ck_archive_owner_singleton"),
+)
+
+
+# ---------------------------------------------------------------------------
+# retention_policy
+# ---------------------------------------------------------------------------
+# The owner's "delete archived messages older than N months" setting, and what the last run did.
+# A setting, not archived content: it is kept when everything stored is cleared, like the blocklist and the ignore rules.
+#
+# At most ONE row, enforced the same way as archive_owner (`singleton` is the primary key and the CHECK allows only TRUE).
+# No row = never configured = off.
+#
+# `enabled`            : the job runs only while this is true. Switching off keeps the number, so switching on again needs no retyping.
+# `months`             : whole calendar months; 1..120 (utils/validation.py has the same bounds, the CHECK is the last line of defence).
+# `keep_deleted`       : true (the default) = messages that were deleted in Telegram are never removed by the policy: they are what this archive is for.
+# `confirmed_messages` : how many messages the owner saw in the preview when saving.
+#                        Set until the first run completes, then NULL.
+#                        The first run may delete about this many and no more (utils/retention_rules.py).
+# `updated_at`         : when the policy was last saved. A save after the last run makes a run due at once (also how a 'blocked' run is released).
+# `last_run_*`         : outcome of the last run for the settings card: 'ok', 'blocked' (it would have deleted more than the limit - nothing was deleted) or 'error';
+#                        and how many messages it removed.
+#                        Counts only, never any content.
+retention_policy = Table(
+    "retention_policy",
+    metadata,
+    Column("singleton", Boolean, primary_key=True, server_default=text("true")),
+    Column("enabled", Boolean, nullable=False, server_default=text("false")),
+    Column("months", Integer, nullable=False),
+    Column("keep_deleted", Boolean, nullable=False, server_default=text("true")),
+    Column("confirmed_messages", BigInteger),
+    Column("updated_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_run_at", TIMESTAMP(timezone=True)),
+    Column("last_run_status", Text),
+    Column("last_run_deleted", BigInteger),
+    CheckConstraint("singleton", name="ck_retention_policy_singleton"),
+    CheckConstraint("months BETWEEN 1 AND 120", name="ck_retention_policy_months"),
+    CheckConstraint("last_run_status IN ('ok', 'blocked', 'error')", name="ck_retention_policy_last_run_status"),
 )
 
 

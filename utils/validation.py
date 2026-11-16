@@ -113,6 +113,21 @@ MESSAGE_ID_MAX = 2**63 - 1
 TELEGRAM_MESSAGE_ID_MIN = 1
 TELEGRAM_MESSAGE_ID_MAX = 2**63 - 1
 
+# --- Retention (automatic cleanup) -------------------------------------------------------------------------------------
+# The policy deletes archived messages older than N calendar months.
+# It is destructive and cannot be undone, so every number here is a safeguard.
+# See utils/retention_rules.py for how the confirmation and the per-run limit use them.
+RETENTION_MIN_MONTHS = 1  # nothing shorter: a typo must not be able to wipe the recent past
+RETENTION_MAX_MONTHS = 120  # ten years; anything longer is "never", i.e. leave the policy off
+RETENTION_BATCH_SIZE = 1000  # messages deleted per transaction: short row locks, and the per-row counter trigger stays cheap
+RETENTION_CONFIRM_TOLERANCE_MIN = 1000  # how many MORE messages than the owner confirmed a run may delete (messages keep ageing between preview and run)
+RETENTION_CONFIRM_TOLERANCE_FRACTION = 0.10  # ...or this share of the confirmed count, whichever is larger
+RETENTION_STEADY_RUN_MIN = 10_000  # after the confirmed first run: the most one run may delete without a new confirmation...
+RETENTION_STEADY_RUN_FRACTION = 0.10  # ...or this share of the whole archive, whichever is larger (a clock jump or a long pause must not wipe years)
+RETENTION_RUN_INTERVAL_HOURS = 24  # how often the archiver applies the policy
+RETENTION_CHECK_INTERVAL_SECONDS = 60  # how often it looks whether a run is due (one single-row read)
+RETENTION_COUNT_MAX = 2**63 - 1  # a client-sent message count (the confirmation): the column's range
+
 # --- Search ------------------------------------------------------------------------------------------------------------
 
 SEARCH_QUERY_MAX_LENGTH = 200  # message-text substring search; the pg_trgm scan cost grows with the pattern

@@ -2,6 +2,7 @@
 POST /archive/provision - automatic archive-database provisioning.
 GET  /archive/owner     - which Telegram account this archive belongs to (so the UI can draw the owner's own messages on the right).
 DELETE /archive/data    - forget everything stored (messages, chats, senders), keeping the owner's settings; see db.queries.clear_all_data.
+GET/PUT /archive/retention, POST /archive/retention/preview - the "delete messages older than N months" policy (applied by retention.py in the archiver).
 
 Turns the two manual steps every account previously needed after linking Telegram
 (an admin running `CREATE DATABASE` and `alembic upgrade head` by hand, per the README, then scripts/manage_admin.py set-archive) into one self-service call.
@@ -15,17 +16,30 @@ and there's no correctness reason to force one order over the other;
 the natural flow (frontend calls this right after POST /telegram/link/confirm returns linked=true) is a UI choice, not something this endpoint enforces.
 """
 
+from contextlib import contextmanager
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import ProgrammingError
 
 import control_db
 from api.dependencies import get_archive_connection, get_archive_write_connection, get_control_db, get_current_user
 from api.process_utils import is_backfill_running
-from api.schemas import ArchiveClearedOut, ArchiveOwnerOut, ArchiveProvisionOut
-from db.queries import clear_all_data
-from db.read_queries import get_archive_owner
+from api.schemas import (
+    ArchiveClearedOut,
+    ArchiveOwnerOut,
+    ArchiveProvisionOut,
+    RetentionIn,
+    RetentionOut,
+    RetentionPreviewIn,
+    RetentionPreviewOut,
+)
+import db
+from db.queries import clear_all_data, save_retention_policy
+from db.read_queries import count_retention_candidates, get_archive_owner, get_retention_policy
 from db.provisioning import ArchiveProvisioningError, provision_archive_database
 from utils.archive_login import encrypt_archive_password
+from utils.retention_rules import preview_is_stale
 from utils.security import DecodedAccessToken
 from utils.worker_paths import backfill_status_path
 
@@ -122,3 +136,85 @@ def clear_archive_data(
             },
         )
     return clear_all_data(conn)
+
+
+# ---------------------------------------------------------------------------
+# Retention policy
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _needs_retention_table():
+    """Turn "this archive has no retention_policy table" into a clear 409 the UI can translate (reason "archive_outdated"). Other errors propagate."""
+    try:
+        yield
+    except ProgrammingError as exc:
+        if not db.is_undefined_table_error(exc):
+            raise
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Your archive database needs updating before automatic cleanup can be set. Run `python scripts/migrate_archives.py` - see RUNBOOK.md.",
+                "reason": "archive_outdated",
+            },
+        ) from exc
+
+
+@router.get("/retention", response_model=RetentionOut, summary="The automatic-cleanup policy and what its last run did")
+def get_retention(conn: Connection = Depends(get_archive_connection)) -> RetentionOut:
+    """
+    The saved "delete messages older than N months" policy, or `configured: false` (off) when none was ever saved.
+    409 "archive_outdated" on an archive that has not been migrated.
+    """
+    with _needs_retention_table():
+        policy = get_retention_policy(conn)
+    return RetentionOut(configured=False) if policy is None else RetentionOut(configured=True, **policy)
+
+
+@router.post("/retention/preview", response_model=RetentionPreviewOut, summary="How many messages the policy would delete right now (deletes nothing)")
+def preview_retention(body: RetentionPreviewIn, conn: Connection = Depends(get_archive_connection)) -> dict:
+    """
+    Count what a policy with these settings would delete if it ran now.
+    Changes nothing; counts and dates only.
+    The page shows this and sends the count back as `confirmed_messages` when the owner saves.
+    """
+    return count_retention_candidates(conn, body.months, body.keep_deleted)
+
+
+@router.put("/retention", response_model=RetentionOut, summary="Save the automatic-cleanup policy")
+def put_retention(body: RetentionIn, conn: Connection = Depends(get_archive_write_connection)) -> RetentionOut:
+    """
+    Save the policy (replacing the previous one).
+    Deleting is irreversible, so switching it ON needs `confirmed_messages`: the number the preview showed.
+    The server counts again; if clearly more would be deleted than was confirmed (the page was stale, or the settings changed after the preview) nothing is saved.
+    Saving also releases a run that was blocked by the safety limit.
+
+    The job itself runs inside the archiver (retention.py), so nothing is deleted by this request - at the earliest within a minute, and only while the archiver runs.
+
+    422 "confirmation_required" - enabling without `confirmed_messages`
+    409 "preview_outdated"      - more would be deleted than confirmed; the message carries the new count, preview again
+    409 "archive_outdated"      - the archive has not been migrated yet
+    """
+    confirmed = None
+    if body.enabled:
+        if body.confirmed_messages is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "Check the preview and confirm how many messages will be deleted.", "reason": "confirmation_required"},
+            )
+        with _needs_retention_table():
+            actual = count_retention_candidates(conn, body.months, body.keep_deleted)["count"]
+        if preview_is_stale(body.confirmed_messages, actual):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": f"The number of messages to delete is now {actual}, more than the {body.confirmed_messages} you confirmed. Preview again.",
+                    "reason": "preview_outdated",
+                    "actual": actual,
+                },
+            )
+        confirmed = body.confirmed_messages
+    with _needs_retention_table():
+        save_retention_policy(conn, enabled=body.enabled, months=body.months, keep_deleted=body.keep_deleted, confirmed_messages=confirmed)
+        policy = get_retention_policy(conn)
+    return RetentionOut(configured=True, **(policy or {}))

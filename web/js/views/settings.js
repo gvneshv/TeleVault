@@ -14,6 +14,11 @@
  *      The form's own state (what was typed, ticked, filtered) lives in settingsViewState so a re-render does not reset it;
  *      typing, ticking and filtering update the page directly instead of re-rendering, so focus and the scroll position of the chat list are never lost mid-edit.
  *      The size limits come from the server's response (max_length, max_chats, max_count) - nothing here repeats utils/validation.py's numbers.
+ *   3b. "Automatic cleanup" (retention policy, api/routes/archive.py, applied by retention.py inside the archiver): delete archived messages older than N months.
+ *      Irreversible, so the card never lets a number be saved blind: "Preview" asks the server how many messages WOULD go (nothing is deleted),
+ *      only then can the policy be switched on, and the previewed count is sent back as the confirmation (the server counts again and refuses a stale one).
+ *      Changing the months or the checkbox throws the preview away.
+ *      Off by default; messages deleted in Telegram are kept unless the owner unticks the box.
  *   4. "Telegram devices": the account's Telegram sessions (the same list as Telegram's own Settings -> Devices)
  *      with buttons to end one device or every device except TeleVault's own.
  *      Every link creates a new Telegram session and nothing used to end the old ones, so they piled up.
@@ -78,6 +83,25 @@ const settingsViewState = {
     notice: null,
     error: null,
     // {href, label} when the error is one the person can fix themselves (no archive database yet), else null.
+    fix: null,
+  },
+  retention: {
+    // null = not loaded (yet, or the load failed - see `error`), otherwise the answer of GET /api/archive/retention.
+    policy: null,
+    loading: false,
+    // "preview" | "save" | "off" while that request runs, else null.
+    busy: null,
+    // The form, kept here so a re-render does not reset it.
+    // Seeded once from the saved policy.
+    form: { months: "6", keepDeleted: true },
+    seeded: false,
+    // The last preview {months, keepDeleted, count, total, oldest, newest}, or null.
+    // Valid only for the form values it was made with.
+    preview: null,
+    // "saved" | "off" | null: a one-line confirmation of the last change.
+    notice: null,
+    error: null,
+    // {href, label} when the error is one the person can fix themselves (no archive database yet / not migrated), else null.
     fix: null,
   },
   data: {
@@ -305,11 +329,13 @@ function renderRoot(root) {
     </section>
     ${renderBlocklistCard()}
     ${renderIgnoreCard()}
+    ${renderRetentionCard()}
     ${renderDataCard()}
     ${renderDevicesCard()}
   `;
   attachBlocklistHandlers(root);
   attachIgnoreHandlers(root);
+  attachRetentionHandlers(root);
   attachDataHandlers(root);
   attachDevicesHandlers(root);
 }
@@ -892,6 +918,320 @@ async function callDevices(
   renderRoot(root);
 }
 
+// ---------------------------------------------------------------------------
+// Automatic cleanup card (retention policy)
+// ---------------------------------------------------------------------------
+
+/** The months the form currently holds as a whole number within the server's limits, or null. */
+function retentionMonths() {
+  const s = settingsViewState.retention;
+  const text = String(s.form.months).trim();
+  if (!/^\d{1,3}$/.test(text)) return null;
+  const n = Number(text);
+  const min = s.policy?.min_months ?? 1;
+  const max = s.policy?.max_months ?? 120;
+  return n >= min && n <= max ? n : null;
+}
+
+/** True when the preview on screen was made with exactly the values in the form. */
+function retentionPreviewFresh() {
+  const s = settingsViewState.retention;
+  const p = s.preview;
+  return (
+    p !== null &&
+    p.months === retentionMonths() &&
+    p.keepDeleted === s.form.keepDeleted
+  );
+}
+
+function retentionStatusText() {
+  const p = settingsViewState.retention.policy;
+  if (!p || !p.configured || !p.enabled) return t("settings.retentionOff");
+  return t("settings.retentionOn").replace("{months}", String(p.months));
+}
+
+function retentionLastRunText() {
+  const p = settingsViewState.retention.policy;
+  if (!p || !p.configured || !p.enabled) return "";
+  if (!p.last_run_at) return t("settings.retentionNeverRan");
+  const when = formatDate(p.last_run_at);
+  if (p.last_run_status === "blocked")
+    return t("settings.retentionBlocked").replace("{when}", when);
+  if (p.last_run_status === "error")
+    return t("settings.retentionFailed").replace("{when}", when);
+  return t("settings.retentionLastRun")
+    .replace("{when}", when)
+    .replace("{n}", String(p.last_run_deleted ?? 0));
+}
+
+/** The preview result and the save button.
+ *  Its own function so typing can swap it without re-rendering the form (focus stays in the field). */
+function renderRetentionResult() {
+  const s = settingsViewState.retention;
+  const busy = s.busy !== null;
+  const p = s.preview;
+  if (!p || !retentionPreviewFresh()) return "";
+  const saveLabel = s.policy?.enabled
+    ? t("settings.retentionSave")
+    : t("settings.retentionTurnOn");
+  if (p.count === 0) {
+    return `<p class="settings-help retention-result">${t("settings.retentionNothing")}</p>
+      <button type="button" id="retention-save" class="modal__btn modal__btn--primary" ${busy ? "disabled" : ""}>${saveLabel}</button>`;
+  }
+  const text = t("settings.retentionWould")
+    .replace("{count}", String(p.count))
+    .replace("{total}", String(p.total))
+    .replace("{from}", formatDate(p.oldest))
+    .replace("{to}", formatDate(p.newest));
+  return `<p class="settings-help retention-result" role="status">${escapeHtml(text)}</p>
+    <button type="button" id="retention-save" class="modal__btn modal__btn--danger" ${busy ? "disabled" : ""}>${
+      s.busy === "save" ? t("settings.retentionSaving") : saveLabel
+    }</button>`;
+}
+
+function renderRetentionCard() {
+  const s = settingsViewState.retention;
+  const busy = s.busy !== null;
+
+  const error = s.error
+    ? `<p class="settings-error" role="alert">${escapeHtml(s.error)}${
+        s.fix
+          ? ` <a href="${s.fix.href}" class="settings-fix-link">${escapeHtml(s.fix.label)}</a>`
+          : ""
+      }</p>`
+    : "";
+
+  let body =
+    s.loading && s.policy === null
+      ? `<p class="settings-help">${t("common.loading")}</p>`
+      : "";
+  if (s.policy !== null) {
+    const noticeKey = {
+      saved: "settings.retentionSaved",
+      off: "settings.retentionTurnedOff",
+    }[s.notice];
+    const lastRun = retentionLastRunText();
+    const blocked = s.policy.enabled && s.policy.last_run_status === "blocked";
+    const min = s.policy.min_months;
+    const max = s.policy.max_months;
+    body = `
+      <p class="retention-status"><strong>${escapeHtml(retentionStatusText())}</strong></p>
+      ${lastRun ? `<p class="${blocked ? "settings-error" : "settings-help"}" ${blocked ? 'role="alert"' : ""}>${escapeHtml(lastRun)}</p>` : ""}
+      ${noticeKey ? `<p class="settings-help retention-notice" role="status">${t(noticeKey)}</p>` : ""}
+      <form class="retention-form" id="retention-form" novalidate>
+        <label class="settings-field">
+          <span>${t("settings.retentionMonthsLabel")}</span>
+          <input type="number" id="retention-months" min="${min}" max="${max}" step="1" inputmode="numeric" value="${escapeHtml(s.form.months)}" ${busy ? "disabled" : ""}>
+        </label>
+        <label class="retention-keep">
+          <input type="checkbox" id="retention-keep" ${s.form.keepDeleted ? "checked" : ""} ${busy ? "disabled" : ""}>
+          ${t("settings.retentionKeepDeleted")}
+        </label>
+        <button type="submit" id="retention-preview" class="modal__btn" ${busy || retentionMonths() === null ? "disabled" : ""}>
+          ${s.busy === "preview" ? t("settings.retentionPreviewing") : t("settings.retentionPreview")}
+        </button>
+      </form>
+      <div id="retention-result">${renderRetentionResult()}</div>
+      ${
+        s.policy.enabled
+          ? `<div class="settings-actions"><button type="button" id="retention-off" class="modal__btn" ${busy ? "disabled" : ""}>${s.busy === "off" ? t("settings.retentionTurningOff") : t("settings.retentionTurnOff")}</button></div>`
+          : ""
+      }
+    `;
+  }
+
+  return `
+    <section class="settings-card settings-card--retention" id="retention-card">
+      <h2>${t("settings.retentionTitle")}</h2>
+      <p class="settings-help">${t("settings.retentionIntro")}</p>
+      ${error}
+      ${body}
+    </section>
+  `;
+}
+
+async function failRetention(res) {
+  const s = settingsViewState.retention;
+  const body = await res.json().catch(() => ({}));
+  const detail = body.detail;
+  if (detail && detail.reason === "preview_outdated") {
+    // The archive changed between the preview and the save: show the new number and make the person look again.
+    s.error = t("settings.retentionOutdated").replace(
+      "{actual}",
+      String(detail.actual),
+    );
+    s.fix = null;
+    s.preview = null;
+    return;
+  }
+  s.error = describeError(detail);
+  s.fix = archiveFixLink(detail);
+}
+
+/** (Re)load the saved policy. Never throws; problems land in the card. Seeds the form from the policy the first time only. */
+async function loadRetention(root) {
+  const s = settingsViewState.retention;
+  s.error = null;
+  s.fix = null;
+  s.loading = true;
+  renderRoot(root);
+  try {
+    const res = await apiFetch("/api/archive/retention");
+    if (!res.ok) {
+      s.policy = null;
+      await failRetention(res);
+    } else {
+      s.policy = await res.json();
+      if (!s.seeded && s.policy.configured) {
+        s.form = {
+          months: String(s.policy.months),
+          keepDeleted: s.policy.keep_deleted,
+        };
+        s.seeded = true;
+      }
+    }
+  } catch {
+    s.policy = null;
+    s.error = t("common.error");
+  }
+  s.loading = false;
+  renderRoot(root);
+}
+
+/** PUT the policy; on success reload it and show a one-line notice. */
+async function saveRetention(root, payload, notice, busy) {
+  const s = settingsViewState.retention;
+  s.error = null;
+  s.fix = null;
+  s.notice = null;
+  s.busy = busy;
+  renderRoot(root);
+  let ok = false;
+  try {
+    const res = await apiFetch("/api/archive/retention", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) ok = true;
+    else await failRetention(res);
+  } catch {
+    s.error = t("common.error");
+  }
+  s.busy = null;
+  if (!ok) {
+    renderRoot(root);
+    return;
+  }
+  s.preview = null;
+  s.notice = notice;
+  s.seeded = false;
+  await loadRetention(root);
+}
+
+function attachRetentionHandlers(root) {
+  const s = settingsViewState.retention;
+
+  // Typing or ticking throws the preview away, in place: no re-render, so focus stays in the field.
+  const invalidate = () => {
+    s.notice = null;
+    const result = document.getElementById("retention-result");
+    if (result) result.innerHTML = renderRetentionResult();
+    const btn = document.getElementById("retention-preview");
+    if (btn) btn.disabled = s.busy !== null || retentionMonths() === null;
+    attachRetentionSave(root);
+  };
+  document
+    .getElementById("retention-months")
+    ?.addEventListener("input", (e) => {
+      s.form.months = e.target.value;
+      invalidate();
+    });
+  document.getElementById("retention-keep")?.addEventListener("change", (e) => {
+    s.form.keepDeleted = e.target.checked;
+    invalidate();
+  });
+
+  document
+    .getElementById("retention-form")
+    ?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const months = retentionMonths();
+      if (months === null || s.busy) return;
+      const keepDeleted = s.form.keepDeleted;
+      s.error = null;
+      s.fix = null;
+      s.notice = null;
+      s.busy = "preview";
+      renderRoot(root);
+      try {
+        const res = await apiFetch("/api/archive/retention/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ months, keep_deleted: keepDeleted }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          s.preview = {
+            months,
+            keepDeleted,
+            count: data.count,
+            total: data.total,
+            oldest: data.oldest,
+            newest: data.newest,
+          };
+        } else {
+          s.preview = null;
+          await failRetention(res);
+        }
+      } catch {
+        s.preview = null;
+        s.error = t("common.error");
+      }
+      s.busy = null;
+      renderRoot(root);
+    });
+
+  attachRetentionSave(root);
+
+  document.getElementById("retention-off")?.addEventListener("click", () => {
+    const p = s.policy;
+    if (!p || s.busy) return;
+    saveRetention(
+      root,
+      { enabled: false, months: p.months, keep_deleted: p.keep_deleted },
+      "off",
+      "off",
+    );
+  });
+}
+
+/** The save button is re-created whenever the result area is, so its handler is (re)attached separately. */
+function attachRetentionSave(root) {
+  const s = settingsViewState.retention;
+  document
+    .getElementById("retention-save")
+    ?.addEventListener("click", async () => {
+      if (s.busy || !s.preview || !retentionPreviewFresh()) return;
+      const p = s.preview;
+      const message = t("settings.retentionConfirm")
+        .replace("{count}", String(p.count))
+        .replace("{months}", String(p.months));
+      if (!(await showConfirm(message, { danger: true }))) return;
+      saveRetention(
+        root,
+        {
+          enabled: true,
+          months: p.months,
+          keep_deleted: p.keepDeleted,
+          confirmed_messages: p.count,
+        },
+        "saved",
+        "save",
+      );
+    });
+}
+
 /**
  * Clear everything stored.
  * The typed phrase (not just OK) is what keeps a stray click from emptying an archive;
@@ -985,6 +1325,7 @@ function initSettingsView() {
   renderRoot(root);
   loadBlocklist(root);
   loadIgnoreRules(root);
+  loadRetention(root);
 }
 
 export { initSettingsView };

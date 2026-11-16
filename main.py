@@ -37,6 +37,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 import db
+import retention
 from config import settings
 from utils.logging_setup import setup_logging
 from handlers import on_message, on_delete, on_edit, on_read, on_outbox_read
@@ -223,6 +224,10 @@ async def main(user_id: int) -> None:
     # In the background and best effort (handlers/on_read.py): a slow or failing chat list must neither delay nor stop archiving.
     read_sync_task = asyncio.create_task(on_read.sync_read_state(client))
 
+    # The retention policy (the owner's "delete messages older than N months", off until they save it): checked once a minute, applied at most daily.
+    # Runs only while this archiver does; see retention.py for the safeguards.
+    retention_task = asyncio.create_task(retention.retention_loop())
+
     # ------------------------------------------------------------------ #
     # 5. Heartbeat loop
     # ------------------------------------------------------------------ #
@@ -258,6 +263,9 @@ async def main(user_id: int) -> None:
     read_sync_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await read_sync_task
+    retention_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await retention_task
     heartbeat_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await heartbeat_task

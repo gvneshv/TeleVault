@@ -1511,6 +1511,24 @@ Shared by the collapsed rail and the phone top bar below. */
   font-size: 12.5px;
 }
 
+/* Automatic cleanup card: the one-line status, the "keep deleted" tick and the preview result sit in the same flow as the other cards' forms. */
+.retention-status {
+  margin: 0 0 6px;
+}
+
+.retention-keep {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--color-ink-muted);
+  line-height: 1.4;
+}
+
+.retention-result {
+  margin: 12px 0 8px;
+}
+
 .settings-card form {
   display: flex;
   flex-direction: column;

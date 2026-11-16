@@ -241,6 +241,40 @@ export const en = {
   "settings.ignoreScopeChats": "Chats",
   "settings.ignoreMore": "and {n} more",
   "settings.ignoreAddedOn": "Added",
+  "settings.retentionTitle": "Automatic cleanup",
+  "settings.retentionIntro":
+    "Delete archived messages that were sent more than a chosen number of months ago, once a day. Off until you turn it on. Deleting cannot be undone, so you always see how many messages would go first. It runs only while the archiver is running. Your chats, the list of chats not archived, ignore rules and your own names for people are never touched.",
+  "settings.retentionOff": "Automatic cleanup is off.",
+  "settings.retentionOn":
+    "On: messages sent more than {months} months ago are deleted.",
+  "settings.retentionNeverRan":
+    "It has not run yet (it runs while the archiver is running).",
+  "settings.retentionLastRun": "Last run: {when}, messages deleted: {n}.",
+  "settings.retentionBlocked":
+    "Stopped on {when}: it would have deleted far more messages than expected, so nothing was deleted. Check the preview below and save again to continue.",
+  "settings.retentionFailed":
+    "The last run ({when}) failed; it will be tried again later.",
+  "settings.retentionMonthsLabel": "Delete messages older than (months)",
+  "settings.retentionKeepDeleted":
+    "Keep messages that were deleted in Telegram (recommended - they are what this archive is for)",
+  "settings.retentionPreview": "Preview",
+  "settings.retentionPreviewing": "Counting…",
+  "settings.retentionNothing": "Nothing would be deleted right now.",
+  "settings.retentionWould":
+    "{count} of {total} stored messages would be deleted (sent between {from} and {to}). This cannot be undone.",
+  "settings.retentionTurnOn": "Turn on",
+  "settings.retentionSave": "Save changes",
+  "settings.retentionSaving": "Saving…",
+  "settings.retentionTurnOff": "Turn off",
+  "settings.retentionTurningOff": "Turning off…",
+  "settings.retentionConfirm":
+    "Turn on automatic cleanup? About {count} messages sent more than {months} months ago will be permanently deleted, and older ones every day after that. There is no undo.",
+  "settings.retentionSaved":
+    "Saved. Cleanup starts within a minute while the archiver is running.",
+  "settings.retentionTurnedOff":
+    "Turned off. Nothing more will be deleted automatically.",
+  "settings.retentionOutdated":
+    "The archive changed: now {actual} messages would be deleted, more than you confirmed. Preview again.",
   "settings.dataTitle": "Delete all stored data",
   "settings.dataIntro":
     "Empties the archive: every stored message (with edit history and deleted-message copies), every chat and the people seen. Kept: the list of chats not archived, your own names for people, and which account this archive belongs to. Messages that arrive later are stored again as usual. This cannot be undone. It does not delete your TeleVault account.",
