@@ -15,7 +15,7 @@ Also in this release: **delete all stored data**, **message ignore rules** (skip
 **Upgrading from 3.1.0** (each step is safe to repeat):
 1. `python scripts/migrate_archives.py --dry-run`, then without `--dry-run` (adds the two sender-name tables, the two ignore-rule tables, the retention table, three columns on `chats` (your reading position, a local "dismissed up to" position, how far the other person has read) and one index on `messages` to every existing archive; the index is built in a moment but blocks writes while it is built, so run this with the archiver stopped; **nothing migrates them automatically**).
 2. Restart the archiver once: it copies your Telegram reading positions, and how far each private chat's other person has read your messages, into the new columns when it starts, and starts the automatic-cleanup job (the name-history, ignore-rule, badge and Dismiss features need no restart; the cleanup does nothing until you turn it on in Settings).
-3. Reload the web page once (the service worker cache is now v56; it updates itself, a reload just makes it immediate).
+3. Reload the web page once (the service worker cache is now v57; it updates itself, a reload just makes it immediate).
 Until step 1 is done nothing breaks: the archiver records no name history, ignores no message and tracks no reading position (one warning), labels read as "none", the chat view draws no unread bar, the chat list shows no unread badges, no check marks are drawn on your messages, "Dismiss" answers 409 `archive_outdated`, saving a label, an ignore rule or the cleanup policy answers 409 `archive_outdated`, and the archiver logs one line and skips the cleanup.
 
 ### Added - display names and name history
@@ -115,6 +115,8 @@ Until step 1 is done nothing breaks: the archiver records no name history, ignor
 - Not verified: a real Telegram account (that reads on another device reach the archiver as the Telethon documentation says, channels, forum chats), a real server-backed browser (the bar was exercised in Chromium against a mocked API, light and dark, desktop and phone width), Windows, Docker.
 
 ### Changed
+- Roadmap: the auto-read policy moved from the end of "Phase 3" to a new "Planned - Last" section after Phase 4 (owner's decision), with the decided design, the Telegram-terms reading and the open problems written down there.
+- **"Chats not archived": the list of blocked chats is hidden by default** (owner's request, same as the ignore rules: many blocked chats stretched the page). A text button, **Show all blocked chats (N)** / **Hide blocked chats**, opens and closes it (a real button with `aria-expanded`; kept while you stay in the app, not across a reload; no button when nothing is blocked). Blocking or unblocking a chat shows a short "Chat blocked." / "Chat is archived again." line instead, which disappears when you toggle the list or pick another chat. English and Ukrainian strings, cache v57.
 - Roadmap: "TTL / retention policy" is done and removed from "Planned - Phase 3".
 - **Ignore rules: the list of rules is hidden by default** (owner's request: it grew the card with every rule added). A text button, **Show all rules (N)** / **Hide rules**, opens and closes it (a real button with `aria-expanded`; the choice is kept while you stay in the app, not across a reload). Adding or removing a rule now shows a short "Rule added." / "Rule removed." line instead, which disappears when you type, toggle the list or change another rule. With no rules the empty message shows and there is no button. English and Ukrainian strings, cache v54.
 - Roadmap: "Show the last read message" is done (the "Unread messages" bar) and removed from "Planned - Phase 3".
@@ -874,8 +876,7 @@ dependency), run `alembic -c alembic_control.ini upgrade head`, and relink Teleg
 
 ### Planned - Phase 3 (Advanced Features)
 
-- Auto-read policies: mark selected chats as read on a schedule - deliberately LAST, only wanted
-  for one group; it acts on the real Telegram account, so check the Telegram ToS first
+- (Auto-read policies moved to "Planned - Last" at the end of this list, by the owner's decision on 2026-11-16.)
 
 Dropped (decided, do not re-add): the **chat allowlist** (the blocklist already covers "do not archive
 this chat", and an allowlist would only be its mirror image) and the **`deletions_only` storage mode**
@@ -894,6 +895,14 @@ either, so TeleVault also cannot tell "deleted for me" from "deleted for everyon
 - Notifications: Web Push via service worker (requires HTTPS)
 - Read receipts in GROUPS: deliberately not planned (owner's decision: flood limits and legal exposure). Private chats are done; see "Added - read receipts".
 - Reactions tracking (`message_reactions` snapshot table) - low priority
+
+### Planned - Last (after everything above; owner's decision 2026-11-16)
+
+- **Auto-read policy: mark chosen GROUPS as read automatically.** Wanted for one public news group the owner rarely needs but does not want to leave; the goal is zero unread without opening it. Moved to the very end because it is the first feature that **acts on the real Telegram account** (everything else only listens), and it needs its own disclosure UI and a chat picker (below).
+  - **Decided:** groups only for now (no private chats: a read there sends the other person a receipt); acts only for chats the owner chose, in their own instance (nobody, admins included, can act for another user); the Settings card carries a clear notice that the feature acts on their Telegram account like they would, **shown every time the card is opened** (not once; it is rarely visited, so repeating it costs nothing), plus a confirmation when a chat is added. Trigger: when a new message arrives in the chat, **coalesced** (at most one read acknowledgement per short interval, e.g. every 30-60 s, never one per message - Telegram's flood limits); a fixed schedule/interval can come later as a second mode.
+  - **Telegram terms (read 2026-11-16, core.telegram.org/api/terms, section 1.4):** forbids actions on the user's behalf without their knowledge and consent, and tampering with read statuses ("ghost mode"). A read the owner configured and can see hides nothing; this is my reading, not legal advice, and the owner decides. The same section also forbids stopping self-destructing content from disappearing - **unchecked** whether the archive's storing of disappearing messages touches it.
+  - **Works with blocked chats, without touching the existing logic (verified in the code, not yet built):** the blocklist is checked INSIDE the archiving handlers (`handlers/ingest_filter.py` called by `on_message.py` / `on_edit.py`), and Telethon delivers `NewMessage` to every registered handler, blocked chat or not. So a separate handler (new `handlers/on_auto_read.py`, own table of chosen chat ids) can react to new messages in a chat that is blocked and store NOTHING about them - which is what the owner wants (no disk use). Existing handlers stay as they are.
+  - **Open problems:** (1) the chat picker today lists archived chats (`GET /api/chats/options`); a chat that was never archived appears neither there nor in the blocklist, so the picker needs another source (e.g. the archiver writing its dialog list, or entering a chat from a blocked/archived one) - to be designed. (2) A public news group is often a **channel** (broadcast), not a group; "groups only" would then exclude it - ask the owner which it is before building. (3) The unread bar and badges mirror Telegram, so they clear by themselves for these chats (intended). (4) A chat that is blocked has no row in `chats`, so the effective read position is simply Telegram's own.
 
 ---
 
