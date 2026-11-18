@@ -1972,8 +1972,11 @@ function syncFromHash() {
  * Called by app.js every time the Chats tab is switched back to (not on first load).
  * Quietly brings the visible data up to date so what the live archiver stored in the meantime shows up without a reload:
  * the panel's list is re-fetched, and - when the person is reading the end of a chat - the newest window is merged into what is loaded
- * (new messages appended; messages that became deleted or edited updated in place).
+ * (messages newer than the last loaded one appended; messages that became deleted or edited updated in place).
  * Older loaded messages are not re-checked.
+ * "Reading the end of a chat" means state.hasNewer is false - NOT that the loaded list reaches back as far as the newest window does:
+ * a chat opened in context (Show in context, a search hit, Jump to date) near its end holds only about half a window of older messages,
+ * so the newest window contains messages that are older than everything loaded. See mergeNewest().
  */
 async function refreshChatView() {
   refetchPanel();
@@ -2009,8 +2012,27 @@ async function refreshChatView() {
   }
 }
 
-/** Fold a freshly fetched newest window into the loaded messages.
- *  See refreshChatView(). */
+/** True when message `a` comes after message `b` in a conversation (the order the API sorts by: date, then id). */
+function comesAfter(a, b) {
+  const dateA = Date.parse(a.date);
+  const dateB = Date.parse(b.date);
+  return dateA !== dateB ? dateA > dateB : a.id > b.id;
+}
+
+/**
+ * Fold a freshly fetched newest window into the loaded messages.
+ * See refreshChatView().
+ *
+ * Messages that are already loaded are updated in place.
+ * Only messages NEWER than the last loaded one are appended.
+ * Appending "everything not loaded yet" was a bug: with the chat opened in context near its end (Show in context on one of the last messages),
+ * the loaded list is shorter at the top than the newest window, so the unloaded part of that window - older messages - was added AFTER the newest ones.
+ * The list then ended on an old message, with nothing below it, a few seconds after opening correctly.
+ *
+ * If the newest window starts after the last loaded message, more than a window's worth of messages arrived since (a long gap while the page was open):
+ * appending would leave a hole in the conversation, so nothing is appended and the view reports newer messages instead (state.hasNewer, the "Latest" button),
+ * which makes scrolling down fetch them in order (loadNewer()).
+ */
 function mergeNewest(fresh) {
   const freshById = new Map(fresh.map((m) => [m.id, m]));
   let changed = false;
@@ -2023,8 +2045,20 @@ function mergeNewest(fresh) {
     }
     return next;
   });
-  const known = new Set(state.messages.map((m) => m.id));
-  const added = fresh.filter((m) => !known.has(m.id));
+  const last = state.messages[state.messages.length - 1];
+  let added = [];
+  if (!last) {
+    added = fresh; // nothing loaded (a chat that was empty a moment ago)
+  } else {
+    const at = fresh.findIndex((m) => m.id === last.id);
+    if (at !== -1) {
+      added = fresh.slice(at + 1);
+    } else if (fresh.length > 0 && comesAfter(fresh[0], last)) {
+      state.hasNewer = true; // a gap: let loadNewer() walk it, in order
+      updateLatestButton();
+    }
+    // else: the whole newest window is older than the last loaded row (that row was removed meanwhile): nothing to append.
+  }
   if (added.length > 0) {
     state.messages = state.messages.concat(added);
     changed = true;

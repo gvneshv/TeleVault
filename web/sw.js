@@ -93,10 +93,13 @@
  * (a "waiting for Telegram" line while a run sits out a flood wait, and a note that self-destructing messages are not archived),
  * js/views/chat-view.js (comment only), css/base.css, manifest.webmanifest and i18n/{en,uk}.js
  * (the app no longer describes itself as built to keep deleted messages); no file was added or removed.
+ * v59 (chat view fix): changed js/views/chat-view.js (mergeNewest() no longer appends messages that are OLDER than the last loaded one -
+ * after "Show in context" near the end of a chat
+ * the live refresh used to put older messages below the newest and the view ended on an old date); no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v58";
+const CACHE_NAME = "televault-shell-v59";
 const SHELL_FILES = [
   "/",
   "/index.html",
