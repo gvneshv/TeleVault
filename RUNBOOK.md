@@ -107,6 +107,7 @@ For the "Dismiss" button on the unread bar, migrate (one more column on `chats`;
 For the check marks (read receipts) on your own messages in private chats, migrate and then restart the archiver once: it fills the new column from Telegram's chat list at start-up and keeps it up to date from live events. Only private chats are tracked, one number per chat, no times; nothing is sent to Telegram. A person who hides their read receipts shows one tick forever.
 For the automatic cleanup (Settings -> Automatic cleanup), migrate (one new small table) and then **restart the archiver once**: the cleanup runs inside the archiver, once a day, and only while the archiver is running. It does nothing until you turn it on; turning it on needs a preview of how many messages would be deleted (irreversible). A run that would delete far more than expected is blocked and deletes nothing until you save again; the archiver's log then says so (counts only). Until migrated, the card says the archive needs updating and the archiver logs one line.
 For the unread badges in the chat list, migrate (`migrate_archives.py` adds one index on `messages`; building it blocks writes for a moment, so run it with the archiver stopped) and you are done - no restart beyond the one for the bar above, whose reading position the badges use. The badge counts what is in the *archive*: it can be lower than the number in the Telegram app (ignored, blocked-chat and pre-archive messages are not counted). Until migrated, an archive still shows the badges (slower on very large archives).
+For incremental backfill (a repeat backfill only fetches what is newer), migrate (one more column on `chats`; instant) - no restart needed, backfill is a separate process. The first backfill of each chat after migrating is a full walk (nothing records how far earlier runs got), later ones are incremental. Until migrated, every backfill walks every chat in full and logs one warning.
 For the sender-name tables (your own names for senders, and the names seen over time), migrate and you are done - no restart: the archiver notices the new table on the next message. Name changes are only recorded from then on, and saving a name before the migration answers "archive needs updating".
 
 ---
@@ -146,6 +147,10 @@ Running a worker by hand (debugging) enforces the same guards:
 python main.py --user-id 1
 python backfill.py --user-id 1 --chat @someusername --limit 500
 ```
+
+Backfill goes gently on purpose: 1 s between pages of 100 messages, a random 2-5 s between chats, and when Telegram says "wait N seconds" it waits and retries (the web UI shows "waiting N s").
+A wait over an hour stops the run with state `error` - start it again later; what was archived is kept and the next run continues from there. A big first backfill of hundreds of chats therefore takes a while by design.
+Messages with a Telegram auto-delete timer or view-once media are never archived, by the archiver or by backfill.
 
 Workers never prompt for a login code. If the saved session is revoked (Telegram -> Settings -> Devices) or
 corrupted they exit with a message; sign in again under Settings -> Telegram setup.

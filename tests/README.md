@@ -41,6 +41,9 @@ Leftover test databases from a killed run are harmless and can be dropped by nam
 | `integration/test_archive_db.py` | the real archive schema: upserts, deletion flagging, search, read-only role |
 | `integration/test_startup_guard.py` | the first-admin startup guard |
 | `integration/test_ingest_blocklist_db.py` | the ingest blocklist's table and migration (incl. downgrade round trip), queries, how a rule follows a group's upgrade to a supergroup, and an archive that has not been migrated yet |
+| `integration/test_backfill_pacing.py`, `unit/test_backfill_sleep.py` | how gently backfill talks to Telegram: page and chat pauses, every kind of flood wait (retried, over an hour stops the run), a Cancel that really stops |
+| `integration/test_backfill_coverage.py` | the incremental marker: a chat first seen live still gets its older history, what moves the marker, `--full`, an archive without the column |
+| `integration/test_backfill_ttl.py`, `unit/test_telegram_client.py` | self-destructing messages are never archived (backfill; the live paths are in `test_event_handlers.py`); every Telethon client carries the device identity, checked by reading the source |
 | `integration/test_backfill_blocklist.py` | the real `backfill.run()` on a real archive with a fake Telegram: blocked chats are never fetched or stored, also when named explicitly |
 | `integration/test_archive_login_isolation.py` | each archive's own Postgres role: it opens only its archive (not another's, not the control DB), has no extra power; securing an existing archive; `scripts/secure_archives.py`; a least-privileged server login |
 | `integration/test_account_archive_login.py` | a worker gets its archive's own login from the account row, and refuses to start on an unusable one |
