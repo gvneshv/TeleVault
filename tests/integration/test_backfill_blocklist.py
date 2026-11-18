@@ -12,12 +12,18 @@ from types import SimpleNamespace
 import pytest
 import sqlalchemy as sa
 from telethon import types
+from telethon.errors import FloodWaitError
 
 import backfill
 import db
 import db.queries as q
 from tests.helpers import T0
 from utils.account import AccountContext
+
+
+def _channel(channel_id: int, title: str):
+    """A real broadcast channel entity - backfill probes channels and supergroups (and only those) for a group->supergroup migration."""
+    return types.Channel(id=channel_id, title=title, photo=types.ChatPhotoEmpty(), date=T0, broadcast=True, access_hash=1)
 
 
 def _user(user_id: int, first_name: str):
@@ -28,10 +34,21 @@ def _user(user_id: int, first_name: str):
 class FakeTelegram:
     """Just enough of TelegramClient for backfill.run(): a dialog list, per-chat history, and a record of which chats history was requested for."""
 
-    def __init__(self, history: dict[int, list]):
-        self.users = {uid: _user(uid, f"chat{uid}") for uid in history}
+    def __init__(self, history: dict[int, list], channels: frozenset[int] = frozenset()):
+        self.users = {uid: _channel(uid, f"chat{uid}") if uid in channels else _user(uid, f"chat{uid}") for uid in history}
         self.history = history
         self.fetched: list[int] = []
+        # What backfill asked iter_messages for, per call: {"chat": id, "min_id": ..., "wait_time": ...}.
+        self.iter_calls: list[dict] = []
+        # Flood waits to inject (seconds, consumed one per request): per chat for its history, and for the chat list / the migration probe.
+        self.flood_on_history: dict[int, list[int]] = {}
+        self.flood_on_dialogs: list[int] = []
+        self.flood_on_probe: list[int] = []
+        # Called with the chat id once all of its messages were handed out - lets a test act "between two chats" (cancel, say).
+        self.on_chat_done = None
+        # Called with (chat id, message id) just BEFORE each message is handed out - lets a test act in the middle of a chat (cancel, say).
+        self.before_message = None
+        self.flood_on_entity: list[int] = []
 
     async def connect(self):
         pass
@@ -42,23 +59,44 @@ class FakeTelegram:
     def disconnect(self):
         return None
 
+    async def __call__(self, request):
+        """The migration probe (GetFullChannelRequest) - only ever sent for channels and supergroups."""
+        if self.flood_on_probe:
+            raise FloodWaitError(request=None, capture=self.flood_on_probe.pop(0))
+        return SimpleNamespace(full_chat=SimpleNamespace(migrated_from_chat_id=None))
+
     async def iter_dialogs(self):
+        if self.flood_on_dialogs:
+            raise FloodWaitError(request=None, capture=self.flood_on_dialogs.pop(0))
         for user in self.users.values():
             yield SimpleNamespace(entity=user)
 
     async def get_entity(self, target):
+        if self.flood_on_entity:
+            raise FloodWaitError(request=None, capture=self.flood_on_entity.pop(0))
         return self.users[int(target)]
 
-    async def iter_messages(self, chat, reverse=True, limit=None, min_id=0):
+    async def iter_messages(self, chat, reverse=True, limit=None, min_id=0, wait_time=None):
         self.fetched.append(chat.id)  # the moment history is requested - for a blocked chat this must never happen
+        self.iter_calls.append({"chat": chat.id, "min_id": min_id, "wait_time": wait_time})
+        if self.flood_on_history.get(chat.id):
+            raise FloodWaitError(request=None, capture=self.flood_on_history[chat.id].pop(0))
         for i, item in enumerate(self.history[chat.id], start=1):
-            # An item is the text, or (text, media) for a message that carries a file (its text is then a caption).
-            text, media = item if isinstance(item, tuple) else (item, None)
+            # An item is the text, or (text, media) for a message that carries a file (its text is then a caption),
+            # or (text, media, ttl_period) for a message with an auto-delete timer.
+            text, media, ttl_period = (item + (None, None))[:3] if isinstance(item, tuple) else (item, None, None)
 
             async def get_sender(_chat=chat):
                 return _user(7, "Sender")
 
-            yield SimpleNamespace(id=i, message=text, media=media, action=None, sender_id=7, date=T0, get_sender=get_sender)
+            if self.before_message:
+                self.before_message(chat.id, i)
+
+            yield SimpleNamespace(
+                id=i, message=text, media=media, action=None, sender_id=7, date=T0, ttl_period=ttl_period, get_sender=get_sender
+            )
+        if self.on_chat_done:
+            self.on_chat_done(chat.id)
 
 
 @pytest.fixture
@@ -80,12 +118,29 @@ def telegram(archive, monkeypatch, tmp_path):
 
     previous_sigterm = signal.getsignal(signal.SIGTERM)  # run() installs its own handler; do not leak it into other tests
 
-    def go(history: dict[int, list], chat_selector: str | None = None):
-        fake = FakeTelegram(history)
+    # Every deliberate pause (between chats, through a flood wait) is recorded instead of slept, so the tests stay fast and can assert on the pauses.
+    sleeps: list[float] = []
+
+    # The status file as it was at each pause: shows what the web UI would have seen while the run was waiting.
+    snapshots: list[dict] = []
+
+    async def record_sleep(seconds):
+        sleeps.append(seconds)
+        snapshots.append(json.loads(status_file.read_text()))
+
+    monkeypatch.setattr(backfill, "_sleep_unless_cancelled", record_sleep)
+
+    def go(history: dict[int, list], chat_selector: str | None = None, *, force_full: bool = False, setup=None, channels: frozenset[int] = frozenset()):
+        """Run a whole backfill. `setup(fake)` may inject flood waits or hooks before it starts."""
+        fake = FakeTelegram(history, channels)
+        if setup:
+            setup(fake)
         monkeypatch.setattr(backfill, "TelegramClient", lambda *args, **kwargs: fake)
-        asyncio.run(backfill.run(1, chat_selector, None))
+        asyncio.run(backfill.run(1, chat_selector, None, force_full))
         return fake, json.loads(status_file.read_text())
 
+    go.sleeps = sleeps  # type: ignore[attr-defined]
+    go.snapshots = snapshots  # type: ignore[attr-defined]
     yield go
     signal.signal(signal.SIGTERM, previous_sigterm)
     db.close_db()

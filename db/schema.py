@@ -124,6 +124,14 @@ chats = Table(
     # NULL = not known yet, and the chat view draws no check marks.
     # Only ever moves forward; one number, no times. TeleVault reads this state, it never sends a read receipt of its own.
     Column("read_outbox_max_id", BigInteger),
+    # How far a BACKFILL has walked this chat's history: every message with an id up to it was fetched from Telegram and judged
+    # (stored, or deliberately left out by a rule), so the next backfill only needs the messages above it.
+    # This is NOT MAX(messages.tg_message_id): the live archiver stores new messages too,
+    # and a chat first seen live at id 1000 would then look "covered" up to 1000 although ids 1-999 were never fetched.
+    # Only backfill.py writes this column.
+    # NULL = never backfilled (or an archive from before this column): the next backfill walks the whole chat once.
+    # Written in the same transaction as the messages it covers, only moves forward (db.queries.record_backfill_covered_id).
+    Column("backfill_covered_id", BigInteger),
     CheckConstraint(
         "chat_type IN ('group', 'supergroup', 'channel', 'private')",
         name="ck_chats_chat_type",

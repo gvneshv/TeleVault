@@ -124,21 +124,63 @@ def chats_have_read_outbox(conn: Connection) -> bool:
     return _chats_column_exists(conn, "read_outbox_max_id", _archives_with_read_outbox)
 
 
-def get_last_archived_message_id(conn: Connection, chat_id: int) -> int | None:
-    """
-    Return the highest tg_message_id already archived for a chat, or None if nothing has been archived for it yet (a brand-new chat).
+# How far a backfill has walked a chat (chats.backfill_covered_id) came with migration b6f2a8d1c394; probed like the columns above.
+# Positive answers are cached per database; one warning, never one per chat, when an archive predates it.
+_archives_with_backfill_marker: set[str] = set()
+_backfill_marker_missing_warned = False
 
-    Telegram message IDs are monotonically increasing within a chat,
-    so this is a safe "high water mark":
-    backfill.py passes it as Telethon's min_id to fetch only messages newer than what's already archived,
-    instead of re-walking the chat's entire history on every run.
-    See backfill.py's module docstring for the full incremental-backfill design.
+
+def chats_have_backfill_marker(conn: Connection) -> bool:
+    """True when this archive has chats.backfill_covered_id (migration b6f2a8d1c394).
+    Quiet when it has not; once seen, never probed again for that database."""
+    return _chats_column_exists(conn, "backfill_covered_id", _archives_with_backfill_marker)
+
+
+def get_backfill_covered_id(conn: Connection, chat_id: int) -> int | None:
     """
+    How far an earlier backfill has walked this chat: every message with an id up to the returned value was already fetched and judged,
+    so backfill.py passes it to Telethon as min_id and only asks for what is newer.
+    None means "walk the whole chat": the chat was never backfilled, it is not in the archive yet, or the archive predates the column
+    (warned about once - without the column nothing can be remembered, so every backfill is a full walk until `python scripts/migrate_archives.py` is run).
+
+    Deliberately NOT the highest tg_message_id stored for the chat.
+    The live archiver stores messages too, so that number says "something recent arrived", not "everything before it was fetched":
+    a chat first seen live at message 1000 would have skipped its messages 1-999 for good.
+    Telegram ids only grow within a chat, so a single number is enough once it is written only by a walk that really covered everything below it.
+    """
+    global _backfill_marker_missing_warned
+    if not chats_have_backfill_marker(conn):
+        if not _backfill_marker_missing_warned:
+            _backfill_marker_missing_warned = True
+            logger.warning(
+                "This archive predates the backfill marker (chats.backfill_covered_id), so every backfill walks each chat's whole history. "
+                "Run `python scripts/migrate_archives.py` (see RUNBOOK.md, 'Updating existing archives') to make repeat backfills incremental."
+            )
+        return None
     row = conn.execute(
-        sql_text("SELECT MAX(tg_message_id) FROM messages WHERE chat_id = :chat_id"),
+        sql_text("SELECT backfill_covered_id FROM chats WHERE chat_id = :chat_id"),
         {"chat_id": chat_id},
     ).first()
     return row[0] if row and row[0] is not None else None
+
+
+def record_backfill_covered_id(conn: Connection, chat_id: int, covered_id: int) -> None:
+    """
+    Remember that a backfill has now walked this chat up to `covered_id` (an id it actually iterated past, skipped messages included).
+    Only moves forward, and does nothing for an archive without the column or a chat that is not in it.
+
+    Does NOT commit: the caller (backfill.py) writes this inside the same transaction as the messages it covers,
+    so a crash can never leave a marker that claims more than what was stored.
+    """
+    if not chats_have_backfill_marker(conn):
+        return
+    conn.execute(
+        sql_text(
+            "UPDATE chats SET backfill_covered_id = :covered_id "
+            "WHERE chat_id = :chat_id AND (backfill_covered_id IS NULL OR backfill_covered_id < :covered_id)"
+        ),
+        {"chat_id": chat_id, "covered_id": covered_id},
+    )
 
 
 # ---------------------------------------------------------------------------

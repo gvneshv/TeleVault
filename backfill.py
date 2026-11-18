@@ -12,13 +12,35 @@ Run with (normally started for you by the web UI's Backfill tab - POST /api/back
 The account's Telegram login and archive database are read from the control database - nothing Telegram-related lives in .env any more (see utils/account.py).
 
 Incremental by default:
-    Each chat only fetches messages newer than the highest tg_message_id TeleVault already has for it (see db.queries.get_last_archived_message_id),
-    which is passed to Telethon as min_id.
-    A brand-new chat with nothing archived yet still gets a full walk, same as before - this only skips *already-covered* history on repeat runs.
-    Telegram message IDs are monotonically increasing within a chat, so this is a safe high-water mark, not a guess.
+    Each chat only fetches messages newer than the point an earlier backfill already walked to (chats.backfill_covered_id,
+    see db.queries.get_backfill_covered_id), which is passed to Telethon as min_id.
+    A chat that was never backfilled gets a full walk - this only skips *already-covered* history on repeat runs.
+    Telegram message IDs only grow within a chat, so one number per chat is a safe marker, not a guess.
 
-    Pass --full to ignore this and re-walk everything regardless - useful if you suspect gaps in an existing archive and want to re-verify it from scratch.
+    The marker is deliberately NOT "the highest message id we hold": the live archiver stores messages too,
+    so a chat first seen live at message 1000 would have been treated as covered up to 1000 and its older history never fetched.
+    The marker moves only here, in the same transaction as the messages it covers, and also when a run is cancelled partway (it keeps what was done).
+
+    Pass --full to ignore the marker and re-walk everything regardless - useful if you suspect gaps in an existing archive and want to re-verify it from scratch.
     ON CONFLICT DO NOTHING still makes this safe to run (see below), just slower and heavier on Telegram's API than it needs to be for routine use.
+    An archive that predates the column cannot remember anything, so it is walked in full every time (one warning; `python scripts/migrate_archives.py` fixes it).
+
+Pacing - how gently this talks to Telegram:
+    - Pages of history (100 messages each) are requested with a pause between them (PAGE_WAIT_SECONDS, Telethon's wait_time).
+      Telethon would add 1 s on its own only for walks over 3000 messages; passing it explicitly makes every walk equally unhurried.
+    - Between two chats that were really fetched, a RANDOM pause of CHAT_PAUSE_SECONDS (2-5 s) - never a fixed interval,
+      which looks mechanical, and a run over hundreds of chats should not hit Telegram in a metronome pattern.
+      Blocked chats cost no request, so they cost no pause either.
+    - Both pauses end early when the run is cancelled.
+
+Flood waits (Telegram's "slow down, wait N seconds"):
+    - Up to 60 s (flood_sleep_threshold, utils/telegram_client.py) Telethon sleeps by itself and carries on; nothing here sees it.
+    - Longer waits reach this script as FloodWaitError.
+      Every request it makes is covered - the chat list, a --chat lookup, the migration probe and the history itself:
+      the run waits as long as Telegram asked (plus a second), tells the web UI (status file: flood_wait_seconds) and retries, up to MAX_FLOOD_RETRIES times.
+    - A wait longer than MAX_FLOOD_WAIT_SECONDS (an hour) is not slept through: the run stops with state "error" and says so; start it again later.
+      Pressing on with other chats while the account is throttled would only make Telegram's limits harsher.
+    - Cancel works during a wait.
 
 Important limitations - Telegram's API, not something TeleVault can work around:
   - Deleted messages cannot be backfilled.
@@ -35,6 +57,9 @@ Blocked chats are skipped:
     It is checked per chat, before any message of it is requested from Telegram.
     That also holds when one is named with --chat: the run says so and archives nothing, rather than quietly overriding the owner's rule.
     Remove the chat from the blocklist first if you do want it backfilled.
+
+Self-destructing messages are skipped:
+    A message with an auto-delete timer or view-once media is not stored, exactly as in the live archiver (handlers/ingest_filter.py, which explains why).
 
 Message ignore rules apply to history too:
     A plain-text message whose text matches a rule (Settings -> Ignore rules) is not stored,
@@ -54,6 +79,7 @@ import asyncio
 import logging
 import json
 import os
+import random
 import signal
 import sys
 import time
@@ -75,9 +101,10 @@ from utils.logging_setup import setup_logging
 from utils.text_matching import matches_any
 from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
-from handlers.ingest_filter import matchable_text
+from handlers.ingest_filter import is_self_destructing, matchable_text
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
+from utils.telegram_client import client_options
 from utils.telethon_compat import disconnect_client, get_authenticated_user
 from utils.worker_paths import backfill_status_path, heartbeat_path
 
@@ -86,6 +113,20 @@ logger = logging.getLogger(__name__)
 # Log a progress line every this many messages processed within a single chat - large channels/years of history can take a long time,
 # and a completely silent script for that long looks hung even when it isn't.
 PROGRESS_INTERVAL = 500
+
+# Pause between two pages of 100 messages of one chat (Telethon's wait_time).
+# See "Pacing" in the module docstring.
+PAGE_WAIT_SECONDS = 1
+
+# Random pause (min, max seconds) between two chats that were really fetched.
+# Random on purpose - see "Pacing".
+CHAT_PAUSE_SECONDS = (2.0, 5.0)
+
+# How often one request may be retried after a FloodWaitError before that chat (or the chat list) is given up on.
+MAX_FLOOD_RETRIES = 5
+
+# A flood wait longer than this is not slept through - the run stops instead (see "Flood waits" in the module docstring).
+MAX_FLOOD_WAIT_SECONDS = 3600
 
 # This run's status file (utils/worker_paths.py) - set once in main(), once --user-id is known.
 _status_file: Path | None = None
@@ -101,6 +142,72 @@ def _write_status(data: dict) -> None:
 
 
 _cancelled = False
+
+
+class _FloodWaitStop(Exception):
+    """Telegram asked for a wait this run will not sit through (too long, or retried too often): the run ends here with state "error"."""
+
+    def __init__(self, seconds: int) -> None:
+        super().__init__(f"Telegram asked to wait {seconds}s")
+        self.seconds = seconds
+
+
+async def _sleep_unless_cancelled(seconds: float) -> None:
+    """
+    asyncio.sleep() that ends early when the run is cancelled (SIGTERM from the Cancel button).
+    A plain sleep would keep a cancelled run alive for the whole flood wait - minutes to an hour - before it could notice.
+    """
+    deadline = time.monotonic() + seconds
+    while not _cancelled:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(min(1.0, remaining))
+
+
+async def _pause_between_chats() -> None:
+    """A random pause (CHAT_PAUSE_SECONDS) before the next chat is fetched - see "Pacing" in the module docstring."""
+    await _sleep_unless_cancelled(random.uniform(*CHAT_PAUSE_SECONDS))
+
+
+async def _wait_out_flood(error: FloodWaitError, what: str, attempt: int, status: dict) -> None:
+    """
+    Sit through a FloodWaitError that was too long for Telethon to handle itself, then return so the caller retries.
+
+    Raises _FloodWaitStop when the wait exceeds MAX_FLOOD_WAIT_SECONDS (nothing is slept).
+    Whether to retry at all is the caller's decision (MAX_FLOOD_RETRIES).
+    While waiting, the status file carries flood_wait_seconds so the web UI can say "waiting for Telegram" instead of looking hung; it is removed afterwards.
+    Logged as a warning, not an error, and without a traceback: Telegram asking us to slow down is expected on large histories.
+    """
+    if error.seconds > MAX_FLOOD_WAIT_SECONDS:
+        raise _FloodWaitStop(error.seconds) from error
+    logger.warning(
+        "Rate limited by Telegram while trying to %s (attempt %d/%d) - waiting %ds before retrying. This is normal for large histories, not an error.",
+        what, attempt, MAX_FLOOD_RETRIES, error.seconds,
+    )
+    status["flood_wait_seconds"] = error.seconds
+    _write_status(status)
+    try:
+        await _sleep_unless_cancelled(error.seconds + 1)
+    finally:
+        status.pop("flood_wait_seconds", None)
+        _write_status(status)
+
+
+async def _with_flood_retry(what: str, call, status: dict):
+    """
+    Await call() - a zero-argument function returning a coroutine - retrying it through flood waits (see _wait_out_flood()).
+    Used for the requests made outside the per-chat loop, which has its own retry handling.
+    Raises _FloodWaitStop when a wait is too long or MAX_FLOOD_RETRIES is used up: without the chat list there is nothing to continue with.
+    """
+    for attempt in range(1, MAX_FLOOD_RETRIES + 1):
+        try:
+            return await call()
+        except FloodWaitError as e:
+            if attempt == MAX_FLOOD_RETRIES:
+                raise _FloodWaitStop(e.seconds) from e
+            await _wait_out_flood(e, what, attempt, status)
+    raise AssertionError("unreachable: the last attempt either returns or raises")  # for the type checker
 
 
 def _refuse_if_conflicting(user_id: int) -> None:
@@ -172,6 +279,11 @@ async def backfill_chat(
                 db.queries.record_chat_migration(
                     conn, old_chat_id=old_chat_id, new_chat_id=chat.id
                 )
+        except FloodWaitError:
+            # Not a failed probe: Telegram asked us to wait.
+            # Let run()'s retry handling sit it out and try this chat again,
+            # instead of logging a traceback and carrying on without the check (which would also hammer Telegram while it is asking us to stop).
+            raise
         except Exception:
             logger.exception(
                 f"Could not check migration status for '{chat_name}' - continuing without it."
@@ -196,6 +308,9 @@ async def backfill_chat(
     stored = 0
     skipped = 0
     processed = 0
+    # The id of the last message this walk got past (stored or deliberately skipped) - what chats.backfill_covered_id records.
+    # Messages are walked oldest -> newest, so everything at or below it has been dealt with.
+    last_seen_id = 0
 
     # reverse=True walks oldest -> newest.
     # Doesn't affect correctness here (INSERT OR IGNORE makes this safe to interrupt and resume any time),
@@ -207,16 +322,25 @@ async def backfill_chat(
         # Telethon documents limit=None as "no cap" but annotates the parameter `float`, hence the targeted ignore.
         limit=limit,  # pyright: ignore[reportArgumentType]
         min_id=min_id or 0,
+        # A pause between pages of 100 - see "Pacing" in the module docstring.
+        wait_time=PAGE_WAIT_SECONDS,
     ):
         if _cancelled:
             logger.info(f"Cancelled mid-chat at '{chat_name}' ({processed} processed).")
             break
 
         processed += 1
+        last_seen_id = message.id
         if processed % PROGRESS_INTERVAL == 0:
             logger.info(
                 f"  ...{processed} messages processed so far ({stored} stored)."
             )
+
+        # A message that is set to self-destruct (chat auto-delete timer, view-once media) is never archived - same rule as the live handlers.
+        # A timer message that is still around when history is fetched is simply not yet expired; keeping it would keep it from disappearing.
+        if is_self_destructing(message):
+            skipped += 1
+            continue
 
         # Same rule as the live handlers (handlers/ingest_filter.py): a plain-text message whose text matches an ignore rule is not archived.
         # Counted as skipped. Nothing about the message or the rule is logged.
@@ -266,8 +390,14 @@ async def backfill_chat(
             skipped += 1
 
         if processed % PROGRESS_INTERVAL == 0:
+            # The marker goes in the same transaction as the rows it covers (it does not commit by itself), so it can never claim more than was stored.
+            if last_seen_id:
+                db.queries.record_backfill_covered_id(conn, utils.get_peer_id(chat), last_seen_id)
             conn.commit()
 
+    # Also reached after a cancel: whatever was handled before the stop counts as covered, so the next run resumes from there.
+    if last_seen_id:
+        db.queries.record_backfill_covered_id(conn, utils.get_peer_id(chat), last_seen_id)
     conn.commit()  # flush whatever's left in the final partial batch
     return stored, skipped
 
@@ -337,7 +467,7 @@ async def run(
     # and why the client is built inside the try.
     client: TelegramClient | None = None
     try:
-        client = TelegramClient(StringSession(account.session_string), account.api_id, account.api_hash)
+        client = TelegramClient(StringSession(account.session_string), account.api_id, account.api_hash, **client_options())
         await client.connect()
         authorized = await client.is_user_authorized()
     except Exception:
@@ -369,33 +499,58 @@ async def run(
 
     # list[Any]: Telethon's get_entity()/iter_dialogs() stubs are unions of entity classes (and even lists),
     # but every element we keep here is a single User/Chat/Channel entity - the attributes used below (title, first_name, username, id) exist on all of them.
-    chats: list[Any]
-    if chat_selector:
-        # Numeric chat_id or @username/invite-style identifier - get_entity() resolves either.
-        try:
-            target = int(chat_selector)
-        except ValueError:
-            target = chat_selector
-        entity = await client.get_entity(target)
-        # get_entity() is typed as possibly returning a list (it does for list input); we pass one identifier, so it is one entity.
-        chats = [entity[0] if isinstance(entity, list) else entity]
-    else:
-        logger.warning(
-            "No --chat given - backfilling EVERY chat you're in."
-            "This can take a long time and make many API requests for accounts with "
-            "years of history or large channels. Press Ctrl-C to abort."
+    chats: list[Any] = []
+    # Set when Telegram asked for a wait this run will not sit through (see _FloodWaitStop): the run then ends with state "error".
+    flood_stopped = False
+    flood_wait_seconds = 0
+    try:
+        if chat_selector:
+            # Numeric chat_id or @username/invite-style identifier - get_entity() resolves either.
+            try:
+                target = int(chat_selector)
+            except ValueError:
+                target = chat_selector
+            entity = await _with_flood_retry(f"look up chat {chat_selector!r}", lambda: client.get_entity(target), status)
+            # get_entity() is typed as possibly returning a list (it does for list input); we pass one identifier, so it is one entity.
+            chats = [entity[0] if isinstance(entity, list) else entity]
+        else:
+            logger.warning(
+                "No --chat given - backfilling EVERY chat you're in."
+                "This can take a long time and make many API requests for accounts with "
+                "years of history or large channels. Press Ctrl-C to abort."
+            )
+
+            async def list_dialogs() -> list[Any]:
+                return [dialog.entity async for dialog in client.iter_dialogs()]
+
+            chats = await _with_flood_retry("list your chats", list_dialogs, status)
+    except _FloodWaitStop as stop:
+        flood_stopped = True
+        logger.error(
+            "Telegram kept asking to slow down (last wait: %ds) while the chats were being looked up - stopping instead of waiting any longer. Try again later.",
+            stop.seconds,
         )
-        chats = [dialog.entity async for dialog in client.iter_dialogs()]
 
     total_stored = 0
     total_skipped = 0
     total_blocked = 0
     any_failures = False
+    # True once a chat was really requested from Telegram: the next chat then waits a random moment first (see "Pacing").
+    # Blocked chats never set it - they cost Telegram nothing, so they cost no pause.
+    fetched_since_pause = False
 
     status["chats_total"] = len(chats)
     _write_status(status)
 
     for chat in chats:
+        if fetched_since_pause:
+            await _pause_between_chats()
+            fetched_since_pause = False
+        # Checked per chat, not only per message: after a Cancel the remaining chats must not each send one more request just to notice it
+        # (backfill_chat() only looks at the flag once it has its first message).
+        if _cancelled:
+            break
+
         name = (
             getattr(chat, "title", None)
             or getattr(chat, "first_name", None)
@@ -404,10 +559,9 @@ async def run(
         logger.info(f"Backfilling '{name}'...")
 
         stored = skipped = 0
-        max_flood_retries = 5
         failed = False
         blocked = False
-        for attempt in range(1, max_flood_retries + 1):
+        for attempt in range(1, MAX_FLOOD_RETRIES + 1):
             try:
                 status["current_chat"] = name
 
@@ -420,17 +574,18 @@ async def run(
                     break
 
                 # Recomputed on every attempt, not just the first:
-                # if an earlier attempt got partway through before a flood wait hit,
-                # whatever it already committed has raised this chat's high-water mark
+                # if an earlier attempt got partway through before a flood wait hit, whatever it already committed has raised this chat's backfill marker
                 # - so a retry naturally resumes close to where it stopped instead of re-walking from scratch,
                 # with no special resume logic needed beyond recomputing this.
+                # (Not with --full: that deliberately ignores the marker, so a retry there starts over.)
                 chat_min_id = (
                     None
                     if force_full
-                    else db.queries.get_last_archived_message_id(
+                    else db.queries.get_backfill_covered_id(
                         conn, utils.get_peer_id(chat)
                     )
                 )
+                fetched_since_pause = True
                 stored, skipped = await backfill_chat(
                     client, conn, chat, limit, min_id=chat_min_id
                 )
@@ -442,13 +597,15 @@ async def run(
                 # Logged plainly (no traceback - this isn't an error, it's Telegram asking us to slow down) and retried.
                 # A retry recomputes chat_min_id above,
                 # so it resumes from wherever this chat's archive actually got to rather than re-walking the whole thing again - see that comment.
-                logger.warning(
-                    f"Rate limited by Telegram while backfilling '{name}' "
-                    f"(attempt {attempt}/{max_flood_retries}) - waiting "
-                    f"{e.seconds}s before retrying. This is normal for "
-                    f"large histories, not an error."
-                )
-                await asyncio.sleep(e.seconds + 1)
+                # After the last attempt there is nothing to wait for: the for-else below gives up on this chat.
+                if attempt < MAX_FLOOD_RETRIES:
+                    try:
+                        await _wait_out_flood(e, f"backfill '{name}'", attempt, status)
+                    except _FloodWaitStop:
+                        # Too long to sit through (MAX_FLOOD_WAIT_SECONDS): end the whole run, see below.
+                        flood_stopped = True
+                        flood_wait_seconds = e.seconds
+                        break
             except Exception:
                 # One chat failing for a genuinely unexpected reason (permissions, a weird entity type, etc.) shouldn't stop the rest of the run.
                 logger.exception(
@@ -458,7 +615,7 @@ async def run(
                 break
         else:
             logger.error(
-                f"Gave up on '{name}' after {max_flood_retries} flood-wait "
+                f"Gave up on '{name}' after {MAX_FLOOD_RETRIES} flood-wait "
                 f"retries - Telegram kept rate limiting this chat. Try "
                 f"again later, perhaps with --chat '{name}' on its own."
             )
@@ -466,6 +623,15 @@ async def run(
             status["chats_done"] += 1
             _write_status(status)
             continue
+
+        if flood_stopped:
+            logger.error(
+                "Telegram asked for a wait of %ds while backfilling '%s' - stopping the run instead of waiting that long. "
+                "What was archived so far is kept; start the backfill again later and it continues from there.",
+                flood_wait_seconds, name,
+            )
+            any_failures = True
+            break
 
         if blocked:
             logger.info(
@@ -490,7 +656,7 @@ async def run(
         _write_status(status)
 
     logger.info(
-        f"Backfill complete: {total_stored} stored, {total_skipped} skipped overall"
+        f"Backfill {'stopped early' if flood_stopped else 'complete'}: {total_stored} stored, {total_skipped} skipped overall"
         + (f", {total_blocked} chat(s) skipped because they are blocked." if total_blocked else ".")
     )
 
@@ -499,7 +665,7 @@ async def run(
         if _cancelled
         else (
             "error"
-            if total_stored == 0 and total_skipped == 0 and any_failures
+            if flood_stopped or (total_stored == 0 and total_skipped == 0 and any_failures)
             else "completed"
         )
     )

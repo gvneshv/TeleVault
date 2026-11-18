@@ -32,6 +32,7 @@ def make_old_archive(user_id: int) -> str:
         # Every table added by a revision AFTER PREVIOUS_REVISION must go too, or re-running those migrations would find them already there.
         conn.execute(sa.text("DROP TABLE retention_policy"))  # the automatic-cleanup setting
         conn.execute(sa.text("DROP INDEX idx_messages_chat_tg_id"))  # the unread badge's index
+        conn.execute(sa.text("ALTER TABLE chats DROP COLUMN backfill_covered_id"))  # how far a backfill has walked the chat (incremental backfill)
         conn.execute(sa.text("ALTER TABLE chats DROP COLUMN read_outbox_max_id"))  # how far the other person has read (read receipts)
         conn.execute(sa.text("ALTER TABLE chats DROP COLUMN unread_dismissed_id"))  # the local "Dismiss" of the unread bar
         conn.execute(sa.text("ALTER TABLE chats DROP COLUMN read_inbox_max_id"))  # a column, not a table, but it came with a later revision all the same

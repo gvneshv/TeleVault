@@ -85,10 +85,23 @@ class TestWriteQueries:
         assert (row["message_count"], row["deleted_count"], row["edited_count"]) == (3, 1, 1)
         assert row["last_message_preview"] is not None
 
-    def test_get_last_archived_message_id_is_the_backfill_high_water_mark(self, archive):
-        assert q.get_last_archived_message_id(archive.conn, 1) is None
+    def test_the_backfill_marker_is_not_the_highest_message_id_we_hold(self, archive):
+        """Regression: live messages used to count as 'already backfilled', so a chat first seen live at message 30 never got its messages 1-29."""
+        assert q.get_backfill_covered_id(archive.conn, 1) is None  # a chat we do not hold
         seed_chat(archive.conn, 1, "c", messages=[(10, None, "a"), (30, None, "b"), (20, None, "c")])
-        assert q.get_last_archived_message_id(archive.conn, 1) == 30
+        assert q.get_backfill_covered_id(archive.conn, 1) is None  # three messages stored, no backfill ever walked this chat
+
+    def test_the_backfill_marker_only_moves_forward(self, archive):
+        seed_chat(archive.conn, 1, "c", messages=[(10, None, "a")])
+        q.record_backfill_covered_id(archive.conn, 1, 50)
+        q.record_backfill_covered_id(archive.conn, 1, 20)  # an older figure must never pull it back
+        assert q.get_backfill_covered_id(archive.conn, 1) == 50
+        q.record_backfill_covered_id(archive.conn, 1, 70)
+        assert q.get_backfill_covered_id(archive.conn, 1) == 70
+
+    def test_recording_a_marker_for_an_unknown_chat_does_nothing(self, archive):
+        q.record_backfill_covered_id(archive.conn, 999, 5)
+        assert q.get_backfill_covered_id(archive.conn, 999) is None
 
 
 class TestDeletionInference:
