@@ -13,7 +13,8 @@ Why a dataclass rather than reading os.environ inline?
   - Missing required values fail loudly at startup, not halfway through a run.
  
 Required .env keys:       FERNET_KEY, JWT_SECRET
-Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS
+Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS,
+                          TELEGRAM_DEVICE_MODEL, TELEGRAM_SYSTEM_VERSION, TELEGRAM_APP_VERSION (how this client names itself to Telegram, see utils/telegram_client.py)
 Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN
                   (see Settings.bootstrap_admin_token below;
                   the API server refuses to start if it is unset AND no admin account exists yet - see api/server.py's _ensure_first_admin_is_possible)
@@ -28,6 +29,7 @@ there is no separate "archive" connection string to configure. See utils/account
 import os
 import sys
 import logging
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +46,11 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+# TeleVault's own version - the one place it is written down.
+# api/server.py reports it as the API version and utils/telegram_client.py sends it to Telegram as the app version, so bump it here at a release.
+APP_VERSION = "3.1.0"
 
 
 # Resolve .env relative to this file, not the working directory.
@@ -141,6 +148,24 @@ class Settings:
     # Set ENABLE_API_DOCS=true in your local .env while developing.
     enable_api_docs: bool
 
+    # --- How this client names itself to Telegram (see utils/telegram_client.py for why and for the defaults) ---
+    # Telegram lists every signed-in session under Settings -> Devices with these three strings.
+    # Telethon's own defaults would show the CPU architecture ("x86_64"), the raw kernel release and the Telethon version,
+    # which says "a script" to anyone looking at the list - so every client TeleVault creates passes these instead.
+    telegram_device_model: str
+    telegram_system_version: str
+    telegram_app_version: str
+
+
+def _default_system_version() -> str:
+    """
+    The host OS as a person would write it ("Linux 6.8.0", "Windows 11"), never empty.
+    platform.release() on Linux is the full kernel string ("6.8.0-45-generic"); the distribution suffix after the first "-" is noise in a device list.
+    """
+    system = platform.system().strip()
+    release = platform.release().strip().split("-")[0]
+    return f"{system} {release}".strip() or "Linux"
+
 
 def _load() -> Settings:
     """
@@ -171,6 +196,9 @@ def _load() -> Settings:
         log_file=               log_file,
         bootstrap_admin_token=  bootstrap_admin_token,
         enable_api_docs=        enable_api_docs,
+        telegram_device_model=  _optional("TELEGRAM_DEVICE_MODEL", "TeleVault Server"),
+        telegram_system_version=_optional("TELEGRAM_SYSTEM_VERSION", _default_system_version()),
+        telegram_app_version=   _optional("TELEGRAM_APP_VERSION", APP_VERSION),
     )
 
 

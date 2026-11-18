@@ -63,8 +63,9 @@ class FakeClient:
     request_error: Exception | None = None
     logout_error: Exception | None = None
 
-    def __init__(self, session, api_id, api_hash):
+    def __init__(self, session, api_id, api_hash, **options):
         self.session_arg = session
+        self.options = options
         self.requests: list = []
         self.logged_out = False
         self.disconnected = False

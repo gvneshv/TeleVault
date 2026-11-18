@@ -43,6 +43,7 @@ from utils.logging_setup import setup_logging
 from handlers import on_message, on_delete, on_edit, on_read, on_outbox_read
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
+from utils.telegram_client import client_options
 from utils.telethon_compat import disconnect_client, get_authenticated_user, run_until_disconnected
 from utils.worker_paths import backfill_status_path, heartbeat_path
 
@@ -184,7 +185,7 @@ async def main(user_id: int) -> None:
     # and that deserves the same clean exit below, not a raw traceback.
     client: TelegramClient | None = None
     try:
-        client = TelegramClient(StringSession(account.session_string), account.api_id, account.api_hash)
+        client = TelegramClient(StringSession(account.session_string), account.api_id, account.api_hash, **client_options())
         await client.connect()
         authorized = await client.is_user_authorized()
     except Exception:

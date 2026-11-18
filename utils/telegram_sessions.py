@@ -47,6 +47,7 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.account import GetAuthorizationsRequest, ResetAuthorizationRequest
 from telethon.tl.functions.auth import ResetAuthorizationsRequest
 
+from utils.telegram_client import client_options
 from utils.telethon_compat import disconnect_client
 
 logger = logging.getLogger(__name__)
@@ -130,7 +131,7 @@ async def _client_for(api_id: int, api_hash: str, session_string: str) -> AsyncI
     try:
         # StringSession() itself raises on a corrupted saved string (bad base64 / wrong length) - the same trap main.py's startup comment describes.
         # That is a LOCAL problem (nothing was sent to Telegram), reported separately from "Telegram rejected the session" so unlink does not claim it ended anything.
-        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        client = TelegramClient(StringSession(session_string), api_id, api_hash, **client_options())
     except ValueError as exc:  # binascii.Error (bad base64) is a ValueError subclass
         raise TelegramSessionError(
             409,

@@ -99,6 +99,7 @@ from api.schemas import (
 from utils import telegram_sessions
 from utils.crypto import decrypt_secret, encrypt_secret
 from utils.qr import qr_data_uri
+from utils.telegram_client import client_options
 from utils.security import DecodedAccessToken
 
 logger = logging.getLogger(__name__)
@@ -357,7 +358,7 @@ async def send_code(
 
     await _discard_pending_link(current["user_id"])
 
-    client = TelegramClient(StringSession(), api_id, api_hash)
+    client = TelegramClient(StringSession(), api_id, api_hash, **client_options())
     try:
         await client.connect()
         sent = await client.send_code_request(body.phone)
@@ -485,7 +486,7 @@ async def qr_start(
     api_id, api_hash = _load_credentials_or_409(control_conn, current["user_id"])
     await _discard_pending_link(current["user_id"])
 
-    client = TelegramClient(StringSession(), api_id, api_hash)
+    client = TelegramClient(StringSession(), api_id, api_hash, **client_options())
     try:
         await client.connect()
         qr = await client.qr_login()

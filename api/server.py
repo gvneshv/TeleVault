@@ -31,7 +31,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import control_db
 import db
 from api.dependencies import require_admin
-from config import settings
+from config import APP_VERSION, settings
 from control_db import queries as cq
 from utils.logging_setup import setup_logging
 
@@ -144,7 +144,7 @@ app = FastAPI(
         "Read-only REST API for the TeleVault personal Telegram archive. "
         "All write operations are performed exclusively by the userbot process."
     ),
-    version="3.1.0",
+    version=APP_VERSION,
     # Interactive docs + schema are opt-in (ENABLE_API_DOCS in .env, off by default - see config.Settings.enable_api_docs for why).
     # Passing None removes the route entirely: the paths then fall through to the static mount and get the same 404 as any other unknown /api/ path.
     docs_url="/api/docs" if settings.enable_api_docs else None,

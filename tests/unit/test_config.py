@@ -11,7 +11,8 @@ import config
 def env(monkeypatch):
     """A clean slate: every setting config.py reads is removed, then required ones are put back."""
     for key in ("CONTROL_DATABASE_URL", "FERNET_KEY", "JWT_SECRET", "TELEVAULT_BOOTSTRAP_ADMIN_TOKEN",
-                "ENABLE_API_DOCS", "DATA_DIR", "LOG_LEVEL", "LOG_FILE"):
+                "ENABLE_API_DOCS", "DATA_DIR", "LOG_LEVEL", "LOG_FILE",
+                "TELEGRAM_DEVICE_MODEL", "TELEGRAM_SYSTEM_VERSION", "TELEGRAM_APP_VERSION"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("FERNET_KEY", "k")
     monkeypatch.setenv("JWT_SECRET", "s")
@@ -74,3 +75,34 @@ def test_absolute_data_dir_is_kept(env, tmp_path):
 def test_settings_are_frozen():
     with pytest.raises(Exception):
         config.settings.jwt_secret = "changed"  # type: ignore[misc]
+
+
+# --- How the client names itself to Telegram (Settings -> Devices) --------------------------------------------------------------------
+
+def test_device_identity_defaults_are_plain_and_never_empty(env):
+    s = config._load()
+    assert s.telegram_device_model == "TeleVault Server"
+    assert s.telegram_app_version == config.APP_VERSION
+    assert s.telegram_system_version.strip()
+    for value in (s.telegram_device_model, s.telegram_system_version, s.telegram_app_version):
+        assert not any(bad in value.lower() for bad in ("unknown", "telethon", "pyrogram"))
+
+
+@pytest.mark.parametrize("system, release, expected", [
+    ("Linux", "6.8.0-45-generic", "Linux 6.8.0"),   # the distribution suffix is noise in a device list
+    ("Windows", "11", "Windows 11"),
+    ("", "", "Linux"),                              # never empty
+])
+def test_default_system_version_reads_like_a_person_would_write_it(monkeypatch, system, release, expected):
+    monkeypatch.setattr(config.platform, "system", lambda: system)
+    monkeypatch.setattr(config.platform, "release", lambda: release)
+    assert config._default_system_version() == expected
+
+
+def test_device_identity_can_be_overridden_and_a_blank_override_falls_back(env):
+    env.setenv("TELEGRAM_DEVICE_MODEL", "  Home NAS ")
+    env.setenv("TELEGRAM_SYSTEM_VERSION", "Debian 12")
+    env.setenv("TELEGRAM_APP_VERSION", "   ")
+    s = config._load()
+    assert (s.telegram_device_model, s.telegram_system_version) == ("Home NAS", "Debian 12")
+    assert s.telegram_app_version == config.APP_VERSION
