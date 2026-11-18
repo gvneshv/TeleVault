@@ -1,8 +1,8 @@
 # TeleVault
 
-A personal Telegram userbot that archives all your messages in real time and
-preserves deleted ones so you can retrieve them later - with a web UI to
-browse, search, and review what's been archived.
+A personal cloud backup for your own Telegram chats: a userbot that archives all
+your messages in real time, with a web UI to browse, search, and analyse what's
+been archived.
 
 > **Disclaimer:** TeleVault is an independent, community-built project and is
 > not affiliated with, endorsed by, or in any way officially connected to

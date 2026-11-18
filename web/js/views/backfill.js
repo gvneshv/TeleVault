@@ -113,6 +113,7 @@ function renderDisclaimer() {
         <li>${t("backfill.disclaimerSession")}</li>
         <li>${t("backfill.disclaimerDeleted")}</li>
         <li>${t("backfill.disclaimerEdits")}</li>
+        <li>${t("backfill.disclaimerTimer")}</li>
         <li>${t("backfill.disclaimerApprox")}</li>
         <li>${t("backfill.disclaimerBackground")}</li>
       </ul>
@@ -175,6 +176,7 @@ function renderProgress(status) {
         <span>${status.chats_done ?? 0}/${status.chats_total ?? "?"} ${t("backfill.chats")} · ${chatsPercent}%</span>
         <span>${eta !== null && status.state === "running" ? `${t("backfill.eta")}: ~${formatDuration(eta)}` : formatDuration(elapsed)}</span>
       </div>
+      ${status.flood_wait_seconds ? `<div class="backfill-progress__wait">${escapeHtml(t("backfill.floodWait").replace("{seconds}", String(Number(status.flood_wait_seconds))))}</div>` : ""}
       ${status.state === "running" ? `<button id="backfill-cancel-btn" class="backfill-cancel-btn">${t("backfill.cancel")}</button>` : ""}
     </div>
   `;

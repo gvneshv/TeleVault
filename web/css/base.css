@@ -2232,6 +2232,12 @@ mark.legal-placeholder {
   color: var(--color-ink-muted);
 }
 
+/* Shown only while the run is sitting out a Telegram rate limit (status.flood_wait_seconds), so a long wait does not look like a hang. */
+.backfill-progress__wait {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+
 .backfill-cancel-btn {
   margin-top: 12px;
   padding: 6px 14px;

@@ -96,6 +96,10 @@ export const uk = {
     "Повідомлення, видалені ще до того, як чат почав архівуватися, відновити неможливо - API історії Telegram повертає лише ті дані, які існують на даний момент.",
   "backfill.disclaimerEdits":
     "Завантажені повідомлення зберігаються лише в їхньому поточному вигляді. Попередні версії, які були відредаговані до початку архівування, відновити неможливо.",
+  "backfill.disclaimerTimer":
+    "Повідомлення, які Telegram налаштовує зникати самостійно (таймери автовидалення, одноразові медіа), ніколи не архівуються.",
+  "backfill.floodWait":
+    "Telegram попросив уповільнитися - очікування {seconds} с. Процес продовжиться сам.",
   "backfill.disclaimerApprox":
     "Прогрес і залишок часу - приблизні оцінки на основі кількості повідомлень у Telegram, а не точні значення.",
   "backfill.disclaimerBackground":
@@ -255,7 +259,7 @@ export const uk = {
     "Останній запуск ({when}) завершився помилкою; його буде повторено пізніше.",
   "settings.retentionMonthsLabel": "Видаляти повідомлення старші за (місяців)",
   "settings.retentionKeepDeleted":
-    "Залишати повідомлення, видалені в Telegram (рекомендовано - заради них цей архів і існує)",
+    "Залишати повідомлення, видалені в Telegram, під час очищення",
   "settings.retentionPreview": "Переглянути",
   "settings.retentionPreviewing": "Підрахунок…",
   "settings.retentionNothing": "Зараз нічого не буде видалено.",
@@ -568,7 +572,7 @@ export const uk = {
   "cv.editedTimes.many": "Змінено {n} разів",
   "cv.editedTimes.other": "Змінено {n} раза",
   "cv.editedUnknown": "Змінено",
-  "cv.deletedPreserved": "Видалено {time} - збережено",
+  "cv.deletedPreserved": "Видалено {time}",
   "cv.versionCurrent": "Поточна",
   "cv.versionOriginal": "Оригінал",
   "cv.noHistory": "Попередніх версій не збережено.",

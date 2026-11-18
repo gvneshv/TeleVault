@@ -100,6 +100,10 @@ export const en = {
     "Messages already deleted before a chat was first archived can never be recovered - Telegram's history API only returns what currently exists.",
   "backfill.disclaimerEdits":
     "Backfilled messages are stored as their current text only. Earlier edited versions from before archiving started cannot be recovered.",
+  "backfill.disclaimerTimer":
+    "Messages that Telegram sets to disappear on their own (auto-delete timers, view-once media) are never archived.",
+  "backfill.floodWait":
+    "Telegram asked to slow down - waiting {seconds} s. The run continues by itself.",
   "backfill.disclaimerApprox":
     "Progress and time remaining are estimates based on Telegram's message counts - treat them as a rough guide, not an exact figure.",
   "backfill.disclaimerBackground":
@@ -260,7 +264,7 @@ export const en = {
     "The last run ({when}) failed; it will be tried again later.",
   "settings.retentionMonthsLabel": "Delete messages older than (months)",
   "settings.retentionKeepDeleted":
-    "Keep messages that were deleted in Telegram (recommended - they are what this archive is for)",
+    "Keep messages that were deleted in Telegram when cleaning up",
   "settings.retentionPreview": "Preview",
   "settings.retentionPreviewing": "Counting…",
   "settings.retentionNothing": "Nothing would be deleted right now.",
@@ -570,7 +574,7 @@ export const en = {
   "cv.editedTimes.one": "Edited once",
   "cv.editedTimes.other": "Edited {n} times",
   "cv.editedUnknown": "Edited",
-  "cv.deletedPreserved": "Deleted {time} - preserved",
+  "cv.deletedPreserved": "Deleted {time}",
   "cv.versionCurrent": "Current",
   "cv.versionOriginal": "Original",
   "cv.noHistory": "No earlier versions were stored.",

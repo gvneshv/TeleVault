@@ -89,10 +89,14 @@
  * js/views/settings.js (the rules list is hidden behind a "Show all rules" button), css/base.css and i18n/{en,uk}.js; no file was added or removed.
  * v55 (unread bar "Dismiss", read receipts): changed js/views/chat-view.js (the Dismiss button on the bar, the check marks on your own messages in private chats),
  * css/base.css and i18n/{en,uk}.js; no file was added or removed.
+ * v58 (wording, backfill status): changed js/views/backfill.js
+ * (a "waiting for Telegram" line while a run sits out a flood wait, and a note that self-destructing messages are not archived),
+ * js/views/chat-view.js (comment only), css/base.css, manifest.webmanifest and i18n/{en,uk}.js
+ * (the app no longer describes itself as built to keep deleted messages); no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v57";
+const CACHE_NAME = "televault-shell-v58";
 const SHELL_FILES = [
   "/",
   "/index.html",

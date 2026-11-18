@@ -6,7 +6,7 @@
  *     the cross-chat message feed (GET /api/messages) and the deleted-message list (GET /api/deleted), narrowed by the search box.
  *     Clicking a result opens that chat at that message.
  *   - the CONVERSATION shows one chat the way Telegram would, from GET /api/chats/{id}/window:
- *     deleted messages stay in their place under an amber "Deleted ... preserved" chip, edited ones carry a patina "Edited N times" chip that opens the version history.
+ *     deleted messages stay in their place under an amber "Deleted <time>" chip, edited ones carry a patina "Edited N times" chip that opens the version history.
  *
  * Moving through the archive
  *   Routes are hash routes carrying ids only (lib/router.js): #/chats/<id> and #/chats/<id>/m/<messageId>.
