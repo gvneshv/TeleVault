@@ -175,6 +175,14 @@ def register(client) -> None:
                 )
             return
 
+        # --- Self-destructing messages -------------------------------------
+        # Never archived (Telegram's API Terms: do not keep self-destructing content from disappearing; reasoning in handlers/ingest_filter.py).
+        # Metadata only, so it needs no database call and sits before the blocklist lookup.
+        # After the migration branches on purpose: those hold an id mapping, not content.
+        if ingest_filter.is_self_destructing(message):
+            logger.debug("Skipping message %s in chat %s - it is set to self-destruct.", message.id, chat_id)
+            return
+
         # --- Ingest blocklist ----------------------------------------------
         # After the migration branches above on purpose: those store only an id mapping (no text),
         # and recording it is what carries a block over to the new id when a blocked group is upgraded - skipping them here would silently un-block that chat.

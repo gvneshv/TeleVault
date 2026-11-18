@@ -45,10 +45,14 @@ class FakeClient:
 
 
 class FakeEvent:
-    def __init__(self, *, chat_id: int | None = 123, sender_id: int | None = 55, text="hello", action=None, message_id=9, edit_date=None):
+    def __init__(
+        self, *, chat_id: int | None = 123, sender_id: int | None = 55, text="hello", action=None, message_id=9, edit_date=None, ttl_period=None, media=None
+    ):
         self.chat_id = chat_id
         self.sender_id = sender_id
-        self.message = SimpleNamespace(id=message_id, message=text, text=text, action=action, date=NOW, edit_date=edit_date)
+        self.message = SimpleNamespace(
+            id=message_id, message=text, text=text, action=action, date=NOW, edit_date=edit_date, ttl_period=ttl_period, media=media
+        )
 
     async def get_chat(self):
         return _bare(types.User, first_name="Bob", username=None)
@@ -67,6 +71,7 @@ class _SpyMessage:
     def __init__(self, base, touched):
         self._base, self._touched = base, touched
         self.id, self.date, self.action, self.edit_date = base.id, base.date, base.action, base.edit_date
+        self.ttl_period, self.media = base.ttl_period, base.media  # metadata, not content
 
     @property
     def message(self):
@@ -407,3 +412,44 @@ class TestMessageIgnoreRules:
             run(edited_handler(FakeEvent(chat_id=123, text="знову секретна фраза", message_id=78, edit_date=NOW)))
         assert "секретна" not in caplog.text.lower() and "СЕКРЕТНА" not in caplog.text
         assert "77" in caplog.text and "78" in caplog.text and "123" in caplog.text
+
+
+class TestSelfDestructingMessages:
+    """Telegram's API Terms: do not keep self-destructing content from disappearing.
+    Such a message is never archived, nor are its edits."""
+
+    def test_a_new_message_with_an_auto_delete_timer_is_not_archived(self, new_message_handler, recorded):
+        run(new_message_handler(FakeEvent(text="gone tomorrow", ttl_period=86400)))
+        assert recorded["persist"] == []
+
+    def test_a_view_once_photo_caption_is_not_archived(self, new_message_handler, recorded):
+        run(new_message_handler(FakeEvent(text="look", media=types.MessageMediaPhoto(ttl_seconds=10))))
+        assert recorded["persist"] == []
+
+    def test_an_edit_of_a_self_destructing_message_is_not_stored_as_a_new_record(self, edited_handler, recorded):
+        run(edited_handler(FakeEvent(text="edited", ttl_period=604800)))
+        assert recorded["edit"] == []
+
+    def test_the_decision_needs_neither_content_nor_telegram_nor_the_database(self, new_message_handler, edited_handler, recorded, monkeypatch):
+        consulted = []  # recorded, not raised: should_skip() swallows errors and would hide an AssertionError
+
+        def spy_lookup(chat_id):
+            consulted.append(chat_id)
+            return False
+
+        def spy_patterns(chat_id):
+            consulted.append(chat_id)
+            return []
+
+        monkeypatch.setattr(ingest_filter, "_lookup", spy_lookup)
+        monkeypatch.setattr(ingest_filter, "_load_patterns", spy_patterns)
+        for handler in (new_message_handler, edited_handler):
+            event = SpyEvent(text="secret", ttl_period=60)
+            run(handler(event))
+            assert event.touched == []
+        assert consulted == []
+
+    def test_a_message_without_a_timer_is_still_archived(self, new_message_handler, edited_handler, recorded):
+        run(new_message_handler(FakeEvent(text="stays", ttl_period=None)))
+        run(edited_handler(FakeEvent(text="stays too", ttl_period=0)))
+        assert len(recorded["persist"]) == 1 and len(recorded["edit"]) == 1

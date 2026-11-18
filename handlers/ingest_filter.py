@@ -55,6 +55,19 @@ Message ignore rules (should_ignore_text)
 
     PRIVACY: neither the phrase of a rule nor any message text is ever logged here - only chat and message ids.
 
+Self-destructing messages (is_self_destructing) - never archived
+    A message that carries a timer (Telegram's per-chat "auto-delete" sets Message.ttl_period on every message it applies to;
+    view-once / timed media carries media.ttl_seconds) is meant to disappear.
+    Telegram's API Terms forbid keeping such content from disappearing ("preventing self-destructing content from disappearing"),
+    and an archive that quietly kept it would do exactly that: when the timer fires Telegram sends an ordinary delete event,
+    which TeleVault would otherwise flag and keep the text of.
+    The delete event does NOT say "expired by its timer", so the only place this can be decided is when the message arrives.
+    The check is therefore made at ingest, in all three paths that can store a message's text:
+    handlers/on_message.py, handlers/on_edit.py (an edit of an unknown message is inserted as a new row, so it would otherwise be a back door) and backfill.py.
+    It reads message metadata only - no text, no database, no Telegram call - so it runs before everything else, even the blocklist lookup.
+    Known limit: a message archived BEFORE this rule existed cannot be recognised afterwards (the timer was never stored).
+    If this approach ever proves unreliable the fallback is to store such messages and purge them at date + ttl_period (needs a column and a purge job).
+
 Telegram ToS / privacy
     Blocking and ignoring only ever reduce what is stored.
     They do not change what TeleVault asks Telegram for, except that blocked chats no longer trigger entity lookups.
@@ -123,6 +136,28 @@ def matchable_text(message: Any) -> str | None:
     if media is not None and not isinstance(media, (MessageMediaWebPage, MessageMediaEmpty)):
         return None
     return getattr(message, "message", None) or None
+
+
+def _is_timer(value: Any) -> bool:
+    """True for a real, positive timer value.
+    Telegram uses None/absent for "no timer"; anything that is not a plain positive int is not a timer."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def is_self_destructing(message: Any) -> bool:
+    """
+    True if `message` is set to disappear on its own, so it must not be archived (see this module's docstring, "Self-destructing messages").
+
+    Two Telegram signals count:
+      - message.ttl_period: the chat's auto-delete timer applies to this message (seconds until it is removed);
+      - message.media.ttl_seconds: view-once / timed photo, video, voice message or file - its caption would otherwise be stored as plain text.
+    Pure and synchronous: it only reads attributes the message already carries, so it is safe to call before any database or Telegram access.
+    Objects that lack the attributes (older Telethon objects, test fakes) are simply not self-destructing.
+    """
+    if _is_timer(getattr(message, "ttl_period", None)):
+        return True
+    media = getattr(message, "media", None)
+    return media is not None and _is_timer(getattr(media, "ttl_seconds", None))
 
 
 def _load_patterns(chat_id: int) -> list[str]:

@@ -121,6 +121,14 @@ def register(client) -> None:
             logger.warning("Skipping edit event for message %s - no chat_id in event.", message.id)
             return
 
+        # A self-destructing message is never archived, and its edits must not be either:
+        # an edit of a message we do not hold is inserted as a new row,
+        # which would store the very content Telegram means to remove (handlers/ingest_filter.py, "Self-destructing messages").
+        # Metadata only - no database call.
+        if ingest_filter.is_self_destructing(message):
+            logger.debug("Skipping edit of message %s in chat %s - it is set to self-destruct.", message.id, chat_id)
+            return
+
         # Before every other check (and so before any content or entity is touched) - see this module's docstring, step 0.
         if await ingest_filter.should_skip(chat_id):
             logger.debug(

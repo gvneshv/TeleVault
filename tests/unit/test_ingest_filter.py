@@ -164,3 +164,27 @@ class TestShouldIgnoreText:
         monkeypatch.setattr(ingest_filter, "_load_patterns", load)
         ask_text(message("hello"))
         assert seen["thread"] is not threading.main_thread()
+
+
+class TestIsSelfDestructing:
+    """Telegram's API Terms forbid keeping self-destructing content from disappearing, so such messages are never archived."""
+
+    def test_a_message_with_a_chat_auto_delete_timer_is_self_destructing(self):
+        assert ingest_filter.is_self_destructing(SimpleNamespace(ttl_period=86400, media=None))
+
+    @pytest.mark.parametrize("media", [types.MessageMediaPhoto(ttl_seconds=10), types.MessageMediaDocument(ttl_seconds=1)])
+    def test_view_once_media_is_self_destructing_even_with_a_caption(self, media):
+        assert ingest_filter.is_self_destructing(SimpleNamespace(ttl_period=None, media=media, message="a caption"))
+
+    @pytest.mark.parametrize("timer", [None, 0, -5, True, "60", 1.5])
+    def test_anything_that_is_not_a_positive_integer_timer_is_not_a_timer(self, timer):
+        assert not ingest_filter.is_self_destructing(SimpleNamespace(ttl_period=timer, media=None))
+        assert not ingest_filter.is_self_destructing(SimpleNamespace(ttl_period=None, media=SimpleNamespace(ttl_seconds=timer)))
+
+    def test_ordinary_text_and_ordinary_media_are_not_self_destructing(self):
+        assert not ingest_filter.is_self_destructing(SimpleNamespace(ttl_period=None, media=None, message="hello"))
+        assert not ingest_filter.is_self_destructing(SimpleNamespace(ttl_period=None, media=types.MessageMediaPhoto(), message="caption"))
+
+    def test_an_object_without_the_attributes_is_not_self_destructing(self):
+        """Older Telethon objects and plain fakes carry neither attribute."""
+        assert not ingest_filter.is_self_destructing(SimpleNamespace(message="hi"))
