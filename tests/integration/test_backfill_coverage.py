@@ -122,7 +122,7 @@ class TestMigration:
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         cfg.set_main_option("script_location", str(REPO_ROOT / "alembic"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == [REVISION]
+        assert len(script.get_heads()) == 1  # (not pinned to this revision: later migrations move the head)
         assert script.get_revision(REVISION).down_revision == PREVIOUS_REVISION
 
     def test_downgrade_and_upgrade_round_trip(self, server_ready):

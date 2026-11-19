@@ -222,6 +222,47 @@ messages = Table(
 
 
 # ---------------------------------------------------------------------------
+# message_media
+# ---------------------------------------------------------------------------
+# One row per message that carries a file TeleVault stores (handlers/media_filter.py says which kinds).
+# A Telegram message holds at most one file; an album is several messages, so one row per message is enough.
+#
+# status records what became of the file, so the UI can say WHY a file is missing instead of silently showing nothing:
+#   pending     - recorded, not downloaded yet (waiting in the download queue);
+#   stored      - the file is on disk at file_path;
+#   too_large   - over the per-file size cap, not downloaded;
+#   disk_full   - the account's disk limit was reached, not downloaded;
+#   unavailable - Telegram no longer had it by the time we asked (deleted before the download, expired);
+#   failed      - the download failed for another reason (it may be retried).
+# size_bytes is the size Telegram declared (known before downloading, which is what lets the size cap cost no traffic);
+# file_path is relative to the data directory, set only when status is 'stored'.
+# ON DELETE CASCADE: deleting a message removes its row, but the FILE on disk must be removed by the caller (the row is read first for its path) -
+# the orphan cleanup exists for the cases where that went wrong.
+message_media = Table(
+    "message_media",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("message_id", BigInteger, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column("kind", Text, nullable=False),
+    Column("status", Text, nullable=False, server_default=text("'pending'")),
+    Column("mime_type", Text),
+    Column("size_bytes", BigInteger),
+    Column("file_path", Text),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
+    CheckConstraint("kind IN ('photo', 'video', 'voice', 'audio', 'document')", name="ck_message_media_kind"),
+    CheckConstraint(
+        "status IN ('pending', 'stored', 'too_large', 'disk_full', 'unavailable', 'failed')",
+        name="ck_message_media_status",
+    ),
+    CheckConstraint("size_bytes IS NULL OR size_bytes >= 0", name="ck_message_media_size"),
+    # A stored file has a path; nothing else does.
+    CheckConstraint("(status = 'stored') = (file_path IS NOT NULL)", name="ck_message_media_path"),
+    # The download queue and the disk-usage bar both scan by status.
+    Index("idx_message_media_status", "status"),
+)
+
+
+# ---------------------------------------------------------------------------
 # message_edits
 # ---------------------------------------------------------------------------
 # Stores the full before/after text each time a message is edited - a complete revision history, not just "was it ever edited".
