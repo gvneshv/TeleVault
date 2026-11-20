@@ -23,10 +23,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: televault
-      POSTGRES_PASSWORD: televault
+      # Dev default.
+      # On a real server set POSTGRES_PASSWORD in .env (docker compose reads it from there) BEFORE the first `docker compose up`:
+      # Postgres only reads this value when it first initialises an empty data volume, and the password inside CONTROL_DATABASE_URL must match it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-televault}
       POSTGRES_DB: televault_control  # must match the database name in CONTROL_DATABASE_URL
     ports:
-      - "5432:5432"
+      # Loopback only: reachable from this machine (the app, psql, alembic) and from nothing else.
+      # A bare "5432:5432" publishes the port on EVERY interface, which on a server means the whole internet
+      # (Docker also edits the firewall rules itself, so ufw does not stop it).
+      # Do not widen this.
+      - "127.0.0.1:5432:5432"
     volumes:
       - televault_pgdata:/var/lib/postgresql/data
       # Postgres's official image runs every .sql/.sh file in this directory once, automatically,

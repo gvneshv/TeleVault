@@ -46,3 +46,15 @@ def test_the_user_matches_the_default_connection_url():
 def test_no_init_script_creates_another_database():
     for script in (REPO / "docker" / "init").glob("*.sql"):
         assert not re.search(r"^\s*CREATE\s+DATABASE\b", script.read_text(encoding="utf-8"), re.IGNORECASE | re.MULTILINE), script.name
+
+
+def test_the_database_port_is_published_on_the_loopback_interface_only():
+    # Regression: "5432:5432" published Postgres on every interface, with a placeholder password - fine on a laptop, an open database on a server.
+    # Docker writes its own firewall rules, so a host firewall such as ufw would NOT have caught it.
+    published = re.findall(r'^\s*-\s*"?([^"\s#]*:\d+:\d+)"?', COMPOSE, re.MULTILINE)
+    assert published, "no published port found in docker-compose.yml"
+    assert all(entry.startswith("127.0.0.1:") for entry in published), published
+
+
+def test_the_password_can_be_set_from_the_environment_and_still_defaults_for_development():
+    assert re.search(r"POSTGRES_PASSWORD:\s*\$\{POSTGRES_PASSWORD:-televault\}", COMPOSE)
