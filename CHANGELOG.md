@@ -19,6 +19,16 @@ Also in this release: **delete all stored data**, **message ignore rules** (skip
 4. Expect the **first backfill of each chat after migrating to be a full walk** (the new "how far was this chat backfilled" column starts empty; earlier runs recorded nothing per chat). It is safe - stored messages are skipped, never duplicated - and later backfills are incremental. For a large archive that first pass takes a while: it now pauses between pages and chats (see below).
 Until step 1 is done nothing breaks: the archiver records no name history, ignores no message and tracks no reading position (one warning), labels read as "none", the chat view draws no unread bar, the chat list shows no unread badges, no check marks are drawn on your messages, "Dismiss" answers 409 `archive_outdated`, saving a label, an ignore rule or the cleanup policy answers 409 `archive_outdated`, and the archiver logs one line and skips the cleanup.
 
+### Added - encrypted database backups (`scripts/backup.py`)
+
+Backups were a manual `pg_dump` with no restore procedure; now there is one command, and the result is safe to keep outside the server.
+- `python scripts/backup.py` dumps the control database and every account's archive into a dated folder, each file encrypted with [age](https://age-encryption.org) *as it is written* - no readable dump ever touches the disk. Encryption is public-key: the server holds only the public key, so it can make backups but never open them (the script refuses a private key). The private key is kept offline by you. `FERNET_KEY` is deliberately not reused for this.
+- Each folder gets a `MANIFEST.sha256`, written last: a folder without it is a failed run, is not counted as a backup, and never causes an older backup to be deleted. Old backups are rotated (`--keep`, default 14) only after a fully successful run. One archive failing (e.g. its stored login no longer decrypts) does not stop the others; the exit status is then 1.
+- `python scripts/backup.py --verify <folder> --identity <key file>` (on the machine with the private key) checks every file against the manifest, decrypts it and confirms `pg_restore` can read it, without restoring anything.
+- Requires the `age` and `pg_dump` programs (or `--docker-service postgres` for `pg_dump`). Optional setting `TELEVAULT_BACKUP_RECIPIENT` in `.env`.
+- RUNBOOK.md section 5 is rewritten: what is encrypted where (Fernet columns, encrypted volume, closed database port, encrypted backups), the restore procedure - rehearsed once end to end in a Linux sandbox with PostgreSQL 16, **not** on Windows or through Docker - and a warning that `docker-compose.yml` publishes port 5432 on all interfaces (development only). Downloaded media (`data/`) is not covered by the script yet.
+- `backups/` is git-ignored.
+
 ### Added - media archiving, step 1: which media is stored, and where its record lives
 
 First building block of media archiving (Phase 4); nothing downloads yet, so there is no change you can see in the app.

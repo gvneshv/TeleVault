@@ -22,6 +22,7 @@ All settings come from `.env` (copy `.env.example`). Nothing Telegram-related li
 | `DATA_DIR` | no | `data` | Runtime-file root (section 3). A relative path is resolved against the repo root, not the working directory. |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. Applies to the API server and to every worker. |
 | `LOG_FILE` | no | console only | e.g. `logs/televault.log` for rotating file logs. |
+| `TELEVAULT_BACKUP_RECIPIENT` | no | unset | age **public** key(s), comma-separated, that `scripts/backup.py` encrypts to (section 5). Never the private key. |
 
 Note on the bootstrap token: every account comes from an invite and only the admin makes invites, so a fresh instance needs
 either this token or `python scripts/manage_admin.py create`. If neither is in place the API server refuses to start and
@@ -173,18 +174,67 @@ There is exactly one admin, enforced by the database. There is no promote comman
 
 ---
 
-## 5. Backups
+## 5. Backups and encryption
 
-**Not automated yet** - there is no backup script in the repo. Manual commands (Docker setup):
+### What is encrypted, and where
+
+| Layer | Protects against | How |
+|---|---|---|
+| Telegram `api_id` / `api_hash` / session, and each archive's database password | Someone who can read the control database (a leaked dump, a SQL injection) | Fernet (`FERNET_KEY`), per column, done by the app. |
+| The database files and `data/` on the server | A stolen or discarded disk | **You provide it:** an encrypted volume (LUKS/BitLocker/FileVault, or the encrypted disk of a VPS provider). TeleVault does not do this itself. |
+| Network access to PostgreSQL | Anyone on the internet reaching the database | **You provide it:** keep port 5432 closed to the outside. The repo's `docker-compose.yml` is for development: it publishes `5432` on every interface with the password `televault`. On a server change it to `"127.0.0.1:5432:5432"` (or remove `ports:` when only containers connect) and set a real password. |
+| Backups | A copy that leaks (cloud folder, USB stick, stolen laptop) | `scripts/backup.py` (below): public-key encryption, so the server cannot decrypt its own backups. |
+
+Message text and media are deliberately **not** encrypted row by row or file by file: search is a trigram index on `messages.text`, which per-row encryption would break. Storage-level encryption is the chosen design.
+It protects a disk that is switched off; it does **not** protect a running server whose operator (or hosting provider) can read the disk. Whoever hosts the machine can read its memory and disk while it runs - keep that in mind before choosing a managed or shared host.
+
+### Making a backup
+
+One-time setup, on a machine you trust (**not** the server): `age-keygen -o televault-backup-key.txt`. It prints a public key starting `age1...`. Keep the key *file* offline (password manager, safe drive): without it no backup can ever be opened, and nobody can recover it for you.
+Give the server only the public key: `TELEVAULT_BACKUP_RECIPIENT=age1...` in `.env` (or `--recipient`). The script refuses a private key. Install the `age` program and PostgreSQL's `pg_dump` (the `postgresql-client` package; **its major version must not be older than the server's**), or use `--docker-service postgres`.
 
 ```bash
-docker compose exec postgres pg_dump -U televault televault_control   > control_$(date +%F).sql
-docker compose exec postgres pg_dump -U televault televault_archive_1 > archive_1_$(date +%F).sql
+python scripts/backup.py --out /path/on/ANOTHER/disk       # creates <out>/<UTC timestamp>/ with one encrypted file per database + MANIFEST.sha256
+python scripts/backup.py --docker-service postgres         # same, running pg_dump inside the compose service
 ```
 
-Back up with it: `.env` (or at least `FERNET_KEY`), and your filled-in legal pages (`instance/legal/`, git-ignored).
-Restoring a control dump without the original `FERNET_KEY` leaves every stored Telegram credential unreadable.
-A restore procedure has not been written or rehearsed; do that before relying on any backup.
+- It never writes a readable dump to disk, keeps the newest 14 complete backups (`--keep N`) and removes older ones only after a fully successful run. A folder **without** `MANIFEST.sha256` is a failed or unfinished run: it is not a backup. Exit status 1 means at least one database failed.
+- Run it from cron / Task Scheduler (daily is reasonable for an archive that only grows). Scheduling is not set up for you.
+- A backup on the **same disk** as the database does not survive that disk dying. Copy the folder somewhere else (it is encrypted, so a cloud folder is acceptable).
+- **Not in the backup, store separately:** `.env` (above all `FERNET_KEY` - a restored control database without it cannot decrypt a single Telegram session) and your filled-in legal pages (`instance/legal/`, git-ignored). Downloaded media (`data/`) is not backed up by the script yet; media archiving is still being built, and this section will say so when that changes.
+
+### Checking a backup (do this now and then)
+
+On the machine that holds the private key, with a copy of the folder:
+
+```bash
+python scripts/backup.py --verify <folder> --identity televault-backup-key.txt
+```
+
+It checks every file against `MANIFEST.sha256`, decrypts it and makes sure `pg_restore` can read it. Nothing is restored and nothing is written. An unchecked backup is a hope, not a backup.
+
+### Restoring (rehearsed once, see the end of this section for what that covers)
+
+Order matters: control database first, then each archive, then re-create the archive logins. Use a **new, empty** server or new database names; never restore over a database you still need.
+
+```bash
+# 1. control database (database name = the one in CONTROL_DATABASE_URL)
+createdb -h localhost -U televault televault_control
+age -d -i televault-backup-key.txt control.dump.age | pg_restore --no-owner --no-privileges -h localhost -U televault -d televault_control
+
+# 2. each archive: the database name is in the file name, archive_<name>.dump.age
+createdb -h localhost -U televault <name>
+age -d -i televault-backup-key.txt archive_<name>.dump.age | pg_restore --no-owner --no-privileges -h localhost -U televault -d <name>
+
+# 3. with the ORIGINAL FERNET_KEY in .env, give each archive its login back (the per-archive Postgres roles do not travel inside a database dump)
+python scripts/secure_archives.py --repair
+python scripts/migrate_archives.py --dry-run        # every archive should report "already up to date"
+```
+
+Then restart the API, archiver and backfill workers. `--no-owner` is used because the original owners (the per-archive roles) do not exist on a fresh server; step 3 creates fresh ones and stores their new passwords.
+
+**What was rehearsed, and what was not.** A full cycle (create control + archive databases the production way, back up, verify, delete the databases *and* the archive role, restore as above, run step 3, read a chat back out of the restored archive) was run once in a Linux sandbox with PostgreSQL 16. **Not** tried: Windows, `--docker-service` and a restore through `docker compose exec` (the same commands with `docker compose exec -T postgres` in front of `pg_restore` and `createdb` should work, unverified), a restore onto a newer PostgreSQL major version, and a restore with a lost or changed `FERNET_KEY` (not possible by design: every stored Telegram session would stay unreadable and each account would have to log in again).
+Rehearse it yourself on your own setup before you rely on it.
 
 ---
 
