@@ -371,11 +371,10 @@ A few things worth checking on periodically once this is deployed and running lo
   never removes volumes unless you explicitly pass `--volumes` - avoid that
   flag). Check disk usage first with `docker system df` if you want to see
   what's actually being reclaimed before running it.
-- **Database backups** - the control database holds every account's (encrypted) Telegram session:
-  `docker compose exec postgres pg_dump -U televault televault_control > backup.sql` gives you a plain-text SQL dump.
-  Back up your `FERNET_KEY` separately - the dump is useless without it. Archive databases
-  (`televault_archive_<id>`) can be dumped the same way. Worth automating (a cron job) once this is deployed somewhere
-  that matters.
+- **Database backups** - `python scripts/backup.py` writes an encrypted backup of the control database and every
+  archive (the control database holds every account's Telegram session, itself Fernet-encrypted). Back up your
+  `FERNET_KEY` separately - a restored database is useless without it. Set it up, schedule it and check it with
+  `--verify` as described in RUNBOOK.md, "Backups and encryption". Never keep plain `pg_dump` files around.
 - **Disk usage on the VPS generally** - the archive only grows; check
   available disk space periodically (`df -h`), especially once media
   archiving lands (Phase 4 - see CHANGELOG).

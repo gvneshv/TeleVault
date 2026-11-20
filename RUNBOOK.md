@@ -182,7 +182,7 @@ There is exactly one admin, enforced by the database. There is no promote comman
 |---|---|---|
 | Telegram `api_id` / `api_hash` / session, and each archive's database password | Someone who can read the control database (a leaked dump, a SQL injection) | Fernet (`FERNET_KEY`), per column, done by the app. |
 | The database files and `data/` on the server | A stolen or discarded disk | **You provide it:** an encrypted volume (LUKS/BitLocker/FileVault, or the encrypted disk of a VPS provider). TeleVault does not do this itself. |
-| Network access to PostgreSQL | Anyone on the internet reaching the database | **You provide it:** keep port 5432 closed to the outside. The repo's `docker-compose.yml` is for development: it publishes `5432` on every interface with the password `televault`. On a server change it to `"127.0.0.1:5432:5432"` (or remove `ports:` when only containers connect) and set a real password. |
+| Network access to PostgreSQL | Anyone on the internet reaching the database | The repo's `docker-compose.yml` publishes port 5432 on the machine's **loopback only** (`127.0.0.1:5432:5432`), so nothing outside the machine can reach it. Do not change that to `5432:5432`: Docker writes its own firewall rules, so a host firewall such as `ufw` does **not** stop a published port. On a server also set a real `POSTGRES_PASSWORD` in `.env` **before the first `docker compose up`** (Postgres reads it only when it first creates the data volume) and put the same password in `CONTROL_DATABASE_URL`. |
 | Backups | A copy that leaks (cloud folder, USB stick, stolen laptop) | `scripts/backup.py` (below): public-key encryption, so the server cannot decrypt its own backups. |
 
 Message text and media are deliberately **not** encrypted row by row or file by file: search is a trigram index on `messages.text`, which per-row encryption would break. Storage-level encryption is the chosen design.
@@ -205,7 +205,7 @@ python scripts/backup.py --docker-service postgres         # same, running pg_du
 
 ### Checking a backup (do this now and then)
 
-On the machine that holds the private key, with a copy of the folder:
+On the machine that holds the private key, with a copy of the folder (it needs the repo and its virtualenv, but **no `.env`**):
 
 ```bash
 python scripts/backup.py --verify <folder> --identity televault-backup-key.txt
@@ -218,7 +218,8 @@ It checks every file against `MANIFEST.sha256`, decrypts it and makes sure `pg_r
 Order matters: control database first, then each archive, then re-create the archive logins. Use a **new, empty** server or new database names; never restore over a database you still need.
 
 ```bash
-# 1. control database (database name = the one in CONTROL_DATABASE_URL)
+# 1. control database (database name = the one in CONTROL_DATABASE_URL).
+#    With the compose Postgres on a fresh volume it already exists, empty: skip the createdb line (createdb would only say "already exists").
 createdb -h localhost -U televault televault_control
 age -d -i televault-backup-key.txt control.dump.age | pg_restore --no-owner --no-privileges -h localhost -U televault -d televault_control
 

@@ -28,6 +28,8 @@ Backups were a manual `pg_dump` with no restore procedure; now there is one comm
 - Requires the `age` and `pg_dump` programs (or `--docker-service postgres` for `pg_dump`). Optional setting `TELEVAULT_BACKUP_RECIPIENT` in `.env`.
 - RUNBOOK.md section 5 is rewritten: what is encrypted where (Fernet columns, encrypted volume, closed database port, encrypted backups), the restore procedure - rehearsed once end to end in a Linux sandbox with PostgreSQL 16, **not** on Windows or through Docker - and a warning that `docker-compose.yml` publishes port 5432 on all interfaces (development only). Downloaded media (`data/`) is not covered by the script yet.
 - `backups/` is git-ignored.
+- `docker-compose.yml` now publishes PostgreSQL on the loopback interface only (`127.0.0.1:5432:5432`; it used to be every interface) and reads the password from `POSTGRES_PASSWORD` in `.env`, defaulting to the old development value. **Existing development setups are unaffected**: the app and `psql` on the same machine still connect, and a password change only takes effect on a newly created data volume. Reaching the dev database from another computer on your network no longer works by design (use an SSH tunnel instead).
+- README "Routine maintenance" no longer suggests plain-text `pg_dump` files; it points to `scripts/backup.py`.
 
 ### Added - media archiving, step 1: which media is stored, and where its record lives
 
