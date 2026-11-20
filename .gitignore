@@ -211,6 +211,9 @@ cython_debug/
 *.db-shm
 *.db-wal
 data/
+
+# Encrypted database backups from scripts/backup.py (encrypted, but still not source code)
+backups/
  
 # Log files
 logs/
