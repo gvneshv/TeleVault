@@ -197,3 +197,16 @@ class TestMainArguments:
         with mock.patch.object(backup, "run_backup", return_value=0) as run:
             assert backup.main([]) == 0
         assert run.call_args.args[1] == [PUBLIC_KEY]
+
+
+class TestVerifyNeedsNoApplicationSettings:
+    def test_importing_the_script_does_not_load_config(self):
+        # `--verify` runs on the machine that holds the private key, which has no .env.
+        # config.py exits when FERNET_KEY / JWT_SECRET are missing, so a top-level `import config` would make verification impossible exactly where it is meant to run.
+        # A fresh interpreter: this test process has already imported config (conftest), so sys.modules here proves nothing.
+        import subprocess
+
+        repo = Path(__file__).resolve().parents[2]
+        code = f"import sys; sys.path.insert(0, {str(repo)!r}); import scripts.backup; assert 'config' not in sys.modules, 'config was imported'"
+        result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr

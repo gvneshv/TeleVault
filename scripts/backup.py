@@ -24,7 +24,7 @@ Usage (from the repo root, with the same .env the API server uses; the virtualen
     python scripts/backup.py --out /mnt/other-disk/televault     # somewhere else (a backup on the SAME disk as the database does not survive that disk dying)
     python scripts/backup.py --docker-service postgres           # run pg_dump inside the compose service (no PostgreSQL client needed on the host)
     python scripts/backup.py --verify backups/20261120T020000Z --identity televault-backup-key.txt
-                                                                  # on the machine that has the private key: checks every file against MANIFEST.sha256,
+                                                                  # on the machine that has the private key (needs no .env): checks every file against MANIFEST.sha256,
                                                                   # decrypts it and makes sure pg_restore can read it.
                                                                   # Run this now and then - an unchecked backup is a hope.
 
@@ -67,11 +67,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy.engine import URL, make_url
 
-import control_db
-import db
-from config import settings
-from control_db import queries as cq
-from utils.archive_login import archive_login_from_row
+# The application's own modules (config, control_db, db, utils.archive_login) are imported INSIDE the functions that need a database, not here.
+# Importing `config` demands a complete .env (FERNET_KEY, JWT_SECRET) and exits otherwise,
+# but `--verify` is meant for a machine that holds only the private key and a copy of the backups - no .env, no secrets of the running app.
+# tests/unit/test_backup.py pins that this module imports without `config`.
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT_DIR = REPO_ROOT / "backups"
@@ -255,10 +254,15 @@ def dump_encrypted(url: URL, destination: Path, recipients: list[str], docker_se
                     dump.stdout.close()
             encrypt_status = encrypt.wait()
             dump_status = dump.wait()
-            if dump_status != 0:
-                raise BackupError(f"pg_dump failed: {_last_error_line(dump_err)}")
+            # age is checked FIRST, on purpose.
+            # If age dies early (bad recipient, disk full), pg_dump is left writing into a closed pipe and fails too,
+            # with a meaningless "broken pipe": reporting that would hide the real cause.
+            # The reverse cannot mislead: when pg_dump fails, age just sees the stream end and exits 0,
+            # so a non-zero pg_dump status with a clean age status is always pg_dump's own failure.
             if encrypt_status != 0:
                 raise BackupError(f"age failed: {_last_error_line(age_err)}")
+            if dump_status != 0:
+                raise BackupError(f"pg_dump failed: {_last_error_line(dump_err)}")
         if partial.stat().st_size == 0:
             raise BackupError("the encrypted file came out empty")
         os.replace(partial, destination)
@@ -276,6 +280,12 @@ def _database_targets() -> list[tuple[str, str, URL]]:
     A login that cannot be decrypted (lost FERNET_KEY) is reported for that archive alone and never silently swapped for the server's login
     (utils/archive_login.py explains why).
     """
+    import control_db
+    import db
+    from config import settings
+    from control_db import queries as cq
+    from utils.archive_login import archive_login_from_row
+
     control_url = make_url(settings.control_database_url)
     targets: list[tuple[str, str, URL]] = [(backup_file_name("control", control_url.database or ""), "control database", control_url)]
     control_db.init_control_db(settings.control_database_url)
@@ -311,6 +321,9 @@ def run_backup(out_dir: Path, recipients: list[str], keep: int, docker_service: 
     except FileExistsError:
         print(f"ERROR: {run_dir} already exists (two runs started within the same second?). Nothing was changed; try again in a moment.")
         return 1
+    import control_db
+    import db
+
     try:
         targets = _database_targets()
     finally:

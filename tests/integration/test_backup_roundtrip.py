@@ -63,13 +63,12 @@ def restore_into_scratch(encrypted: Path, identity: Path, scratch: str) -> None:
     """age -d | pg_restore into a fresh scratch database, the way RUNBOOK.md's restore procedure does it."""
     _create_database(scratch)
     url = db.server_database_url(scratch)
+    assert url.username is not None  # the test server URL always names a user; this also narrows the type for the type checker
     decrypt = subprocess.Popen(["age", "-d", "-i", str(identity), str(encrypted)], stdout=subprocess.PIPE)
-    restore = subprocess.run(
-        ["pg_restore", "--no-owner", "--no-privileges", "-h", url.host or "localhost", "-p", str(url.port or 5432), "-U", url.username, "-d", scratch],
-        stdin=decrypt.stdout,
-        env={"PGPASSWORD": url.password or "", "PATH": os.environ["PATH"]},
-        capture_output=True,
-    )
+    # Every argument is spelled as a plain str on purpose: subprocess.run()'s type stubs reject a `str | None` in the argument list.
+    command: list[str] = ["pg_restore", "--no-owner", "--no-privileges", "-h", url.host or "localhost", "-p", str(url.port or 5432), "-U", url.username, "-d", scratch]
+    environment: dict[str, str] = {"PGPASSWORD": url.password or "", "PATH": os.environ["PATH"]}
+    restore = subprocess.run(command, stdin=decrypt.stdout, env=environment, capture_output=True)
     assert decrypt.stdout
     decrypt.stdout.close()
     assert decrypt.wait() == 0
