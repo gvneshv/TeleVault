@@ -225,6 +225,16 @@ def _last_error_line(stderr_file) -> str:
     return (lines[-1] if lines else "no error message")[:_ERROR_LINE_LIMIT]
 
 
+def _not_installed(command: list[str]) -> BackupError:
+    """
+    The error for a program that could not be started, named from the command we tried to run.
+
+    Do NOT read the name from FileNotFoundError.filename: on Windows CPython raises the error from CreateProcess with filename None,
+    so the message came out as "'None' is not installed" (found by the Windows run of tests/unit/test_backup.py).
+    """
+    return BackupError(f"'{command[0]}' is not installed or not on PATH")
+
+
 def dump_encrypted(url: URL, destination: Path, recipients: list[str], docker_service: str | None) -> None:
     """
     pg_dump `url` -> age -> `destination`, without the readable dump ever touching the disk.
@@ -238,10 +248,11 @@ def dump_encrypted(url: URL, destination: Path, recipients: list[str], docker_se
     fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # owner-only from the first byte, not chmod'ed afterwards
     try:
         with os.fdopen(fd, "wb") as out, tempfile.TemporaryFile() as dump_err, tempfile.TemporaryFile() as age_err:
+            dump_command = pg_dump_command(url, docker_service)
             try:
-                dump = subprocess.Popen(pg_dump_command(url, docker_service), stdout=subprocess.PIPE, stderr=dump_err, env=_pg_env(url))
+                dump = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=dump_err, env=_pg_env(url))
             except FileNotFoundError as exc:
-                raise BackupError(f"'{exc.filename}' is not installed or not on PATH") from exc
+                raise _not_installed(dump_command) from exc
             try:
                 encrypt = subprocess.Popen(age_encrypt_command(recipients), stdin=dump.stdout, stdout=out, stderr=age_err)
             except FileNotFoundError as exc:
@@ -413,11 +424,18 @@ def _check_readable(path: Path, identity: Path) -> None:
     """age -d -i <identity> <file> | pg_restore --list > nowhere.
     Nothing is written to disk and no database is touched."""
     with tempfile.TemporaryFile() as age_err, tempfile.TemporaryFile() as restore_err, open(path, "rb") as source:
+        decrypt_command = ["age", "-d", "-i", str(identity)]
+        restore_command = ["pg_restore", "--list"]
         try:
-            decrypt = subprocess.Popen(["age", "-d", "-i", str(identity)], stdin=source, stdout=subprocess.PIPE, stderr=age_err)
-            restore = subprocess.Popen(["pg_restore", "--list"], stdin=decrypt.stdout, stdout=subprocess.DEVNULL, stderr=restore_err)
+            decrypt = subprocess.Popen(decrypt_command, stdin=source, stdout=subprocess.PIPE, stderr=age_err)
         except FileNotFoundError as exc:
-            raise BackupError(f"'{exc.filename}' is not installed or not on PATH") from exc
+            raise _not_installed(decrypt_command) from exc
+        try:
+            restore = subprocess.Popen(restore_command, stdin=decrypt.stdout, stdout=subprocess.DEVNULL, stderr=restore_err)
+        except FileNotFoundError as exc:
+            decrypt.kill()  # age was already started; do not leave it running with nobody reading its output
+            decrypt.wait()
+            raise _not_installed(restore_command) from exc
         if decrypt.stdout:
             decrypt.stdout.close()
         restore_status = restore.wait()

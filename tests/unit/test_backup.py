@@ -170,6 +170,40 @@ class TestDumpEncryptedPipeline:
                 backup.dump_encrypted(self.URL, tmp_path / "x.dump.age", [PUBLIC_KEY], None)
         assert list(tmp_path.iterdir()) == []
 
+    def test_a_missing_program_is_named_even_when_the_os_error_carries_no_filename(self, tmp_path):
+        # Windows raises FileNotFoundError(2, "...") with filename None; Linux fills it in.
+        # Reproduce the Windows shape on any platform: the name must come from the command we ran, not from the exception.
+        windows_style = FileNotFoundError(2, "The system cannot find the file specified")
+        assert windows_style.filename is None
+        with mock.patch.object(backup, "pg_dump_command", return_value=["definitely-not-installed-xyz"]), \
+             mock.patch.object(backup.subprocess, "Popen", side_effect=windows_style):
+            with pytest.raises(backup.BackupError) as caught:
+                backup.dump_encrypted(self.URL, tmp_path / "x.dump.age", [PUBLIC_KEY], None)
+        assert str(caught.value) == "'definitely-not-installed-xyz' is not installed or not on PATH"
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_missing_age_is_named_and_pg_dump_is_not_left_running(self, tmp_path):
+        windows_style = FileNotFoundError(2, "The system cannot find the file specified")
+        real_popen = backup.subprocess.Popen
+
+        def only_age_is_missing(command, *args, **kwargs):
+            if command and command[0] == "age":
+                raise windows_style
+            return real_popen(command, *args, **kwargs)
+
+        with mock.patch.object(backup, "pg_dump_command", return_value=_python("import sys, time; sys.stdout.write('x'); sys.stdout.flush(); time.sleep(60)")), \
+             mock.patch.object(backup.subprocess, "Popen", side_effect=only_age_is_missing):
+            with pytest.raises(backup.BackupError) as caught:
+                backup.dump_encrypted(self.URL, tmp_path / "x.dump.age", [PUBLIC_KEY], None)
+        assert str(caught.value).startswith("'age' is not installed or not on PATH")  # followed by where to get it
+        assert list(tmp_path.iterdir()) == []  # and the test did not wait 60 seconds: the sleeping stand-in for pg_dump was killed
+
+    def test_verify_names_a_missing_program_too(self, tmp_path):
+        windows_style = FileNotFoundError(2, "The system cannot find the file specified")
+        with mock.patch.object(backup.subprocess, "Popen", side_effect=windows_style):
+            with pytest.raises(backup.BackupError, match="'age' is not installed"):
+                (tmp_path / "f.age").write_bytes(b"x"); backup._check_readable(tmp_path / "f.age", tmp_path / "key.txt")
+
     def test_the_error_shown_never_contains_the_password(self, tmp_path):
         with pytest.raises(backup.BackupError) as caught:
             self.run(tmp_path, "import sys; sys.stderr.write('could not connect'); sys.exit(2)", COPY_STDIN_TO_STDOUT)
