@@ -332,6 +332,17 @@ function renderUnreadBadge(chat) {
   return `<span class="cv-unread-badge" role="img" aria-label="${label}" title="${label}">${shown}</span>`;
 }
 
+/**
+ * The i18n key for the placeholder shown where a message has no text.
+ * A media-only message names its kind ("Photo"); anything else keeps the plain "(no text)".
+ * Step 1 of media archiving only labels the file - the file itself is shown by a later step.
+ */
+function mediaLabelKey(kind) {
+  return ["photo", "video", "voice", "audio", "document"].includes(kind)
+    ? `messages.media.${kind}`
+    : "messages.noText";
+}
+
 function renderChatRow(chat) {
   const active = state.route?.chatId === chat.chat_id;
   const edited =
@@ -342,9 +353,11 @@ function renderChatRow(chat) {
     chat.deleted_count > 0
       ? `<span class="seal-badge">${escapeHtml(fill(t("cv.deletedCount"), { n: chat.deleted_count }))}</span>`
       : "";
+  // No preview text but messages exist: the newest message is media-only (a photo without caption), whose text is NULL.
+  // Say so instead of "No messages yet", which would be wrong for a chat that has them.
   const preview = chat.last_message_preview
     ? escapeHtml(chat.last_message_preview)
-    : `<span class="cv-row__empty">${escapeHtml(t("chats.noPreview"))}</span>`;
+    : `<span class="cv-row__empty">${escapeHtml(t(chat.message_count > 0 ? "chats.mediaPreview" : "chats.noPreview"))}</span>`;
   return `
     <li>
       <a class="cv-row" href="${chatRouteHash(chat.chat_id)}" ${active ? 'aria-current="true"' : ""}>
@@ -1010,7 +1023,7 @@ function renderMessage(message) {
         ${renderSenderName(message)}
         <span class="cv-msg__when"><time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>${renderReceipt(message)}</span>
       </div>
-      <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
+      <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t(mediaLabelKey(message.media_kind)))}</span>`}</div>
       ${editedChip || deletedChip || contextLink ? `<div class="cv-msg__chips">${editedChip}${deletedChip}${contextLink}</div>` : ""}
       ${renderDetail(message)}
     </li>`;

@@ -35,9 +35,15 @@ export const uk = {
 
   "chats.empty": "Ще немає архівованих чатів.",
   "chats.noPreview": "Повідомлень ще немає",
+  "chats.mediaPreview": "Медіа",
 
   "messages.empty": "Повідомлень не знайдено.",
   "messages.noText": "(без тексту)",
+  "messages.media.photo": "Фото",
+  "messages.media.video": "Відео",
+  "messages.media.voice": "Голосове повідомлення",
+  "messages.media.audio": "Аудіо",
+  "messages.media.document": "Файл",
   "messages.searchPlaceholder": "Пошук у тексті повідомлень…",
 
   "deleted.empty": "Видалених повідомлень не знайдено.",

@@ -25,7 +25,13 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import ProgrammingError
 
 from db.connection import is_undefined_table_error
-from db.queries import chats_have_read_outbox, chats_have_read_state, chats_have_unread_dismissal, retention_cutoff
+from db.queries import (
+    _message_media_ready,
+    chats_have_read_outbox,
+    chats_have_read_state,
+    chats_have_unread_dismissal,
+    retention_cutoff,
+)
 from utils.validation import SENDER_HISTORY_MAX_ENTRIES, UNREAD_COUNT_CAP
 
 # ---------------------------------------------------------------------------
@@ -103,6 +109,9 @@ def _shape_message_row(row: dict[str, Any], has_chat_columns: bool) -> dict[str,
         "is_deleted": row["is_deleted"],
         "deleted_at": row["deleted_at"],
         "edit_count": row["edit_count"],
+        # Which kind of file the message carries (None for plain text).
+        # A media-only message has text None and this set.
+        "media_kind": row.get("media_kind"),
     }
 
 
@@ -500,7 +509,20 @@ def get_chat(conn: Connection, chat_id: int) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 
-def _base_message_select() -> str:
+def _media_kind_column(conn: Connection) -> str:
+    """
+    The SQL expression for a message's media kind (photo, video, voice, audio, document), or NULL when it has none.
+    A correlated lookup on message_media.message_id (unique, so index-served; a page is at most 200 rows).
+    On an archive that predates message_media (migration c8a4e1f7b265) a typed NULL,
+    so the message lists keep working until `python scripts/migrate_archives.py` has been run.
+    Fixed strings only - no user input.
+    """
+    if not _message_media_ready(conn):
+        return "CAST(NULL AS TEXT)"
+    return "(SELECT mm.kind FROM message_media mm WHERE mm.message_id = m.id)"
+
+
+def _base_message_select(conn: Connection) -> str:
     """
     Core SELECT joining messages -> senders.
     Used by both get_messages() and get_chat_messages() to keep column lists consistent - changing the projection in one place changes both.
@@ -508,7 +530,7 @@ def _base_message_select() -> str:
     Note: chat columns are NOT joined here;
     get_messages() adds them, while get_chat_messages() omits them (they're redundant per-chat).
     """
-    return """
+    return f"""
         SELECT
             m.id,
             m.tg_message_id,
@@ -523,6 +545,7 @@ def _base_message_select() -> str:
             -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
             -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
             (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
+            {_media_kind_column(conn)} AS media_kind,
             -- sender fields prefixed to avoid collision with message columns
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
@@ -575,7 +598,7 @@ def get_messages(
     Same substring-anywhere, case-insensitive, Cyrillic-friendly behaviour as before,
     just via a different mechanism (see db/schema.py's module docstring for why pg_trgm was chosen).
     """
-    select = """
+    select = f"""
         SELECT
             m.id,
             m.tg_message_id,
@@ -592,6 +615,7 @@ def get_messages(
             -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
             -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
             (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
+            {_media_kind_column(conn)} AS media_kind,
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
             s.first_name   AS sender_first_name,
@@ -670,7 +694,7 @@ def get_chat_messages(
     Chat columns are omitted (redundant in a per-chat context).
     All other filters mirror get_messages().
     """
-    select = _base_message_select()
+    select = _base_message_select(conn)
 
     conditions: list[str] = ["m.chat_id = :chat_id"]
     params: dict[str, Any] = {"chat_id": chat_id}
@@ -773,7 +797,7 @@ def _window_side(
 
     `kind` / `q` narrow the rows (see _window_filter()); "is there more?" then means "more MATCHING rows", because the extra row is fetched with the same filter.
     """
-    select = _base_message_select()
+    select = _base_message_select(conn)
     filter_sql, filter_params = _window_filter(kind, q)
     where = "WHERE m.chat_id = :chat_id" + filter_sql
     params: dict[str, Any] = {"chat_id": chat_id, "fetch": n + 1, **filter_params}
@@ -881,7 +905,7 @@ def get_chat_window(
             return None
         anchor_rows = _rows_to_dicts(
             conn.execute(
-                sql_text(f"{_base_message_select()} WHERE m.chat_id = :chat_id AND m.id = :message_id"),
+                sql_text(f"{_base_message_select(conn)} WHERE m.chat_id = :chat_id AND m.id = :message_id"),
                 {"chat_id": chat_id, "message_id": anchor_id},
             )
         )
@@ -911,10 +935,10 @@ def get_message_detail(
     Deletion record (if any) is attached under the key 'deletion'.
     """
     # Base message row.
-    # Previously used _base_message_select() (sender-only, no chats join)
+    # Previously used _base_message_select(conn) (sender-only, no chats join)
     # - added the chats join explicitly here since this endpoint's response (MessageDetail) includes a chat field same as MessageOut,
     # and there was no documented reason to omit it the way get_chat_messages() intentionally does.
-    select = """
+    select = f"""
         SELECT
             m.id,
             m.tg_message_id,
@@ -931,6 +955,7 @@ def get_message_detail(
             -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
             -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
             (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
+            {_media_kind_column(conn)} AS media_kind,
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
             s.first_name   AS sender_first_name,

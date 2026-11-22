@@ -39,9 +39,15 @@ export const en = {
 
   "chats.empty": "No chats archived yet.",
   "chats.noPreview": "No messages yet",
+  "chats.mediaPreview": "Media",
 
   "messages.empty": "No messages found.",
   "messages.noText": "(no text)",
+  "messages.media.photo": "Photo",
+  "messages.media.video": "Video",
+  "messages.media.voice": "Voice message",
+  "messages.media.audio": "Audio",
+  "messages.media.document": "File",
   "messages.searchPlaceholder": "Search message text…",
 
   "deleted.empty": "No deleted messages found.",

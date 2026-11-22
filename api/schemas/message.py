@@ -137,6 +137,10 @@ class MessageOut(BaseModel):
     )
     is_deleted: bool = False
     deleted_at: datetime | None = None
+    media_kind: Literal["photo", "video", "voice", "audio", "document"] | None = Field(
+        None,
+        description="Kind of file the message carries, None for plain text. A media-only message has `text` None and this set.",
+    )
 
     model_config = {"from_attributes": True}
 
