@@ -31,6 +31,14 @@ Backups were a manual `pg_dump` with no restore procedure; now there is one comm
 - `docker-compose.yml` now publishes PostgreSQL on the loopback interface only (`127.0.0.1:5432:5432`; it used to be every interface) and reads the password from `POSTGRES_PASSWORD` in `.env`, defaulting to the old development value. **Existing development setups are unaffected**: the app and `psql` on the same machine still connect, and a password change only takes effect on a newly created data volume. Reaching the dev database from another computer on your network no longer works by design (use an SSH tunnel instead).
 - README "Routine maintenance" no longer suggests plain-text `pg_dump` files; it points to `scripts/backup.py`.
 
+### Added - media archiving, step 2 of the build order: media-only messages are archived
+
+- A photo, video, voice message, audio file or document sent **without a caption** used to be dropped, because the archiver only stored messages with text. It is now stored with text empty plus a `pending` row in `message_media` (written in the same transaction as the message), by the live handler, by edit events for a message we never saw, and by backfill. No file is downloaded yet - that is the next step.
+- Such messages count in the chat's `message_count`; the chat list shows "Media" when the newest message is media-only, and the chat view labels the message with its kind ("Photo", "Video", "Voice message", "Audio", "File") instead of "(no text)". Messages API: new `media_kind` field.
+- Stickers, GIFs, link previews and view-once media are still not stored, as before.
+- Archives without the `message_media` table (migration `c8a4e1f7b265`) keep working: the message is stored, just with no media row. Run `python scripts/migrate_archives.py` to add it.
+- Limits for now: a chat already backfilled will not get its historical media-only messages until the media backfill step; an edit that only removes a caption is not recorded; a captioned photo shows its caption only (the file itself appears in a later step). Web shell cache bumped to v60.
+
 ### Added - media archiving, step 1: which media is stored, and where its record lives
 
 First building block of media archiving (Phase 4); nothing downloads yet, so there is no change you can see in the app.
