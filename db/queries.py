@@ -64,6 +64,24 @@ def _ignore_rules_ready(conn: Connection) -> bool:
     return present
 
 
+# message_media came with migration c8a4e1f7b265, so an archive can lack the table.
+# Probed like the ignore-rule tables (quietly, positive answers cached per database, never "try and catch undefined_table").
+# Without the table a media-only message is still archived (text NULL), it just has no media row until `python scripts/migrate_archives.py` has been run.
+_archives_with_message_media: set[str] = set()
+
+
+def _message_media_ready(conn: Connection) -> bool:
+    """True when this archive has the message_media table (migration c8a4e1f7b265).
+    Quiet when it has not; once seen, never probed again for that database."""
+    name = conn.engine.url.database or ""
+    if name in _archives_with_message_media:
+        return True
+    present = bool(conn.execute(sql_text("SELECT to_regclass('public.message_media') IS NOT NULL")).scalar())
+    if present:
+        _archives_with_message_media.add(name)
+    return present
+
+
 # The read position column (chats.read_inbox_max_id) came with a later migration than the chats table, so an archive can lack it.
 # Probed like the ignore-rule tables: quietly, positive answers cached per database for the life of the process
 # (an archive migrated while the archiver runs starts tracking on the next read event), and one warning - never one per event - when it is missing.
@@ -1235,9 +1253,17 @@ def insert_message(
     date: datetime,
     is_edited: bool = False,
     commit: bool = True,
+    media_kind: str | None = None,
+    media_size: int | None = None,
 ) -> int | None:
     """
     Store a new incoming or outgoing message.
+
+    `text` may be None: a media-only message (a photo with no caption) is archived with text NULL.
+    When `media_kind` is given (one of handlers.media_filter.KINDS) a message_media row with status 'pending' is written in the SAME transaction as the message,
+    so a message can never exist without the media row the download queue (and the chat view's "Photo" label) relies on.
+    `media_size` is Telegram's declared size in bytes, or None when unknown.
+    The media row is written only for a NEW message: a re-delivered one (ON CONFLICT) must not reset a row that may already be 'stored'.
 
     date (Telegram's send timestamp) is converted to local time before storage.
     archived_at is set to the current local time explicitly so it doesn't fall back to the DEFAULT now().
@@ -1315,6 +1341,14 @@ def insert_message(
             },
         )
         row = cursor.first()
+        if row is not None and media_kind is not None and _message_media_ready(conn):
+            conn.execute(
+                sql_text(
+                    "INSERT INTO message_media (message_id, kind, size_bytes) VALUES (:message_id, :kind, :size_bytes) "
+                    "ON CONFLICT (message_id) DO NOTHING"
+                ),
+                {"message_id": row[0], "kind": media_kind, "size_bytes": media_size},
+            )
         if commit:
             _commit(conn)
     except Exception:

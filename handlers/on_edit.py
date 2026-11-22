@@ -11,7 +11,7 @@ Flow per event:
      see handlers/ingest_filter.py (which also says what happens to a message edited INTO or OUT OF a rule).
      An edit is NOT harmless to ignore the filter for: it stores the new text of a known message, and for an unknown one it inserts the whole message,
      so a blocked chat would otherwise keep leaking its content through edits.
-  2. Confirm the edited message has text (skip media caption changes for now).
+  2. Confirm the edited message has text or a file we store (a media-only message edited before we saw it is archived with text NULL).
   3. Call queries.record_edit, which:
        a. Fetches the current text from the DB (becomes old_text).
        b. Writes a row to message_edits with old -> new.
@@ -33,6 +33,7 @@ from sqlalchemy.exc import OperationalError
 import db
 from handlers import ingest_filter
 from handlers.helpers import get_chat_type, get_sender_fields
+from handlers.media_filter import media_kind, media_size
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,19 @@ def _persist_edit(
     first_name: str | None,
     last_name: str | None,
     tg_message_id: int,
-    new_text: str,
+    new_text: str | None,
     edited_at,
     date,
+    media_kind: str | None = None,
+    media_size: int | None = None,
 ) -> None:
     """
     Synchronous DB work for a single edit event - see this module's docstring for why this runs via asyncio.to_thread() rather than inline.
+
+    `new_text` is None for an edit of a media message that carries no text (no caption).
+    There is no text change to record then, so record_edit() is skipped (a caption REMOVED by an edit is not tracked yet - same as before media archiving);
+    the insert below still runs, and is a harmless no-op (ON CONFLICT DO NOTHING) when the message is already archived.
+    Its only job is the "we never saw the original" case, where a media-only message would otherwise be missing from the archive entirely.
     """
     with db.get_connection() as conn:
         # Guard: ensure the chat and sender rows exist.
@@ -76,21 +84,24 @@ def _persist_edit(
                 commit=False,
             )
 
-        found = db.queries.record_edit(
-            conn,
-            tg_message_id=tg_message_id,
-            chat_id=chat_id,
-            new_text=new_text,
-            edited_at=edited_at,
-        )
+        found = False
+        if new_text is not None:
+            found = db.queries.record_edit(
+                conn,
+                tg_message_id=tg_message_id,
+                chat_id=chat_id,
+                new_text=new_text,
+                edited_at=edited_at,
+            )
 
         if not found:
             # The original message isn't in our DB - insert it now with the current (post-edit) text.
             # Not ideal, but better than having no record of this message at all.
-            logger.info(
-                f"Edit received for unknown message {tg_message_id} in chat {chat_id} - inserting current version as a new record."
-            )
-            db.queries.insert_message(
+            if new_text is not None:
+                logger.info(
+                    f"Edit received for unknown message {tg_message_id} in chat {chat_id} - inserting current version as a new record."
+                )
+            inserted = db.queries.insert_message(
                 conn,
                 tg_message_id=tg_message_id,
                 chat_id=chat_id,
@@ -98,7 +109,11 @@ def _persist_edit(
                 text=new_text,
                 date=date,
                 is_edited=True,
+                media_kind=media_kind,
+                media_size=media_size,
             )
+            if new_text is None and inserted:
+                logger.info(f"Edit received for unknown media message {tg_message_id} in chat {chat_id} - inserted as a new record.")
 
 
 def register(client) -> None:
@@ -154,8 +169,9 @@ def register(client) -> None:
             )
             return
 
-        # Same rationale as on_message - skip non-text edits for now.
-        if not message.text:
+        # Skip an edit with neither text nor a file we store (same rule as on_message).
+        kind = media_kind(message)
+        if not message.text and kind is None:
             logger.debug(
                 f"Skipping non-text edit for message {message.id} in chat {chat_id}."
             )
@@ -187,9 +203,11 @@ def register(client) -> None:
                 first_name,
                 last_name,
                 message.id,
-                message.text,
+                message.text or None,
                 edit_date,
                 message.date,
+                kind,
+                media_size(message) if kind else None,
             )
         except OperationalError:
             logger.error(

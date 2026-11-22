@@ -102,6 +102,7 @@ from utils.text_matching import matches_any
 from utils.atomic_write import atomic_write_json
 from handlers.helpers import get_chat_type, get_sender_fields, resolve_message_text
 from handlers.ingest_filter import is_self_destructing, matchable_text
+from handlers.media_filter import media_kind, media_size
 from api.process_utils import is_archiver_running, is_backfill_running
 from utils.account import AccountContextError, load_account_context
 from utils.telegram_client import client_options
@@ -353,7 +354,10 @@ async def backfill_chat(
             continue
 
         text = resolve_message_text(message)
-        if not text:
+        kind = media_kind(message)
+        # Neither text nor a file we store (sticker, GIF, service message): nothing to archive.
+        # A media-only message (a photo without caption) is stored with text NULL and a 'pending' message_media row, like the live handler does.
+        if not text and kind is None:
             skipped += 1
             continue
 
@@ -379,8 +383,10 @@ async def backfill_chat(
             tg_message_id=message.id,
             chat_id=utils.get_peer_id(chat),
             sender_id=message.sender_id,
-            text=text,
+            text=text or None,
             date=message.date,
+            media_kind=kind,
+            media_size=media_size(message) if kind else None,
             # Batched below, not per-row - see insert_message()'s docstring.
             commit=False,
         )

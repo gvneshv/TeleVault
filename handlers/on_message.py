@@ -6,7 +6,8 @@ Flow per event:
      or if its text matches a message ignore rule - before anything below resolves the message or asks Telegram about the chat
      (handlers/ingest_filter.py explains why it must be this early).
   2. Resolve the text to store - either the message body or a synthesized call label for MessageActionPhoneCall service messages.
-  3. Skip if there is nothing worth archiving (media-only, stickers, etc.).
+  3. Skip if there is nothing worth archiving (no text and no file we store: stickers, GIFs, unsupported service messages).
+     A media-only message (photo/video/voice/audio/document without a caption) IS archived: text NULL plus a 'pending' message_media row.
   4. Extract the chat entity and upsert it into `chats`.
   5. Extract the sender entity (if any) and upsert it into `senders`.
   6. Insert the message into `messages`.
@@ -37,6 +38,7 @@ from sqlalchemy.exc import OperationalError
 import db
 from . import ingest_filter
 from .helpers import get_chat_type, get_sender_fields, resolve_message_text
+from .media_filter import media_kind, media_size
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +66,10 @@ def _persist_message(
     first_name: str | None,
     last_name: str | None,
     tg_message_id: int,
-    text: str,
+    text: str | None,
     date,
+    media_kind: str | None = None,
+    media_size: int | None = None,
 ) -> None:
     """
     Synchronous DB work for a single archived message - see this module's docstring for why this runs via asyncio.to_thread() rather than inline.
@@ -102,6 +106,8 @@ def _persist_message(
             sender_id=sender_id,
             text=text,
             date=date,
+            media_kind=media_kind,
+            media_size=media_size,
         )
 
 
@@ -116,7 +122,8 @@ def register(client) -> None:
         Regular text messages are stored as-is.
         Call service messages (MessageActionPhoneCall) are stored with a synthesized label such as "[Missed call]" or "[Voice call · 2 min 17 sec]" so they appear meaningfully in the archive and can be flagged as deleted like any other row.
 
-        All other service messages and media-only messages (stickers, photos, etc.) are skipped - out of scope for Phase 1.
+        All other service messages and messages with nothing we store (stickers, GIFs, ...) are skipped.
+        Media-only messages are archived with text NULL (Phase 4).
         """
         message = event.message
 
@@ -211,12 +218,16 @@ def register(client) -> None:
         # --- Resolve the text to archive -----------------------------------
         # See handlers/helpers.py's resolve_message_text() - shared with backfill.py so both apply the same archiving rules.
         text = resolve_message_text(message)
+        # The kind of file this message carries that we store (photo, video, ...), or None (no media, a GIF, a sticker, a link preview...).
+        # Pure metadata check, no network - see handlers/media_filter.py.
+        kind = media_kind(message)
 
         # --- Pre-flight guards ---------------------------------------------
 
-        # Skip anything we have no text for - media, stickers, unsupported service messages, etc.
+        # Skip anything with neither text nor a file we store - stickers, GIFs, unsupported service messages, etc.
+        # A media-only message (a photo without caption) passes: it is archived with text NULL plus a 'pending' message_media row.
         # Call labels produced above are truthy, so they pass this guard correctly.
-        if not text:
+        if not text and kind is None:
             logger.debug(
                 "Skipping non-text message %s in chat %s.",
                 message.id,
@@ -248,8 +259,10 @@ def register(client) -> None:
                 first_name,
                 last_name,
                 message.id,
-                text,
+                text or None,
                 message.date,
+                kind,
+                media_size(message) if kind else None,
             )
 
         except OperationalError:

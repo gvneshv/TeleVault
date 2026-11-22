@@ -44,6 +44,20 @@ class FakeClient:
         return decorator
 
 
+PHOTO = types.MessageMediaPhoto(photo=types.Photo(id=1, access_hash=1, file_reference=b"", date=None, sizes=[], dc_id=1))
+VIDEO_ATTRIBUTE = types.DocumentAttributeVideo(duration=1, w=1, h=1)
+ANIMATED_ATTRIBUTE = types.DocumentAttributeAnimated()
+STICKER_ATTRIBUTE = types.DocumentAttributeSticker(alt="x", stickerset=types.InputStickerSetEmpty())
+
+
+def file_media(*attributes, size=1000):
+    """A real Telethon file attachment (not a look-alike), so handlers/media_filter.py classifies it as it would a live one."""
+    document = types.Document(
+        id=1, access_hash=1, file_reference=b"", date=None, mime_type="application/octet-stream", size=size, dc_id=1, attributes=list(attributes)
+    )
+    return types.MessageMediaDocument(document=document)
+
+
 class FakeEvent:
     def __init__(
         self, *, chat_id: int | None = 123, sender_id: int | None = 55, text="hello", action=None, message_id=9, edit_date=None, ttl_period=None, media=None
@@ -151,12 +165,33 @@ class TestNewMessageHandler:
     def test_text_message_is_persisted_with_resolved_fields(self, new_message_handler, recorded):
         run(new_message_handler(FakeEvent(text="hello world")))
         assert len(recorded["persist"]) == 1
-        (chat_id, chat_name, chat_type, chat_username, sender_id, username, first, last, msg_id, text, date) = recorded["persist"][0]
+        (chat_id, chat_name, chat_type, chat_username, sender_id, username, first, last, msg_id, text, date, kind, size) = recorded["persist"][0]
         assert (chat_id, chat_name, chat_type, sender_id, msg_id, text) == (123, "Bob", "private", 55, 9, "hello world")
         assert username == "bob" and date == NOW
+        assert (kind, size) == (None, None)
 
-    def test_media_only_message_is_skipped(self, new_message_handler, recorded):
+    def test_a_message_with_nothing_to_store_is_skipped(self, new_message_handler, recorded):
         run(new_message_handler(FakeEvent(text="")))
+        assert recorded["persist"] == []
+
+    def test_a_media_only_photo_is_archived_without_text(self, new_message_handler, recorded):
+        run(new_message_handler(FakeEvent(text="", media=PHOTO)))
+        assert len(recorded["persist"]) == 1
+        args = recorded["persist"][0]
+        assert args[9] is None and args[11:] == ("photo", None)
+
+    def test_a_media_only_file_carries_its_declared_size(self, new_message_handler, recorded):
+        run(new_message_handler(FakeEvent(text="", media=file_media(VIDEO_ATTRIBUTE, size=4096))))
+        assert recorded["persist"][0][11:] == ("video", 4096)
+
+    def test_a_caption_is_kept_next_to_the_media_kind(self, new_message_handler, recorded):
+        run(new_message_handler(FakeEvent(text="look", media=PHOTO)))
+        args = recorded["persist"][0]
+        assert args[9] == "look" and args[11] == "photo"
+
+    @pytest.mark.parametrize("attributes", [(VIDEO_ATTRIBUTE, ANIMATED_ATTRIBUTE), (STICKER_ATTRIBUTE,)])
+    def test_a_gif_or_sticker_alone_is_still_skipped(self, new_message_handler, recorded, attributes):
+        run(new_message_handler(FakeEvent(text="", media=file_media(*attributes))))
         assert recorded["persist"] == []
 
     def test_missed_call_is_archived_as_a_labelled_message(self, new_message_handler, recorded):
@@ -212,6 +247,7 @@ class TestEditedHandler:
         assert len(recorded["edit"]) == 1
         args = recorded["edit"][0]
         assert args[0] == 123 and args[4] == 55 and args[9] == "edited text"
+        assert args[12:] == (None, None)
 
     def test_event_without_chat_id_is_skipped_with_a_warning(self, edited_handler, recorded, caplog):
         with caplog.at_level(logging.WARNING, logger="handlers.on_edit"):
@@ -225,6 +261,15 @@ class TestEditedHandler:
 
     def test_non_text_edit_is_skipped(self, edited_handler, recorded):
         run(edited_handler(FakeEvent(text="")))
+        assert recorded["edit"] == []
+
+    def test_an_edit_of_a_media_only_message_is_passed_on_without_text(self, edited_handler, recorded):
+        run(edited_handler(FakeEvent(text="", media=PHOTO, edit_date=NOW)))
+        args = recorded["edit"][0]
+        assert args[9] is None and args[12:] == ("photo", None)
+
+    def test_an_edit_of_a_sticker_is_still_skipped(self, edited_handler, recorded):
+        run(edited_handler(FakeEvent(text="", media=file_media(STICKER_ATTRIBUTE))))
         assert recorded["edit"] == []
 
     def test_database_outage_never_crashes_the_listener(self, edited_handler, monkeypatch, caplog):
