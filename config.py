@@ -13,7 +13,7 @@ Why a dataclass rather than reading os.environ inline?
   - Missing required values fail loudly at startup, not halfway through a run.
  
 Required .env keys:       FERNET_KEY, JWT_SECRET
-Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS,
+Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, MEDIA_MAX_FILE_MB, MEDIA_ACCOUNT_LIMIT_GB, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS,
                           TELEGRAM_DEVICE_MODEL, TELEGRAM_SYSTEM_VERSION, TELEGRAM_APP_VERSION (how this client names itself to Telegram, see utils/telegram_client.py)
 Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN
                   (see Settings.bootstrap_admin_token below;
@@ -73,6 +73,23 @@ def _require(key: str) -> str:
             f"Check your .env file."
         )
     return value
+
+def _positive_int(key: str, default: int) -> int:
+    """
+    Read an optional whole-number setting that must be at least 1.
+    Fails at startup with the variable's name rather than letting a typo ("50MB", "0") become a silent, surprising limit later.
+    """
+    raw = os.getenv(key, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        sys.exit(f"[config] '{key}' must be a whole number, got {raw!r}. Check your .env file.")
+    if value < 1:
+        sys.exit(f"[config] '{key}' must be at least 1, got {value}. Check your .env file.")
+    return value
+
 
 def _optional(key: str, default: str) -> str:
     """
@@ -148,6 +165,14 @@ class Settings:
     # Set ENABLE_API_DOCS=true in your local .env while developing.
     enable_api_docs: bool
 
+    # --- Media archiving limits (media_downloader.py) ---
+    # Per-file cap: a file Telegram declares larger than this is NOT downloaded (its message text is still archived, the message says "too large").
+    # Per-account disk limit: once the stored files of ONE account add up to this, further files are not downloaded ("disk full").
+    # Both are in the unit people think in (MB / GB) and stored here in BYTES so no caller has to convert.
+    # The defaults (50 MB, 10 GB) are starting points chosen by the project, not Telegram numbers: size them to the disk you really have.
+    media_max_file_bytes: int
+    media_account_limit_bytes: int
+
     # --- How this client names itself to Telegram (see utils/telegram_client.py for why and for the defaults) ---
     # Telegram lists every signed-in session under Settings -> Devices with these three strings.
     # Telethon's own defaults would show the CPU architecture ("x86_64"), the raw kernel release and the Telethon version,
@@ -196,6 +221,8 @@ def _load() -> Settings:
         log_file=               log_file,
         bootstrap_admin_token=  bootstrap_admin_token,
         enable_api_docs=        enable_api_docs,
+        media_max_file_bytes=   _positive_int("MEDIA_MAX_FILE_MB", 50) * 1024 * 1024,
+        media_account_limit_bytes=_positive_int("MEDIA_ACCOUNT_LIMIT_GB", 10) * 1024 * 1024 * 1024,
         telegram_device_model=  _optional("TELEGRAM_DEVICE_MODEL", "TeleVault Server"),
         telegram_system_version=_optional("TELEGRAM_SYSTEM_VERSION", _default_system_version()),
         telegram_app_version=   _optional("TELEGRAM_APP_VERSION", APP_VERSION),

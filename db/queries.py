@@ -823,6 +823,76 @@ def record_archive_owner(conn: Connection, owner_id: int, commit: bool = True) -
 # Deleting is IRREVERSIBLE, so every one of them is built so that "nothing happened" is the safe failure.
 
 
+# ---------------------------------------------------------------------------
+# Media download queue (media_downloader.py)
+# ---------------------------------------------------------------------------
+# The queue IS the message_media table: a row with status 'pending' is a job.
+# Keeping it in the database (rather than in memory) means a restart, a crash or a flood wait loses nothing -
+# the next archiver run simply finds the same rows still pending.
+# One archiver runs per account, so a job needs no locking.
+
+
+def next_pending_media(conn: Connection) -> dict[str, Any] | None:
+    """
+    The oldest message_media row still waiting for its download, with what the downloader needs to fetch it, or None when the queue is empty
+    (also None on an archive that has no message_media table yet).
+    Oldest first: fair, and a burst of photos arrives in the order it was sent.
+    Served by idx_message_media_status.
+    """
+    if not _message_media_ready(conn):
+        conn.rollback()
+        return None
+    row = (
+        conn.execute(
+            sql_text(
+                "SELECT mm.id AS media_id, mm.kind, mm.size_bytes, m.chat_id, m.tg_message_id "
+                "FROM message_media mm JOIN messages m ON m.id = mm.message_id "
+                "WHERE mm.status = 'pending' ORDER BY mm.id LIMIT 1"
+            )
+        )
+        .mappings()
+        .first()
+    )
+    conn.rollback()  # end the read-only transaction; nothing here must stay open while a download runs
+    return dict(row) if row is not None else None
+
+
+def stored_media_bytes(conn: Connection) -> int:
+    """Bytes of every file this account has stored so far - what the per-account disk limit is measured against."""
+    total = conn.execute(sql_text("SELECT COALESCE(SUM(size_bytes), 0) FROM message_media WHERE status = 'stored'")).scalar()
+    conn.rollback()
+    return int(total or 0)
+
+
+def finish_media(
+    conn: Connection,
+    media_id: int,
+    status: str,
+    *,
+    file_path: str | None = None,
+    mime_type: str | None = None,
+    size_bytes: int | None = None,
+) -> bool:
+    """
+    Settle a pending job: record what became of its file (`status`, see db/schema.py's message_media for the meanings).
+    `size_bytes` replaces the declared size only when given (the real size of a stored file); a refused file keeps the size Telegram declared.
+
+    Returns False when no pending row was changed: the message was deleted from the archive while the file was downloading
+    (ON DELETE CASCADE removed the row), or another process settled it first.
+    The caller then owns a file nobody refers to and must delete it.
+    """
+    row = conn.execute(
+        sql_text(
+            "UPDATE message_media SET status = :status, file_path = :file_path, mime_type = :mime_type, "
+            "size_bytes = COALESCE(:size_bytes, size_bytes) "
+            "WHERE id = :id AND status = 'pending' RETURNING id"
+        ),
+        {"id": media_id, "status": status, "file_path": file_path, "mime_type": mime_type, "size_bytes": size_bytes},
+    ).first()
+    _commit(conn)
+    return row is not None
+
+
 def retention_table_exists(conn: Connection) -> bool:
     """True when this archive has the retention_policy table (migration a9d2e5c7b814).
     A cheap catalogue lookup, never an error on an old archive."""

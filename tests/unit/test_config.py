@@ -11,7 +11,7 @@ import config
 def env(monkeypatch):
     """A clean slate: every setting config.py reads is removed, then required ones are put back."""
     for key in ("CONTROL_DATABASE_URL", "FERNET_KEY", "JWT_SECRET", "TELEVAULT_BOOTSTRAP_ADMIN_TOKEN",
-                "ENABLE_API_DOCS", "DATA_DIR", "LOG_LEVEL", "LOG_FILE",
+                "ENABLE_API_DOCS", "DATA_DIR", "LOG_LEVEL", "LOG_FILE", "MEDIA_MAX_FILE_MB", "MEDIA_ACCOUNT_LIMIT_GB",
                 "TELEGRAM_DEVICE_MODEL", "TELEGRAM_SYSTEM_VERSION", "TELEGRAM_APP_VERSION"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("FERNET_KEY", "k")
@@ -106,3 +106,24 @@ def test_device_identity_can_be_overridden_and_a_blank_override_falls_back(env):
     s = config._load()
     assert (s.telegram_device_model, s.telegram_system_version) == ("Home NAS", "Debian 12")
     assert s.telegram_app_version == config.APP_VERSION
+
+
+class TestMediaLimits:
+    def test_defaults_are_fifty_megabytes_per_file_and_ten_gigabytes_per_account(self, env):
+        s = config._load()
+        assert s.media_max_file_bytes == 50 * 1024 * 1024
+        assert s.media_account_limit_bytes == 10 * 1024 * 1024 * 1024
+
+    def test_values_are_read_in_mb_and_gb_and_kept_in_bytes(self, env):
+        env.setenv("MEDIA_MAX_FILE_MB", "2")
+        env.setenv("MEDIA_ACCOUNT_LIMIT_GB", "3")
+        s = config._load()
+        assert (s.media_max_file_bytes, s.media_account_limit_bytes) == (2 * 1024**2, 3 * 1024**3)
+
+    @pytest.mark.parametrize("key", ["MEDIA_MAX_FILE_MB", "MEDIA_ACCOUNT_LIMIT_GB"])
+    @pytest.mark.parametrize("bad", ["50MB", "1.5", "0", "-5"])
+    def test_a_bad_limit_stops_startup_and_names_the_variable(self, env, key, bad):
+        env.setenv(key, bad)
+        with pytest.raises(SystemExit) as exc:
+            config._load()
+        assert key in str(exc.value)

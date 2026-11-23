@@ -8,6 +8,10 @@ they coordinate through two small files per account:
     <data_dir>/users/<user_id>/televault.heartbeat    written every few seconds by main.py while it is connected
     <data_dir>/users/<user_id>/backfill_status.json   written by backfill.py as it progresses
 
+and, since media archiving, the account's downloaded files:
+
+    <data_dir>/users/<user_id>/media/<message_media.id>   one file per stored attachment (media_downloader.py)
+
 Keying the files by user_id (rather than one instance-wide pair, as the single-user version did) is what lets several accounts archive at the same time,
 and what makes every "is something running?" check answer for the right account only.
 
@@ -36,3 +40,18 @@ def backfill_status_path(user_id: int) -> Path:
     """Status file of this account's backfill (backfill.py).
     See api/process_utils.is_backfill_running()."""
     return user_dir(user_id) / "backfill_status.json"
+
+
+def media_dir(user_id: int) -> Path:
+    """The directory holding this account's downloaded attachments.
+    Not created here - the downloader creates it on first use."""
+    return user_dir(user_id) / "media"
+
+
+def media_relative_path(user_id: int, media_id: int) -> str:
+    """
+    What goes into message_media.file_path: the file's location RELATIVE to the data directory, with forward slashes on every OS.
+    Relative so the archive stays valid when DATA_DIR moves (a new disk, a restored backup), and so a database row can never point outside DATA_DIR.
+    Named by the row's own id, never by anything Telegram supplied: no file name from a stranger ever reaches the file system.
+    """
+    return f"users/{int(user_id)}/media/{int(media_id)}"
