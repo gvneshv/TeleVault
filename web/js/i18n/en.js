@@ -129,6 +129,11 @@ export const en = {
   "backfill.limitLabel": "Message limit per chat (optional)",
   "backfill.limitPlaceholder": "e.g. 500",
   "backfill.confirmStart": "Start",
+  "backfill.fullLabel": "Also record the files of messages already archived",
+  "backfill.fullHint":
+    "Walks every chat from its first message again, so it takes longer and asks Telegram for much more. Only needed once, to find the photos, videos and files of history archived before media was supported. The files themselves are downloaded later, by the live archiver. Without this, only new messages are fetched.",
+  "backfill.cooldownWait":
+    "A backfill finished recently. To go easy on Telegram, the next one can start in {time}.",
   "backfill.stateRunning": "Running",
   "backfill.stateCompleted": "Completed",
   "backfill.stateCancelled": "Cancelled",
@@ -165,6 +170,8 @@ export const en = {
     "The live archiver is currently connected. Stop it first - a backfill and the live archiver can't use the same Telegram session at the same time.",
   "error.backfillRunning":
     "A backfill is currently running. Stop it first - it and the live archiver can't use the same Telegram session at the same time.",
+  "error.backfillCooldown":
+    "A backfill finished recently. To go easy on Telegram, only one backfill is allowed per cooldown period - try again later.",
   "error.archiveUnattached": "Your archive database hasn't been created yet.",
   "error.archiveUnavailable":
     "Your archive database is currently unavailable. Try again shortly, or contact your administrator.",

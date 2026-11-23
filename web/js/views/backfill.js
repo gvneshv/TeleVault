@@ -237,6 +237,14 @@ function renderModal() {
           <label for="backfill-limit-input">${t("backfill.limitLabel")}</label>
           <input id="backfill-limit-input" type="number" min="1" placeholder="${t("backfill.limitPlaceholder")}" />
         </div>
+        <div class="modal__field">
+          <label class="tv-checkbox" for="backfill-full-input">
+            <input id="backfill-full-input" type="checkbox" />
+            <span class="tv-checkbox__box"></span>
+            <span>${t("backfill.fullLabel")}</span>
+          </label>
+          <span>${t("backfill.fullHint")}</span>
+        </div>
         <div class="modal__actions">
           <button class="modal__btn" id="backfill-modal-cancel">${t("common.cancel")}</button>
           <button class="modal__btn modal__btn--primary" id="backfill-modal-confirm" ${running ? "disabled" : ""}>
@@ -358,18 +366,32 @@ async function openModal(root) {
         document.getElementById("backfill-chat-input").value.trim() || null;
       const limit =
         document.getElementById("backfill-limit-input").value || null;
+      const full = document.getElementById("backfill-full-input").checked;
       let started = false;
       try {
         const res = await apiFetch("/api/backfill/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat, limit: limit ? Number(limit) : null }),
+          body: JSON.stringify({
+            chat,
+            limit: limit ? Number(limit) : null,
+            full,
+          }),
         });
         started = res.ok;
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           // Same as the archiver button: only the fixable "archive not created yet" error carries a link (archiveFixLink returns null otherwise).
-          await showAlert(describeError(body.detail), {
+          // The cooldown carries a number the generic reason text cannot hold: say how long is left.
+          const cooldownWait =
+            body.detail?.reason === "backfill_cooldown" &&
+            body.detail.retry_after_seconds
+              ? t("backfill.cooldownWait").replace(
+                  "{time}",
+                  formatDuration(Number(body.detail.retry_after_seconds)),
+                )
+              : null;
+          await showAlert(cooldownWait ?? describeError(body.detail), {
             link: archiveFixLink(body.detail),
           });
         }

@@ -14,6 +14,7 @@ const ERROR_REASON_KEYS = {
   not_running: "error.notRunning",
   archiver_connected: "error.archiverConnected",
   backfill_running: "error.backfillRunning",
+  backfill_cooldown: "error.backfillCooldown", // api/routes/backfill.py; the Backfill view adds the time left itself
   archive_unattached: "error.archiveUnattached",
   archive_unavailable: "error.archiveUnavailable",
   archive_misconfigured: "error.archiveMisconfigured",

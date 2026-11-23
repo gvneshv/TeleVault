@@ -98,10 +98,12 @@
  * the live refresh used to put older messages below the newest and the view ended on an old date); no file was added or removed.
  * v60 (media-only messages): changed js/views/chat-view.js (a message with no text but a stored kind of file reads "Photo"/"Video"/... instead of "(no text)",
  * and a chat whose newest message is media-only reads "Media" instead of "No messages yet") and i18n/{en,uk}.js; no file was added or removed.
+ * v61 (backfill cooldown, files of archived messages): changed js/views/backfill.js (the start dialog gets an "also record the files of messages already archived" option,
+ * and a refused start says how long the cooldown has left), js/lib/errors.js (the new "backfill_cooldown" reason) and i18n/{en,uk}.js; no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v60";
+const CACHE_NAME = "televault-shell-v61";
 const SHELL_FILES = [
   "/",
   "/index.html",
