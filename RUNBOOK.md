@@ -153,6 +153,12 @@ Backfill goes gently on purpose: 1 s between pages of 100 messages, a random 2-5
 A wait over an hour stops the run with state `error` - start it again later; what was archived is kept and the next run continues from there. A big first backfill of hundreds of chats therefore takes a while by design.
 Messages with a Telegram auto-delete timer or view-once media are never archived, by the archiver or by backfill.
 
+### Downloaded media (photos, videos, voice messages, audio, files)
+
+While the archiver runs it downloads the files of archived messages in the background, one at a time with a pause after each, into `<DATA_DIR>/users/<id>/media/` (one file per attachment, named by a number, never by anything Telegram supplied). The work list is the database (`message_media` rows with status `pending`), so a restart or a Telegram "wait N seconds" loses nothing: unfinished files are fetched on the next start.
+Two limits per account, both in `.env`: `MEDIA_MAX_FILE_MB` (default 50: a larger file is not downloaded) and `MEDIA_ACCOUNT_LIMIT_GB` (default 10: once the stored files add up to this, nothing more is downloaded). The message text is archived either way and the row records why (`too_large`, `disk_full`). Those are the project's starting numbers, not Telegram's: size them to your disk. A refused file is NOT retried automatically, so raising a limit later does not fetch what was already refused (a later step adds that).
+Watch the disk: `du -sh data/users/*/media`. If the disk itself fills up the row is marked `disk_full` and the log says so; free space and continue. Files are not yet part of `scripts/backup.py` and not yet removed when their message is deleted (both are coming in later steps).
+
 Workers never prompt for a login code. If the saved session is revoked (Telegram -> Settings -> Devices) or
 corrupted they exit with a message; sign in again under Settings -> Telegram setup.
 

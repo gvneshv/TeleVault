@@ -31,7 +31,15 @@ Backups were a manual `pg_dump` with no restore procedure; now there is one comm
 - `docker-compose.yml` now publishes PostgreSQL on the loopback interface only (`127.0.0.1:5432:5432`; it used to be every interface) and reads the password from `POSTGRES_PASSWORD` in `.env`, defaulting to the old development value. **Existing development setups are unaffected**: the app and `psql` on the same machine still connect, and a password change only takes effect on a newly created data volume. Reaching the dev database from another computer on your network no longer works by design (use an SSH tunnel instead).
 - README "Routine maintenance" no longer suggests plain-text `pg_dump` files; it points to `scripts/backup.py`.
 
-### Added - media archiving, step 2 of the build order: media-only messages are archived
+### Added - media archiving, step 2 of the build order: the live download queue
+
+- New `media_downloader.py`, started by `main.py` next to the retention job. It takes the oldest `pending` row of `message_media`, asks Telegram for the message again, downloads the file to `<DATA_DIR>/users/<id>/media/<row id>` (via a `.partial` file and a rename, so a cut-short file never looks stored) and records `stored`, or why not: `too_large`, `disk_full`, `unavailable` (deleted/changed on Telegram), `failed`. The database is the queue, so a restart or crash loses nothing.
+- Gentle by design: one file at a time, 2 s after every download, a Telegram flood wait is obeyed plus 1 s, and a refusal decided from the declared size costs no traffic. A photo has no declared size, so its size is checked after download.
+- New settings `MEDIA_MAX_FILE_MB` (default 50) and `MEDIA_ACCOUNT_LIMIT_GB` (default 10); a bad value stops startup naming the variable. Defaults are the project's choice, not Telegram's.
+- A file whose message was deleted from the archive during its download is discarded. Files are named by row id only (nothing from Telegram reaches the file system); `file_path` is relative to `DATA_DIR`.
+- Not yet: the web UI does not show or serve the files (step 5), media of already-archived or backfilled messages is not downloaded (the next build step, with the cooldown), files are not deleted with their messages (a later step) and are not in `scripts/backup.py`. A refused or failed file is not retried yet.
+
+### Added - media archiving, step 1 (continued): media-only messages are archived
 
 - A photo, video, voice message, audio file or document sent **without a caption** used to be dropped, because the archiver only stored messages with text. It is now stored with text empty plus a `pending` row in `message_media` (written in the same transaction as the message), by the live handler, by edit events for a message we never saw, and by backfill. No file is downloaded yet - that is the next step.
 - Such messages count in the chat's `message_count`; the chat list shows "Media" when the newest message is media-only, and the chat view labels the message with its kind ("Photo", "Video", "Voice message", "Audio", "File") instead of "(no text)". Messages API: new `media_kind` field.
