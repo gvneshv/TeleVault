@@ -75,7 +75,8 @@ class TestFloodWaits:
         waits = [s for s in telegram.sleeps if s == 11]
         assert len(waits) == backfill.MAX_FLOOD_RETRIES - 1  # nothing is slept after the last attempt - there is no retry left to wait for
         assert stored(archive.conn) == {12: 1}
-        assert status["state"] == "completed"
+        # Unfinished work, so not "completed": a completed run starts the backfill cooldown, which would block the retry the log message recommends.
+        assert status["state"] == "error"
 
     def test_a_wait_over_an_hour_stops_the_run_without_sleeping(self, archive, telegram):  # noqa: F811
         too_long = backfill.MAX_FLOOD_WAIT_SECONDS + 1

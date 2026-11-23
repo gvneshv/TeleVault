@@ -49,6 +49,7 @@ from api.dependencies import (
     require_archiving_ready,
 )
 from api.process_utils import pid_alive
+from config import settings
 from db.read_queries import get_backfill_history as fetch_backfill_history
 from utils.atomic_write import atomic_write_json
 from utils.security import DecodedAccessToken
@@ -68,6 +69,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 class BackfillStartRequest(BaseModel):
     chat: str | None = None
     limit: int | None = None
+    # Re-walk every chat from its first message instead of resuming after its marker (backfill.py --full).
+    # It is how the files of messages archived before media archiving get recorded; heavier on Telegram's API, hence off by default.
+    full: bool = False
 
 
 def _telethon_is_running(user_id: int) -> bool:
@@ -112,7 +116,11 @@ def _running_pid(user_id: int) -> int | None:
 
 
 @router.post("/start")
-def start_backfill(body: BackfillStartRequest, current: DecodedAccessToken = Depends(require_archiving_ready)):
+def start_backfill(
+    body: BackfillStartRequest,
+    current: DecodedAccessToken = Depends(require_archiving_ready),
+    conn: Connection = Depends(get_archive_connection),
+):
     user_id = current["user_id"]
     if _running_pid(user_id) is not None:
         raise HTTPException(
@@ -129,12 +137,27 @@ def start_backfill(body: BackfillStartRequest, current: DecodedAccessToken = Dep
                 "reason": "archiver_connected",
             },
         )
+    # One backfill per cooldown period (BACKFILL_COOLDOWN_HOURS), counted from the end of the last COMPLETED one - see db.queries.backfill_cooldown_remaining().
+    # backfill.py enforces the same rule itself; asking here as well lets the web UI say so at once instead of starting a process that exits.
+    wait = db.queries.backfill_cooldown_remaining(conn, settings.backfill_cooldown_seconds)
+    if wait > 0:
+        raise HTTPException(
+            429,
+            {
+                "message": "A backfill finished recently; another one may start after the cooldown.",
+                "reason": "backfill_cooldown",
+                "retry_after_seconds": wait,
+            },
+            headers={"Retry-After": str(wait)},
+        )
     # Only the id goes on the command line - the Telegram session itself is read from the control DB by the worker (see utils/account.py).
     cmd = [sys.executable, str(_REPO_ROOT / "backfill.py"), "--user-id", str(user_id)]
     if body.chat:
         cmd += ["--chat", body.chat]
     if body.limit:
         cmd += ["--limit", str(body.limit)]
+    if body.full:
+        cmd.append("--full")
     process = subprocess.Popen(cmd, cwd=_REPO_ROOT)
     _processes[user_id] = process
     return {"started": True, "pid": process.pid}

@@ -11,7 +11,7 @@ import config
 def env(monkeypatch):
     """A clean slate: every setting config.py reads is removed, then required ones are put back."""
     for key in ("CONTROL_DATABASE_URL", "FERNET_KEY", "JWT_SECRET", "TELEVAULT_BOOTSTRAP_ADMIN_TOKEN",
-                "ENABLE_API_DOCS", "DATA_DIR", "LOG_LEVEL", "LOG_FILE", "MEDIA_MAX_FILE_MB", "MEDIA_ACCOUNT_LIMIT_GB",
+                "ENABLE_API_DOCS", "DATA_DIR", "LOG_LEVEL", "LOG_FILE", "MEDIA_MAX_FILE_MB", "MEDIA_ACCOUNT_LIMIT_GB", "BACKFILL_COOLDOWN_HOURS",
                 "TELEGRAM_DEVICE_MODEL", "TELEGRAM_SYSTEM_VERSION", "TELEGRAM_APP_VERSION"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("FERNET_KEY", "k")
@@ -127,3 +127,24 @@ class TestMediaLimits:
         with pytest.raises(SystemExit) as exc:
             config._load()
         assert key in str(exc.value)
+
+
+class TestBackfillCooldown:
+    def test_default_is_one_day(self, env):
+        assert config._load().backfill_cooldown_seconds == 24 * 3600
+
+    def test_hours_are_kept_in_seconds(self, env):
+        env.setenv("BACKFILL_COOLDOWN_HOURS", "72")
+        assert config._load().backfill_cooldown_seconds == 72 * 3600
+
+    @pytest.mark.parametrize("hours, seconds", [("0", 0), ("168", 168 * 3600)])
+    def test_zero_switches_it_off_and_a_week_is_the_ceiling(self, env, hours, seconds):
+        env.setenv("BACKFILL_COOLDOWN_HOURS", hours)
+        assert config._load().backfill_cooldown_seconds == seconds
+
+    @pytest.mark.parametrize("bad", ["1d", "1.5", "-1", "169"])
+    def test_a_bad_value_stops_startup_and_names_the_variable(self, env, bad):
+        env.setenv("BACKFILL_COOLDOWN_HOURS", bad)
+        with pytest.raises(SystemExit) as exc:
+            config._load()
+        assert "BACKFILL_COOLDOWN_HOURS" in str(exc.value)

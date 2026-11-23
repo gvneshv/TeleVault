@@ -893,6 +893,106 @@ def finish_media(
     return row is not None
 
 
+def add_missing_media_row(
+    conn: Connection,
+    tg_message_id: int,
+    chat_id: int,
+    kind: str,
+    size_bytes: int | None,
+    commit: bool = True,
+) -> bool:
+    """
+    Give an ALREADY archived message its 'pending' message_media row when it has none, and say whether one was added.
+
+    Why it exists: a message archived before media archiving existed (or while its chat was blocked from downloads) is a text-only row,
+    and the archive never recorded that it also carried a file.
+    A history walk that ignores the "already covered" marker (backfill.py --full) meets that message again, sees its file, and calls this.
+    The message itself is NOT touched (no text, date or edit state is overwritten), and a row that exists - pending, stored or refused - is never reset
+    (use requeue_media() for that, deliberately).
+    Does nothing for a message that is not in the archive (insert_message() is the way in) and on an archive without the message_media table.
+
+    commit=False lets the backfill batch it with the messages around it, like insert_message().
+    """
+    if not _message_media_ready(conn):
+        conn.rollback()
+        return False
+    try:
+        added = conn.execute(
+            sql_text(
+                "INSERT INTO message_media (message_id, kind, size_bytes) "
+                "SELECT id, :kind, :size_bytes FROM messages WHERE tg_message_id = :tg_message_id AND chat_id = :chat_id "
+                "ON CONFLICT (message_id) DO NOTHING"
+            ),
+            {"kind": kind, "size_bytes": size_bytes, "tg_message_id": tg_message_id, "chat_id": resolve_chat_id(conn, chat_id)},
+        ).rowcount
+        if commit:
+            _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return added > 0
+
+
+# The outcomes that can be tried again. 'unavailable' is deliberately absent: Telegram no longer has the file, so asking again only costs traffic.
+# 'too_large' and 'disk_full' are retried after the owner raised a limit (MEDIA_MAX_FILE_MB / MEDIA_ACCOUNT_LIMIT_GB);
+# 'failed' is a download that broke for some other reason.
+RETRYABLE_MEDIA_STATUSES = ("too_large", "disk_full", "failed")
+
+
+def requeue_media(conn: Connection, statuses: Sequence[str] = RETRYABLE_MEDIA_STATUSES) -> int:
+    """
+    Put refused or failed files back in the download queue ('pending'); returns how many rows were requeued.
+
+    Only the statuses in RETRYABLE_MEDIA_STATUSES are accepted (ValueError otherwise): a stored file must never be queued again, and an
+    'unavailable' one would only cost a request that cannot succeed.
+    The declared size is kept, so a file that is still over a limit is refused again without any traffic (media_downloader.refusal()).
+    The live downloader (inside the archiver) picks the rows up; nothing is downloaded by this call.
+    """
+    wanted = tuple(dict.fromkeys(statuses))
+    unknown = [status for status in wanted if status not in RETRYABLE_MEDIA_STATUSES]
+    if unknown:
+        raise ValueError(f"Cannot requeue media with status {unknown!r}; allowed: {RETRYABLE_MEDIA_STATUSES!r}")
+    if not wanted or not _message_media_ready(conn):
+        conn.rollback()
+        return 0
+    try:
+        count = conn.execute(
+            sql_text("UPDATE message_media SET status = 'pending' WHERE status = ANY(:statuses)"),
+            {"statuses": list(wanted)},
+        ).rowcount
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return count
+
+
+def backfill_cooldown_remaining(conn: Connection, cooldown_seconds: int) -> int:
+    """
+    Whole seconds until a new backfill may start (0 = allowed now), for the "one backfill per cooldown period" rule.
+
+    The period runs from the end of the account's most recent COMPLETED run (backfill_runs.finished_at), whatever chat it covered.
+    Runs that were cancelled, stopped by a Telegram flood wait or that failed do not count: they did not finish the job,
+    so starting again is the same run resuming (the walk continues from each chat's marker) rather than a second run.
+    A run still in progress does not count either - it is refused on its own grounds before this is asked.
+    `cooldown_seconds` <= 0 switches the rule off.
+
+    The database's own clock does the arithmetic (finished_at was written by it), so a skewed clock on the API host changes nothing.
+    Ends its own read transaction.
+    """
+    if cooldown_seconds <= 0:
+        return 0
+    remaining = conn.execute(
+        sql_text(
+            "SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM (MAX(finished_at) - now())) + :cooldown)) "
+            "FROM backfill_runs WHERE status = 'completed'"
+        ),
+        {"cooldown": cooldown_seconds},
+    ).scalar()
+    conn.rollback()
+    return int(remaining or 0)
+
+
 def retention_table_exists(conn: Connection) -> bool:
     """True when this archive has the retention_policy table (migration a9d2e5c7b814).
     A cheap catalogue lookup, never an error on an old archive."""

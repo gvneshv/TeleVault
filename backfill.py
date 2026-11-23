@@ -33,6 +33,19 @@ Pacing - how gently this talks to Telegram:
       Blocked chats cost no request, so they cost no pause either.
     - Both pauses end early when the run is cancelled.
 
+Cooldown - one backfill per period, for every chat:
+    After a run COMPLETES, the next one may start only after BACKFILL_COOLDOWN_HOURS (default 24, 0 = off, at most 168; config.py).
+    It is measured from the end of the account's last completed run (backfill_runs), whatever chat that run covered, text and media alike.
+    A run that was cancelled or stopped by a flood wait does not start it, so picking such a run up again is "the same run, resumed" and is always allowed.
+    So is a run in which a chat was given up on after repeated flood waits: it is recorded as an error, not as completed.
+    Enforced here (the one entry point, like the running-backfill check) and again by the web API, which can then say so before spawning anything.
+
+Files of already archived messages (--full):
+    A message archived before media archiving existed is a text-only row: nothing recorded that it also carried a file.
+    The incremental walk never revisits it (it starts after the chat's marker), so `--full` does: when a message that is already archived turns out to carry a file,
+    it gets its 'pending' media row (db.queries.add_missing_media_row) and the live downloader fetches the file the next time the archiver runs.
+    Nothing is downloaded here, and a media row that already exists is never reset.
+
 Flood waits (Telegram's "slow down, wait N seconds"):
     - Up to 60 s (flood_sleep_threshold, utils/telegram_client.py) Telethon sleeps by itself and carries on; nothing here sees it.
     - Longer waits reach this script as FloodWaitError.
@@ -238,6 +251,34 @@ def _refuse_if_conflicting(user_id: int) -> None:
         sys.exit(1)
 
 
+def _format_wait(seconds: int) -> str:
+    """'3 h 05 min' / '12 min' / '40 s' - for the log line only."""
+    hours, rest = divmod(seconds, 3600)
+    minutes = rest // 60
+    if hours:
+        return f"{hours} h {minutes:02d} min"
+    return f"{minutes} min" if minutes else f"{seconds} s"
+
+
+def _refuse_if_cooling_down(conn) -> None:
+    """
+    Exit when the account's last COMPLETED backfill ended less than BACKFILL_COOLDOWN_HOURS ago ("Cooldown" in the module docstring).
+
+    Called once the archive is reachable (the rule lives in its backfill_runs table) and before this run writes its own row.
+    The caller closes the database on the way out.
+    """
+    remaining = db.queries.backfill_cooldown_remaining(conn, settings.backfill_cooldown_seconds)
+    if remaining > 0:
+        logger.error(
+            "The last backfill finished less than %d hours ago. Another one may start in %s "
+            "(BACKFILL_COOLDOWN_HOURS in .env; a cancelled or flood-stopped run does not count). Nothing was fetched.",
+            settings.backfill_cooldown_seconds // 3600, _format_wait(remaining),
+        )
+        conn.close()
+        db.close_db()
+        sys.exit(1)
+
+
 def _handle_sigterm(signum, frame) -> None:
     """
     Flip a flag rather than raising immediately - lets the current message finish and insert_message() own commit land cleanly before the run loop notices and exits,
@@ -394,6 +435,17 @@ async def backfill_chat(
             stored += 1
         else:
             skipped += 1
+            # Already archived.
+            # If it carries a file the archive never recorded (history from before media archiving), record it now - see "Files of already archived messages".
+            if kind:
+                db.queries.add_missing_media_row(
+                    conn,
+                    tg_message_id=message.id,
+                    chat_id=utils.get_peer_id(chat),
+                    kind=kind,
+                    size_bytes=media_size(message),
+                    commit=False,
+                )
 
         if processed % PROGRESS_INTERVAL == 0:
             # The marker goes in the same transaction as the rows it covers (it does not commit by itself), so it can never claim more than was stored.
@@ -441,6 +493,7 @@ async def run(
         sys.exit(1)
 
     conn = db.get_connection()
+    _refuse_if_cooling_down(conn)
 
     # A second, separate pooled connection dedicated to backfill_runs bookkeeping (the status row's start/finish, not the archived data itself)
     # - kept apart from `conn` above so the run-status update at the very end
@@ -541,6 +594,8 @@ async def run(
     total_skipped = 0
     total_blocked = 0
     any_failures = False
+    # True when some chat was given up on after MAX_FLOOD_RETRIES flood waits (see the for-else in the chat loop).
+    flood_gave_up = False
     # True once a chat was really requested from Telegram: the next chat then waits a random moment first (see "Pacing").
     # Blocked chats never set it - they cost Telegram nothing, so they cost no pause.
     fetched_since_pause = False
@@ -626,6 +681,9 @@ async def run(
                 f"again later, perhaps with --chat '{name}' on its own."
             )
             any_failures = True
+            # A chat Telegram kept rate limiting is unfinished work, like a flood stop: the run must not count as completed,
+            # or the cooldown would stand between the owner and the retry the message above recommends.
+            flood_gave_up = True
             status["chats_done"] += 1
             _write_status(status)
             continue
@@ -671,7 +729,7 @@ async def run(
         if _cancelled
         else (
             "error"
-            if flood_stopped or (total_stored == 0 and total_skipped == 0 and any_failures)
+            if flood_stopped or flood_gave_up or (total_stored == 0 and total_skipped == 0 and any_failures)
             else "completed"
         )
     )

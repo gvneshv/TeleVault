@@ -13,7 +13,7 @@ Why a dataclass rather than reading os.environ inline?
   - Missing required values fail loudly at startup, not halfway through a run.
  
 Required .env keys:       FERNET_KEY, JWT_SECRET
-Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, MEDIA_MAX_FILE_MB, MEDIA_ACCOUNT_LIMIT_GB, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS,
+Optional (have defaults): CONTROL_DATABASE_URL, DATA_DIR, MEDIA_MAX_FILE_MB, MEDIA_ACCOUNT_LIMIT_GB, BACKFILL_COOLDOWN_HOURS, LOG_LEVEL, LOG_FILE, ENABLE_API_DOCS,
                           TELEGRAM_DEVICE_MODEL, TELEGRAM_SYSTEM_VERSION, TELEGRAM_APP_VERSION (how this client names itself to Telegram, see utils/telegram_client.py)
 Optional (no default - None means "not configured"): TELEVAULT_BOOTSTRAP_ADMIN_TOKEN
                   (see Settings.bootstrap_admin_token below;
@@ -88,6 +88,23 @@ def _positive_int(key: str, default: int) -> int:
         sys.exit(f"[config] '{key}' must be a whole number, got {raw!r}. Check your .env file.")
     if value < 1:
         sys.exit(f"[config] '{key}' must be at least 1, got {value}. Check your .env file.")
+    return value
+
+
+def _bounded_int(key: str, default: int, minimum: int, maximum: int) -> int:
+    """
+    Read an optional whole-number setting that must lie between `minimum` and `maximum` (both allowed).
+    Same startup failure as _positive_int(): the variable's name is in the message, so a typo never becomes a silent surprise later.
+    """
+    raw = os.getenv(key, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        sys.exit(f"[config] '{key}' must be a whole number, got {raw!r}. Check your .env file.")
+    if not minimum <= value <= maximum:
+        sys.exit(f"[config] '{key}' must be between {minimum} and {maximum}, got {value}. Check your .env file.")
     return value
 
 
@@ -173,6 +190,13 @@ class Settings:
     media_max_file_bytes: int
     media_account_limit_bytes: int
 
+    # --- Backfill cooldown (api/routes/backfill.py, backfill.py) ---
+    # After a backfill COMPLETES, no new one may start for this many seconds - for every backfill of the account, whatever chat it covers.
+    # Reading history in bulk is what Telegram's flood limits exist for, and its API terms hold the shared api_id responsible for abuse.
+    # Configured in hours (default 24; 0 switches the cooldown off; at most 168 = a week), kept here in SECONDS.
+    # Only a completed run starts it: a run that was cancelled or stopped by a flood wait did not finish its job, and starting it again is the same run resuming.
+    backfill_cooldown_seconds: int
+
     # --- How this client names itself to Telegram (see utils/telegram_client.py for why and for the defaults) ---
     # Telegram lists every signed-in session under Settings -> Devices with these three strings.
     # Telethon's own defaults would show the CPU architecture ("x86_64"), the raw kernel release and the Telethon version,
@@ -223,6 +247,7 @@ def _load() -> Settings:
         enable_api_docs=        enable_api_docs,
         media_max_file_bytes=   _positive_int("MEDIA_MAX_FILE_MB", 50) * 1024 * 1024,
         media_account_limit_bytes=_positive_int("MEDIA_ACCOUNT_LIMIT_GB", 10) * 1024 * 1024 * 1024,
+        backfill_cooldown_seconds=_bounded_int("BACKFILL_COOLDOWN_HOURS", 24, 0, 168) * 3600,
         telegram_device_model=  _optional("TELEGRAM_DEVICE_MODEL", "TeleVault Server"),
         telegram_system_version=_optional("TELEGRAM_SYSTEM_VERSION", _default_system_version()),
         telegram_app_version=   _optional("TELEGRAM_APP_VERSION", APP_VERSION),

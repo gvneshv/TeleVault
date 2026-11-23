@@ -67,6 +67,8 @@ os.environ.update(
         "LOG_FILE": "",
         "LOG_LEVEL": "INFO",
         "ENABLE_API_DOCS": "false",
+        # Many tests run two backfills back to back; the cooldown has its own tests, which switch it on explicitly.
+        "BACKFILL_COOLDOWN_HOURS": "0",
     }
 )
 
