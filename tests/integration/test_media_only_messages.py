@@ -11,6 +11,7 @@ from contextlib import contextmanager
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from telethon import types
 
 import db
@@ -77,7 +78,7 @@ class TestInsert:
         assert media_rows(chat_11) == [(1, "photo", "stored", None)]
 
     def test_an_unknown_kind_is_refused_by_the_database_and_nothing_is_stored(self, chat_11):
-        with pytest.raises(sa.exc.IntegrityError):
+        with pytest.raises(IntegrityError):
             add(chat_11, 1, media_kind="gif")
         chat_11.rollback()
         assert chat_11.execute(sa.text("SELECT COUNT(*) FROM messages")).scalar() == 0
@@ -113,7 +114,9 @@ class TestReadSide:
     def test_the_window_and_the_detail_carry_it_too(self, chat_11):
         message_id = add(chat_11, 1, media_kind="document")
         window = rq.get_chat_window(chat_11, chat_id=11, limit=10)
+        assert window is not None
         assert [m["media_kind"] for m in window["items"]] == ["document"]
+        assert message_id is not None
         detail = rq.get_message_detail(chat_11, message_id)
         assert detail is not None and detail["media_kind"] == "document" and detail["text"] is None
 
