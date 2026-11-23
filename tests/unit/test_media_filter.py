@@ -84,5 +84,31 @@ def test_size_is_what_telegram_declared(size, expected):
     assert media_size(msg) == expected
 
 
-def test_a_photo_has_no_declared_size():
+def photo_message(*sizes):
+    photo = types.Photo(id=1, access_hash=1, file_reference=b"", date=None, sizes=list(sizes), dc_id=1)
+    return message(types.MessageMediaPhoto(photo=photo))
+
+
+def test_an_empty_photo_has_no_size():
     assert media_size(message(types.MessageMediaPhoto(photo=None))) is None
+    assert media_size(photo_message()) is None
+
+
+def test_a_photo_is_measured_by_its_heaviest_rendition():
+    """That is the rendition download_media fetches, so it is the size the disk limit must be checked against BEFORE downloading."""
+    msg = photo_message(
+        types.PhotoStrippedSize(type="i", bytes=b"\x01\x28\x28abc"),
+        types.PhotoSize(type="m", w=320, h=240, size=15_000),
+        types.PhotoSizeProgressive(type="y", w=1280, h=960, sizes=[9_000, 80_000, 210_000]),
+        types.PhotoSize(type="x", w=800, h=600, size=120_000),
+    )
+    assert media_size(msg) == 210_000
+
+
+def test_a_cached_photo_rendition_counts_by_its_bytes():
+    assert media_size(photo_message(types.PhotoCachedSize(type="m", w=1, h=1, bytes=b"x" * 321))) == 321
+
+
+def test_a_photo_with_only_a_stripped_preview_has_no_size():
+    """The stripped preview is never what we download, so it must not pass for the file's size."""
+    assert media_size(photo_message(types.PhotoStrippedSize(type="i", bytes=b"abc"))) is None

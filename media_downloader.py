@@ -16,7 +16,8 @@ What happens to one job (process_next)
 2. Ask Telegram for the message again (we keep ids, not Telegram's file handles, which expire).
    Gone or no longer a file we store: 'unavailable'.
 3. Download into `<id>.partial`, then rename onto `<id>`: a half-written file never carries the final name, so a crash cannot leave a "stored" file that is cut short.
-   A photo's size is unknown until it is downloaded, so the caps are checked once more on the real size.
+   A photo has no single size, so its heaviest rendition (what is downloaded) stands in for it (handlers/media_filter.media_size);
+   the caps are checked once more on the real size, because the estimate may be missing or wrong.
 4. Record the outcome ('stored', or why not).
    If the message was deleted from the archive meanwhile (the row cascaded away), the new file is removed.
 
@@ -127,7 +128,7 @@ async def _fetch_and_store(client: Any, user_id: int, job: dict[str, Any], limit
         if result is None or not partial.exists():
             return "unavailable", {}
 
-        # The real size: the only one a photo ever has, and a check that Telegram's declared size was honest.
+        # The real size: a check that Telegram's declared size (or a photo's estimate) was honest, and the only size a photo without usable renditions has.
         actual = partial.stat().st_size
         late = refusal(actual, stored, max_file_bytes, account_limit_bytes)
         if late:

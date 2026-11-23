@@ -39,6 +39,9 @@ from telethon.tl.types import (
     DocumentAttributeVideo,
     MessageMediaDocument,
     MessageMediaPhoto,
+    PhotoCachedSize,
+    PhotoSize,
+    PhotoSizeProgressive,
 )
 
 # The kinds that are stored.
@@ -79,10 +82,33 @@ def media_kind(message: Any) -> str | None:
 
 def media_size(message: Any) -> int | None:
     """
-    The file's size in bytes as Telegram declares it, or None when it is not known (a photo's size is only known after choosing a size to fetch).
+    The file's size in bytes as Telegram declares it, or None when it is not known.
 
-    Used to refuse an over-limit file BEFORE downloading a single byte of it, so the size cap costs no traffic.
+    Used to refuse an over-limit file BEFORE downloading a single byte of it, so the size cap and the per-account disk limit cost no traffic.
+
+    A document (video, audio, voice, file) carries one size.
+    A photo carries a list of renditions; the heaviest one is what `download_media` fetches by default (Telethon sorts them by size and takes the last),
+    so that is the number to check against the limits.
+    The tiny "stripped" preview and the empty placeholder are ignored: they are never the file we download.
     """
-    document = getattr(getattr(message, "media", None), "document", None)
+    media = getattr(message, "media", None)
+    photo = getattr(media, "photo", None)
+    if isinstance(media, MessageMediaPhoto):
+        sizes = [_rendition_bytes(s) for s in getattr(photo, "sizes", None) or []]
+        known = [n for n in sizes if n]
+        return max(known) if known else None
+
+    document = getattr(media, "document", None)
     size = getattr(document, "size", None)
     return size if isinstance(size, int) and not isinstance(size, bool) and size >= 0 else None
+
+
+def _rendition_bytes(size: Any) -> int | None:
+    """Bytes of one photo rendition, or None for the kinds that are not a downloadable picture (stripped preview, path, empty)."""
+    if isinstance(size, PhotoSize):
+        return size.size
+    if isinstance(size, PhotoSizeProgressive):
+        return max(size.sizes, default=None)
+    if isinstance(size, PhotoCachedSize):
+        return len(size.bytes)
+    return None

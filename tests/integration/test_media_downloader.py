@@ -35,6 +35,17 @@ def file_media(*attributes, size=1000):
     return types.MessageMediaDocument(document=document)
 
 
+def photo_media(*rendition_sizes):
+    """A photo as Telegram describes it: one rendition per size, the heaviest being what gets downloaded."""
+    sizes: list[types.TypePhotoSize] = [types.PhotoSize(type=letter, w=1, h=1, size=size) for letter, size in zip("mxy", rendition_sizes)]
+    return types.MessageMediaPhoto(photo=types.Photo(id=1, access_hash=1, file_reference=b"", date=None, sizes=sizes, dc_id=1))
+
+
+def first_stored_id(conn):
+    conn.rollback()
+    return conn.execute(sa.text("SELECT id FROM message_media WHERE status = 'stored' ORDER BY id LIMIT 1")).scalar_one()
+
+
 VIDEO = types.DocumentAttributeVideo(duration=1, w=1, h=1)
 STICKER = types.DocumentAttributeSticker(alt="x", stickerset=types.InputStickerSetEmpty())
 
@@ -189,6 +200,23 @@ class TestLimits:
         client = FakeClient({5: telegram_message(PHOTO)}, payload=b"z" * 100)
         run(client, max_file_bytes=50)
         assert row(conn, media_id).status == "too_large" and files(data_dir) == []
+
+    def test_a_photo_whose_renditions_are_listed_is_refused_before_a_single_byte_is_downloaded(self, conn, data_dir):
+        """The disk limit is checked on the heaviest rendition (what would be fetched), not after the file already sits on the disk."""
+        enqueue(conn, 5, size=60)
+        run(FakeClient({5: telegram_message(file_media(VIDEO, size=60))}, payload=b"a" * 60), account_limit_bytes=100)
+        media_id = enqueue(conn, 6, kind="photo")  # recorded without a size
+        client = FakeClient({6: telegram_message(photo_media(30, 80))})
+        outcome = run(client, account_limit_bytes=100)
+        assert outcome == md.Outcome("disk_full", True)
+        assert row(conn, media_id).status == "disk_full" and row(conn, media_id).size_bytes == 80
+        assert client.downloads == 0 and files(data_dir) == [str(first_stored_id(conn))]
+
+    def test_a_photo_that_fits_is_still_downloaded(self, conn, data_dir):
+        media_id = enqueue(conn, 5, kind="photo")
+        client = FakeClient({5: telegram_message(photo_media(30, 80), mime="image/jpeg")}, payload=b"p" * 80)
+        run(client, account_limit_bytes=100)
+        assert row(conn, media_id).status == "stored" and client.downloads == 1
 
     def test_the_account_limit_refuses_a_file_that_would_not_fit(self, conn, data_dir):
         enqueue(conn, 5, size=60)
