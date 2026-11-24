@@ -37,6 +37,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 import db
+import dialog_catalog
 import media_downloader
 import retention
 from config import settings
@@ -230,6 +231,10 @@ async def main(user_id: int) -> None:
     # Runs only while this archiver does; see retention.py for the safeguards.
     retention_task = asyncio.create_task(retention.retention_loop())
 
+    # The account's chat list, written to a small file for the backfill's chat picker in the web UI (dialog_catalog.py).
+    # In the background and best effort: a failing chat list never stops archiving.
+    dialog_task = asyncio.create_task(dialog_catalog.dialog_catalog_loop(client, user_id))
+
     # The media download queue: fetches the files of messages archived without them (message_media rows with status 'pending'), one at a time and slowly.
     # Best effort and in the background (media_downloader.py): a failing download never stops message archiving.
     media_task = asyncio.create_task(media_downloader.media_loop(client, user_id))
@@ -275,6 +280,9 @@ async def main(user_id: int) -> None:
     media_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await media_task
+    dialog_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await dialog_task
     heartbeat_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await heartbeat_task

@@ -6,6 +6,7 @@ Two levels of detail are provided:
 - `ChatSummary` - lightweight embed used inside MessageOut to avoid repeating the full chat object for every message in a list
 - `ChatPurgedOut` - what DELETE /api/chats/{chat_id} reports after removing a chat's stored data
 - `UnreadDismissIn` - the request body of POST /api/chats/{chat_id}/unread/dismiss
+- `BackfillChatOut` / `BackfillChatsOut` - the chat picker of the backfill dialog (GET /api/backfill/chats)
 """
 
 from datetime import datetime
@@ -41,6 +42,29 @@ class ChatOption(BaseModel):
     name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class BackfillChatOut(BaseModel):
+    """One chat the backfill dialog may offer: its id (what backfill.py takes as --chat), the name to show, and its kind for grouping."""
+
+    chat_id: int
+    # The owner's own label for a private chat's partner when there is one, otherwise Telegram's name. None only for a chat Telegram gave no name.
+    name: str | None = None
+    chat_type: str
+
+
+class BackfillChatsOut(BaseModel):
+    """
+    The backfill's chat picker.
+    `available` is False until the account's archiver has published its chat list
+    (a fresh install, or an archiver that has not run since the feature arrived) - the picker then offers "All chats" only.
+    `updated_at` says how old the list is.
+    Blocked chats are never in it.
+    """
+
+    available: bool
+    updated_at: str | None = None
+    chats: list[BackfillChatOut]
 
 
 class ChatOut(BaseModel):

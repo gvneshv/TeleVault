@@ -3,10 +3,11 @@ Where each account's runtime files live.
 
 TeleVault runs one archiver (main.py) and, on demand, one backfill (backfill.py) PER ACCOUNT, as separate subprocesses spawned by the API server.
 Those processes and the API server never talk to each other directly;
-they coordinate through two small files per account:
+they coordinate through a few small files per account:
 
     <data_dir>/users/<user_id>/televault.heartbeat    written every few seconds by main.py while it is connected
     <data_dir>/users/<user_id>/backfill_status.json   written by backfill.py as it progresses
+    <data_dir>/users/<user_id>/dialogs.json           the account's Telegram chat list, written by main.py (dialog_catalog.py) for the backfill's chat picker
 
 and, since media archiving, the account's downloaded files:
 
@@ -40,6 +41,11 @@ def backfill_status_path(user_id: int) -> Path:
     """Status file of this account's backfill (backfill.py).
     See api/process_utils.is_backfill_running()."""
     return user_dir(user_id) / "backfill_status.json"
+
+
+def dialogs_path(user_id: int) -> Path:
+    """Chat-list snapshot of this account, written by its live archiver (dialog_catalog.py) and read by the API for the backfill's chat picker."""
+    return user_dir(user_id) / "dialogs.json"
 
 
 def media_dir(user_id: int) -> Path:

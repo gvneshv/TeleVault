@@ -37,9 +37,11 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import ProgrammingError
 
 import control_db
 import db
+import dialog_catalog
 
 from api.dependencies import (
     archive_target_for_user,
@@ -50,7 +52,8 @@ from api.dependencies import (
 )
 from api.process_utils import pid_alive
 from config import settings
-from db.read_queries import get_backfill_history as fetch_backfill_history
+from api.schemas import BackfillChatsOut
+from db.read_queries import get_backfill_history as fetch_backfill_history, get_blocked_chats, get_sender_display_names
 from utils.atomic_write import atomic_write_json
 from utils.security import DecodedAccessToken
 from utils.worker_paths import backfill_status_path, heartbeat_path
@@ -232,6 +235,42 @@ def cancel_backfill(
 @router.get("/status")
 def get_backfill_status(current: DecodedAccessToken = Depends(get_current_user)):
     return _read_status(current["user_id"])
+
+
+@router.get("/chats", response_model=BackfillChatsOut)
+def list_backfill_chats(
+    current: DecodedAccessToken = Depends(get_current_user),
+    conn: Connection = Depends(get_archive_connection),
+):
+    """
+    The chats the backfill dialog may offer, from the chat list the account's archiver published (dialog_catalog.py), for the CALLING account only.
+
+    Two things are applied here, at answer time, because both change independently of the snapshot:
+      - chats on the ingest blocklist are left out (a backfill never touches them, so offering them would only lead to a "blocked" result);
+      - a private chat shows the owner's own label for that person when one exists (the same label the chat view shows), else Telegram's name.
+    Sorted by name, case-insensitively, so typing a letter in the dropdown jumps to it; unnamed chats last.
+    `available` is False while no list has been published; the dialog then offers "All chats" only.
+    """
+    catalog = dialog_catalog.read_catalog(current["user_id"])
+    if catalog is None:
+        return {"available": False, "updated_at": None, "chats": []}
+
+    try:
+        blocked = {row["chat_id"] for row in get_blocked_chats(conn)}
+    except ProgrammingError:
+        conn.rollback()  # an archive that predates the blocklist: nothing can be blocked in it
+        blocked = set()
+    labels = {row["sender_id"]: row["display_name"] for row in get_sender_display_names(conn)}
+
+    chats = []
+    for chat in catalog["chats"]:
+        if chat["chat_id"] in blocked:
+            continue
+        # A private chat's id IS the other person's Telegram user id, which is what labels are keyed by.
+        name = labels.get(chat["chat_id"]) if chat["chat_type"] == "private" else None
+        chats.append({**chat, "name": name or chat["name"]})
+    chats.sort(key=lambda c: (c["name"] is None, (c["name"] or "").casefold(), c["chat_id"]))
+    return {"available": True, "updated_at": catalog["updated_at"], "chats": chats}
 
 
 @router.get("/history")

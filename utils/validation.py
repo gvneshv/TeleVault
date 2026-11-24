@@ -146,3 +146,9 @@ def username_problem(username: str) -> str | None:
     if not _USERNAME_RE.fullmatch(username):
         return "Username may only contain letters, digits, '.', '_' and '-'."
     return None
+
+# The chat picker of the backfill dialog (dialog_catalog.py): how many chats of the account's Telegram chat list are kept and offered, and how long a name may be.
+# A very large account is in a few thousand chats at most; the cap keeps the snapshot file, the API answer and the <select> bounded whatever Telegram returns.
+# Telegram's own limit for a chat title is far below the name length (128 characters).
+DIALOG_CATALOG_MAX_COUNT = 5000
+DIALOG_CATALOG_NAME_MAX_LENGTH = 256
