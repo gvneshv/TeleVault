@@ -95,7 +95,16 @@ class TestFloodWaits:
         assert fake.fetched == [] and status["state"] == "error"
 
     def test_a_flood_wait_while_looking_up_a_named_chat_is_retried(self, archive, telegram):  # noqa: F811
-        _, status = telegram({11: ["a"]}, chat_selector="11", setup=lambda f: f.flood_on_entity.append(90))
+        """A chat that is not in the chat list is resolved by get_entity(); its flood wait is waited out like any other."""
+        def setup(fake):
+            fake.not_in_dialogs.add(11)
+            fake.flood_on_entity.append(90)
+
+        _, status = telegram({11: ["a"]}, chat_selector="11", setup=setup)
+        assert 91 in telegram.sleeps and stored(archive.conn) == {11: 1} and status["state"] == "completed"
+
+    def test_a_flood_wait_while_finding_the_chat_in_the_chat_list_is_retried(self, archive, telegram):  # noqa: F811
+        _, status = telegram({11: ["a"]}, chat_selector="11", setup=lambda f: f.flood_on_dialogs.append(90))
         assert 91 in telegram.sleeps and stored(archive.conn) == {11: 1} and status["state"] == "completed"
 
     def test_a_flood_wait_in_the_migration_probe_is_waited_out_not_swallowed(self, archive, telegram, caplog):  # noqa: F811

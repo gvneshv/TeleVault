@@ -49,6 +49,9 @@ class FakeTelegram:
         # Called with (chat id, message id) just BEFORE each message is handed out - lets a test act in the middle of a chat (cancel, say).
         self.before_message = None
         self.flood_on_entity: list[int] = []
+        # Chats the account can reach but that are NOT in its chat list (one it has left, say): get_entity() still resolves them.
+        self.not_in_dialogs: set[int] = set()
+        self.entity_lookups: list = []
 
     async def connect(self):
         pass
@@ -69,9 +72,11 @@ class FakeTelegram:
         if self.flood_on_dialogs:
             raise FloodWaitError(request=None, capture=self.flood_on_dialogs.pop(0))
         for user in self.users.values():
-            yield SimpleNamespace(entity=user)
+            if user.id not in self.not_in_dialogs:
+                yield SimpleNamespace(id=user.id, entity=user)
 
     async def get_entity(self, target):
+        self.entity_lookups.append(target)
         if self.flood_on_entity:
             raise FloodWaitError(request=None, capture=self.flood_on_entity.pop(0))
         return self.users[int(target)]

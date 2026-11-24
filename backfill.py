@@ -251,6 +251,23 @@ def _refuse_if_conflicting(user_id: int) -> None:
         sys.exit(1)
 
 
+async def _find_chat(client, target: int | str) -> Any:
+    """
+    The Telethon entity for `--chat`.
+
+    A numeric id is first looked for in the account's own chat list:
+    a fresh process has an empty entity cache, and asking Telegram for a group or channel by its bare id needs the access hash it does not have yet
+    (the chat list brings it along).
+    The web UI's chat picker passes exactly these ids.
+    Whatever is not in the chat list (a chat the account has left, a @username, an invite link) falls back to get_entity(), as before.
+    """
+    if isinstance(target, int):
+        async for dialog in client.iter_dialogs():
+            if dialog.id == target:
+                return dialog.entity
+    return await client.get_entity(target)
+
+
 def _format_wait(seconds: int) -> str:
     """'3 h 05 min' / '12 min' / '40 s' - for the log line only."""
     hours, rest = divmod(seconds, 3600)
@@ -569,7 +586,7 @@ async def run(
                 target = int(chat_selector)
             except ValueError:
                 target = chat_selector
-            entity = await _with_flood_retry(f"look up chat {chat_selector!r}", lambda: client.get_entity(target), status)
+            entity = await _with_flood_retry(f"look up chat {chat_selector!r}", lambda: _find_chat(client, target), status)
             # get_entity() is typed as possibly returning a list (it does for list input); we pass one identifier, so it is one entity.
             chats = [entity[0] if isinstance(entity, list) else entity]
         else:
