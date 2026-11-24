@@ -834,24 +834,25 @@ function renderConversationHeader() {
 }
 
 /**
- * Versions of an edited message, newest first (the order the spec asks for: current on top, original at the bottom).
+ * The EARLIER versions of an edited message, newest first.
  *
+ * The newest version is the message itself, already on screen in its bubble (the "Edited N times" chip belongs to it), so repeating it here would only duplicate it.
  * `edits` is the archive's history oldest -> newest, each row holding the text BEFORE and AFTER one edit.
- * The original is therefore edits[0].old_text, dated by the message itself; every later version is some edit's new_text.
+ * The original is therefore edits[0].old_text, dated by the message itself; every edit except the last adds one more earlier version (its new_text).
+ * One edit -> just the original; N edits -> N versions.
  *
  * @param {object} message - a MessageOut row.
  * @param {Array<object>} edits - MessageDetail.edits.
- * @returns {Array<{ text: string | null, at: string | null, kind: "current" | "original" | "edit" }>}
+ * @returns {Array<{ text: string | null, at: string | null, kind: "original" | "edit" }>}
  */
 function buildVersions(message, edits) {
   if (edits.length === 0) return [];
   const versions = [
     { text: edits[0].old_text, at: message.date, kind: "original" },
   ];
-  for (const edit of edits) {
+  for (const edit of edits.slice(0, -1)) {
     versions.push({ text: edit.new_text, at: edit.edited_at, kind: "edit" });
   }
-  versions[versions.length - 1].kind = "current";
   return versions.reverse();
 }
 
@@ -874,12 +875,7 @@ function renderDetail(message) {
     const versions = buildVersions(message, cached.edits ?? []);
     const items = versions
       .map((v) => {
-        const label =
-          v.kind === "current"
-            ? t("cv.versionCurrent")
-            : v.kind === "original"
-              ? t("cv.versionOriginal")
-              : "";
+        const label = v.kind === "original" ? t("cv.versionOriginal") : "";
         return `
           <li class="cv-version cv-version--${v.kind}">
             <div class="cv-version__meta">

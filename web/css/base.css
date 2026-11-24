@@ -2161,6 +2161,17 @@ mark.legal-placeholder {
   margin-bottom: 4px;
 }
 
+/* The one point of the list that must not be skimmed past: files can fill the disk. */
+.backfill-disclaimer__warning {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-patina);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  line-height: 1.5;
+}
+
 .backfill-status-row {
   display: flex;
   align-items: center;
@@ -3064,10 +3075,6 @@ Dimmed until hovered. */
 .cv-version {
   padding-left: 10px;
   border-left: 2px solid var(--color-border);
-}
-
-.cv-version--current {
-  border-left-color: var(--color-patina);
 }
 
 .cv-version__meta {

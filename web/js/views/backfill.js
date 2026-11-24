@@ -117,6 +117,7 @@ function renderDisclaimer() {
         <li>${t("backfill.disclaimerApprox")}</li>
         <li>${t("backfill.disclaimerBackground")}</li>
       </ul>
+      <p class="backfill-disclaimer__warning" role="note">${t("backfill.mediaWarning")}</p>
     </div>
   `;
 }

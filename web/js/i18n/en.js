@@ -114,6 +114,8 @@ export const en = {
     "Progress and time remaining are estimates based on Telegram's message counts - treat them as a rough guide, not an exact figure.",
   "backfill.disclaimerBackground":
     "Once started, backfill keeps running on the server even if you close this tab or browser.",
+  "backfill.mediaWarning":
+    "Photos, videos, voice messages and files are downloaded too, for the messages this import finds. That takes a long time and a lot of disk space: one chat with a vast history can use up all the space TeleVault may take (the per-account limit set by the server administrator), and files over the per-file size limit are skipped. Choose the chats, and whether to also record the files of already archived messages, with that in mind. The files are downloaded slowly, one at a time, by the live archiver after the import, so the disk fills over hours or days, not at once.",
   "backfill.checkingConnection": "Checking live connection…",
   "backfill.connectionOn": "Live archiver is currently connected",
   "backfill.connectionOff": "Live archiver is not connected",
@@ -588,7 +590,6 @@ export const en = {
   "cv.editedTimes.other": "Edited {n} times",
   "cv.editedUnknown": "Edited",
   "cv.deletedPreserved": "Deleted {time}",
-  "cv.versionCurrent": "Current",
   "cv.versionOriginal": "Original",
   "cv.noHistory": "No earlier versions were stored.",
   "cv.selectChat": "Select a chat to read its archive.",
