@@ -12,6 +12,7 @@ Flow per event:
      An edit is NOT harmless to ignore the filter for: it stores the new text of a known message, and for an unknown one it inserts the whole message,
      so a blocked chat would otherwise keep leaking its content through edits.
   2. Confirm the edited message has text or a file we store (a media-only message edited before we saw it is archived with text NULL).
+     Removing the text of a message that has a file is an edit too, and is recorded like any other (old text -> NULL).
   3. Call queries.record_edit, which:
        a. Fetches the current text from the DB (becomes old_text).
        b. Writes a row to message_edits with old -> new.
@@ -57,14 +58,19 @@ def _persist_edit(
     """
     Synchronous DB work for a single edit event - see this module's docstring for why this runs via asyncio.to_thread() rather than inline.
 
-    `new_text` is None for an edit of a media message that carries no text (no caption).
-    There is no text change to record then, so record_edit() is skipped (a caption REMOVED by an edit is not tracked yet - same as before media archiving);
-    the insert below still runs, and is a harmless no-op (ON CONFLICT DO NOTHING) when the message is already archived.
-    Its only job is the "we never saw the original" case, where a media-only message would otherwise be missing from the archive entirely.
+    `new_text` is None when the message now carries no text (a media message without a caption).
+    That is still a change when the archived version HAD a caption:
+    removing text is an edit like any other, so it is recorded (old text -> NULL) and the message is marked edited.
+    record_edit() itself ignores an event that changes nothing (NULL -> NULL, link previews, ...).
+    The insert below only runs for the "we never saw the original" case, where a media-only message would otherwise be missing from the archive entirely.
+
+    Not tracked yet: a file REPLACED by an edit (a different photo, same caption).
+    The archive keeps no fingerprint of the file that would tell, so such an event looks like "nothing changed".
     """
     with db.get_connection() as conn:
         # Guard: ensure the chat and sender rows exist.
-        # If this edit arrives for a message we never archived (e.g. TeleVault was offline when it was sent), the upserts create the parent rows so the FK constraints don't blow up.
+        # If this edit arrives for a message we never archived (e.g. TeleVault was offline when it was sent),
+        # the upserts create the parent rows so the FK constraints don't blow up.
         db.queries.upsert_chat(
             conn,
             chat_id=chat_id,
@@ -84,15 +90,13 @@ def _persist_edit(
                 commit=False,
             )
 
-        found = False
-        if new_text is not None:
-            found = db.queries.record_edit(
-                conn,
-                tg_message_id=tg_message_id,
-                chat_id=chat_id,
-                new_text=new_text,
-                edited_at=edited_at,
-            )
+        found = db.queries.record_edit(
+            conn,
+            tg_message_id=tg_message_id,
+            chat_id=chat_id,
+            new_text=new_text,
+            edited_at=edited_at,
+        )
 
         if not found:
             # The original message isn't in our DB - insert it now with the current (post-edit) text.

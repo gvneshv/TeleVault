@@ -156,14 +156,34 @@ class TestHandlersWrite:
         assert media_rows(archive_connection) == [(1, "photo", "pending", None)]
         assert archive_connection.execute(sa.text("SELECT is_edited FROM messages")).scalar() is True
 
-    def test_a_captionless_edit_of_an_archived_message_changes_nothing(self, archive_connection):
-        seed_chat(archive_connection, 11, "Alice", messages=[(1, None, "caption")])
+    def edit_to_no_text(self, conn, edited_at=T0):
         on_edit._persist_edit(
             chat_id=11, chat_name="Alice", chat_type="private", chat_username=None, sender_id=None, username=None, first_name=None,
-            last_name=None, tg_message_id=1, new_text=None, edited_at=T0, date=T0, media_kind="photo", media_size=None,
+            last_name=None, tg_message_id=1, new_text=None, edited_at=edited_at, date=T0, media_kind="photo", media_size=None,
         )
-        assert archive_connection.execute(sa.text("SELECT text FROM messages")).scalar() == "caption"
+
+    def test_removing_the_caption_is_recorded_as_an_edit(self, archive_connection):
+        seed_chat(archive_connection, 11, "Alice", messages=[(1, None, "caption")])
+        self.edit_to_no_text(archive_connection)
+        assert archive_connection.execute(sa.text("SELECT old_text, new_text FROM message_edits")).one() == ("caption", None)
+        assert archive_connection.execute(sa.text("SELECT text, is_edited FROM messages")).one() == (None, True)
+
+    def test_a_captionless_event_for_a_message_that_had_no_caption_changes_nothing(self, archive_connection):
+        """A file-only message fires edit events too (link preview, markup...): NULL -> NULL is not an edit."""
+        self.persist()
+        self.edit_to_no_text(archive_connection)
         assert archive_connection.execute(sa.text("SELECT COUNT(*) FROM message_edits")).scalar() == 0
+        assert archive_connection.execute(sa.text("SELECT is_edited FROM messages")).scalar() is False
+
+    def test_the_removed_caption_and_its_restored_text_both_stay_in_the_history(self, archive_connection):
+        seed_chat(archive_connection, 11, "Alice", messages=[(1, None, "caption")])
+        self.edit_to_no_text(archive_connection)
+        on_edit._persist_edit(
+            chat_id=11, chat_name="Alice", chat_type="private", chat_username=None, sender_id=None, username=None, first_name=None,
+            last_name=None, tg_message_id=1, new_text="back", edited_at=T0, date=T0, media_kind="photo", media_size=None,
+        )
+        rows = archive_connection.execute(sa.text("SELECT old_text, new_text FROM message_edits ORDER BY id")).all()
+        assert [tuple(r) for r in rows] == [("caption", None), (None, "back")]
 
 
 class TestBackfill:
