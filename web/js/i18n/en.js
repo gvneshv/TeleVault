@@ -126,8 +126,15 @@ export const en = {
     "This will archive historical messages for the selected chat(s). It can take a long time for large histories.",
   "backfill.warningConnectionOn":
     "The live archiver looks like it's still connected. Stop it before starting a backfill.",
-  "backfill.chatLabel": "Chat (optional - leave empty for all chats)",
-  "backfill.chatPlaceholder": "@username or numeric ID",
+  "backfill.chatLabel": "Chat",
+  "backfill.chatAll": "All chats (except blocked ones)",
+  "backfill.chatGroupPrivate": "Private chats",
+  "backfill.chatGroupGroups": "Groups",
+  "backfill.chatGroupChannels": "Channels",
+  "backfill.chatHint":
+    'Your own names are shown for people you labelled. Blocked chats are not listed. A chat you joined in the last few hours may not be listed yet - "All chats" includes it.',
+  "backfill.chatHintUnavailable":
+    'The list of your chats appears a minute or so after the live archiver starts, and only for an archiver that has run since this update. Until then only "All chats" can be chosen.',
   "backfill.limitLabel": "Message limit per chat (optional)",
   "backfill.limitPlaceholder": "e.g. 500",
   "backfill.confirmStart": "Start",

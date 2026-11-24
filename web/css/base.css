@@ -1307,6 +1307,12 @@ Shared by the collapsed rail and the phone top bar below. */
   color: var(--color-ink);
 }
 
+/* The backfill dialog's chat picker: a long chat name must not push the dialog wider than the screen. */
+.modal__field .blocklist-select {
+  width: 100%;
+  max-width: 100%;
+}
+
 /* Settings -> "Ignore rules": same width as the blocklist card; its rows reuse .device-list / .device-row* like that card does. */
 .settings-card--ignore {
   max-width: 620px;

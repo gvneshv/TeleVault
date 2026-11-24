@@ -60,6 +60,8 @@ const backfillViewState = {
   renderGeneration: 0,
   awaitingStart: false,
   awaitingStartAt: null,
+  // The chat picker's data (GET /api/backfill/chats), fetched each time the start dialog opens.
+  chatChoices: { available: false, updated_at: null, chats: [] },
 };
 
 // This backend emits UTC timestamps in two shapes: SQLite's CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS", no offset - used for backfill_runs rows)
@@ -232,7 +234,8 @@ function renderModal() {
         <p>${t("backfill.confirmBody")}</p>
         <div class="modal__field">
           <label for="backfill-chat-input">${t("backfill.chatLabel")}</label>
-          <input id="backfill-chat-input" type="text" placeholder="${t("backfill.chatPlaceholder")}" />
+          <select id="backfill-chat-input" class="blocklist-select">${renderChatOptions(backfillViewState.chatChoices)}</select>
+          <span>${t(backfillViewState.chatChoices.available ? "backfill.chatHint" : "backfill.chatHintUnavailable")}</span>
         </div>
         <div class="modal__field">
           <label for="backfill-limit-input">${t("backfill.limitLabel")}</label>
@@ -275,6 +278,46 @@ async function fetchBackfillStatus() {
   } catch {
     return { state: "idle" };
   }
+}
+
+/** The chats the start dialog may offer.
+ *  On any failure the dialog still works with "All chats" only. */
+async function fetchBackfillChats() {
+  try {
+    const res = await apiFetch("/api/backfill/chats");
+    if (!res.ok) throw new Error();
+    return await res.json();
+  } catch {
+    return { available: false, updated_at: null, chats: [] };
+  }
+}
+
+/** <option>/<optgroup> markup for the chat picker: "All chats" first, then private chats, groups and channels (the server sorts by name). */
+function renderChatOptions(choices) {
+  const groups = [
+    ["private", "backfill.chatGroupPrivate"],
+    ["group", "backfill.chatGroupGroups"],
+    ["channel", "backfill.chatGroupChannels"],
+  ];
+  const kindOf = (chat) =>
+    chat.chat_type === "supergroup" ? "group" : chat.chat_type;
+  const optionsFor = (kind) =>
+    choices.chats
+      .filter((chat) => kindOf(chat) === kind)
+      .map(
+        (chat) =>
+          `<option value="${Number(chat.chat_id)}">${escapeHtml(chat.name ?? String(chat.chat_id))}</option>`,
+      )
+      .join("");
+  const grouped = groups
+    .map(([kind, labelKey]) => [labelKey, optionsFor(kind)])
+    .filter(([, options]) => options)
+    .map(
+      ([labelKey, options]) =>
+        `<optgroup label="${escapeHtml(t(labelKey))}">${options}</optgroup>`,
+    )
+    .join("");
+  return `<option value="">${escapeHtml(t("backfill.chatAll"))}</option>${grouped}`;
 }
 
 async function fetchBackfillHistory(page = 1) {
@@ -344,6 +387,8 @@ function startTelethonPolling() {
 }
 
 async function openModal(root) {
+  // Before the dialog is drawn, so it never shows a picker that fills in a moment later.
+  backfillViewState.chatChoices = await fetchBackfillChats();
   backfillViewState.modalOpen = true;
   await renderRoot(root);
 
@@ -363,6 +408,7 @@ async function openModal(root) {
   document
     .getElementById("backfill-modal-confirm")
     .addEventListener("click", async () => {
+      // "" is the "All chats" entry; anything else is a chat id from the picker.
       const chat =
         document.getElementById("backfill-chat-input").value.trim() || null;
       const limit =
