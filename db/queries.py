@@ -1257,6 +1257,26 @@ def refresh_chat_summaries(conn: Connection, chat_ids: Iterable[int]) -> None:
         logger.error("Could not refresh the chat list entries after a purge (%s); previews may be out of date.", type(exc).__name__)
 
 
+def repair_stale_chat_summaries(conn: Connection) -> int:
+    """
+    One-time repair for chats emptied BEFORE refresh_chat_summaries() existed: no messages left (message_count = 0) but still a preview or dates.
+    Recomputes just those chats and returns how many it fixed (0 on a healthy archive; the check is one scan of the small chats table).
+    Called when the archiver starts (retention.retention_loop), so an old stale entry heals itself without a migration.
+    """
+    ids = [
+        row[0]
+        for row in conn.execute(
+            sql_text(
+                "SELECT chat_id FROM chats WHERE message_count = 0 "
+                "AND (last_message_preview IS NOT NULL OR last_message_at IS NOT NULL OR first_message_at IS NOT NULL)"
+            )
+        )
+    ]
+    conn.rollback()
+    refresh_chat_summaries(conn, ids)
+    return len(ids)
+
+
 def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: bool, limit: int) -> dict[str, Any]:
     """
     Delete messages sent before `cutoff`, in small batches (utils/validation.RETENTION_BATCH_SIZE), at most `limit` of them.

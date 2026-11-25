@@ -90,6 +90,14 @@ def apply_policy_once(conn, *, now: datetime | None = None) -> str | None:
         return "error"
 
 
+def _repair_summaries() -> None:
+    """Once per archiver start: heal chat list entries that kept a preview after cleanup emptied them (queries.repair_stale_chat_summaries)."""
+    with db.get_connection() as conn:
+        fixed = queries.repair_stale_chat_summaries(conn)
+    if fixed:
+        logger.info("Repaired the list entry of %d emptied chat(s).", fixed)
+
+
 def _tick() -> None:
     """One pass of the loop on its own connection (blocking)."""
     with db.get_connection() as conn:
@@ -102,6 +110,12 @@ async def retention_loop() -> None:
     Cancelled by main.py on shutdown.
     A database outage (Docker down) only skips a pass: archiving matters more than cleanup.
     """
+    try:
+        await asyncio.to_thread(_repair_summaries)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.error("Chat list repair skipped (%s).", type(exc).__name__)
     while True:
         try:
             await asyncio.to_thread(_tick)

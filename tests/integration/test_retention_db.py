@@ -465,3 +465,32 @@ class TestUnmigratedArchive:
     def test_the_backfill_cutoff_is_none_and_the_connection_stays_usable(self, without_table):
         assert q.active_retention_cutoff(without_table) is None
         assert scalar(without_table, "SELECT 1") == 1
+
+
+class TestRepairOfStaleListEntries:
+    """Chats emptied before refresh_chat_summaries() existed still carry their old preview; the archiver heals them once at start."""
+
+    def stale(self, conn):
+        seed_chat(conn, chat_id=77, name="Old", messages=[(1, OTHER, "forgotten")])
+        conn.execute(sa.text("DELETE FROM messages WHERE chat_id = 77"))  # what an old cleanup did: the trigger fixes the counts, nothing else
+        conn.commit()
+
+    def test_an_emptied_chat_keeps_its_old_entry_until_repaired(self, chat):
+        self.stale(chat)
+        assert scalar(chat, "SELECT last_message_preview FROM chats WHERE chat_id = 77") == "forgotten"
+        assert q.repair_stale_chat_summaries(chat) == 1
+        row = chat.execute(sa.text("SELECT message_count, last_message_preview, last_message_at, first_message_at FROM chats WHERE chat_id = 77")).one()
+        assert tuple(row) == (0, None, None, None)
+
+    def test_a_healthy_archive_is_left_alone(self, chat):
+        before = chat.execute(sa.text("SELECT chat_id, last_message_preview, last_message_at FROM chats ORDER BY chat_id")).all()
+        assert q.repair_stale_chat_summaries(chat) == 0
+        assert chat.execute(sa.text("SELECT chat_id, last_message_preview, last_message_at FROM chats ORDER BY chat_id")).all() == before
+
+    def test_the_archiver_start_does_it(self, chat, monkeypatch):
+        from contextlib import nullcontext
+
+        self.stale(chat)
+        monkeypatch.setattr(db, "get_connection", lambda: nullcontext(chat))  # the job opens its own connection; hand it the test's
+        retention._repair_summaries()
+        assert scalar(chat, "SELECT last_message_preview FROM chats WHERE chat_id = 77") is None

@@ -106,11 +106,12 @@
  * css/base.css (the picker's width) and i18n/{en,uk}.js; no file was added or removed.
  * v64 (backfill modes, file types): changed js/views/backfill.js
  * (the "also record files" tick becomes a "What to fetch" select: messages and files / text only / files only),
+ * v65: changed js/views/chat-view.js (a version in the edit history that has no text now names the file kind, "Photo", instead of "(no text)"); no file added or removed.
  * js/views/settings.js (a "Files" card to choose which file types are stored), css/base.css (that card's tick list) and i18n/{en,uk}.js; no file was added or removed.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v64";
+const CACHE_NAME = "televault-shell-v65";
 const SHELL_FILES = [
   "/",
   "/index.html",

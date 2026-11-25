@@ -876,13 +876,16 @@ function renderDetail(message) {
     const items = versions
       .map((v) => {
         const label = v.kind === "original" ? t("cv.versionOriginal") : "";
+        // A version with no text names the message's file kind ("Photo"), like the bubble does, not the plain "(no text)":
+        // a caption removed by an edit leaves the file.
+        // The kind is the message's CURRENT one - a file replaced by an edit is not tracked (see on_edit.py).
         return `
           <li class="cv-version cv-version--${v.kind}">
             <div class="cv-version__meta">
               <time>${escapeHtml(formatDateTime(v.at))}</time>
               ${label ? `<span class="info-badge">${escapeHtml(label)}</span>` : ""}
             </div>
-            <div class="cv-version__text">${v.text ? escapeHtml(v.text) : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`}</div>
+            <div class="cv-version__text">${v.text ? escapeHtml(v.text) : `<span class="cv-row__empty">${escapeHtml(t(mediaLabelKey(message.media_kind)))}</span>`}</div>
           </li>`;
       })
       .join("");

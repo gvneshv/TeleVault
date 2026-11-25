@@ -27,6 +27,12 @@ Until step 1 is done nothing breaks: the archiver records no name history, ignor
 - **Fix in `backfill.py`:** `--chat <numeric id>` is now looked up in the account's chat list first, and only then by `get_entity()`. A fresh process has an empty entity cache, and Telegram resolves a bare group or channel id only with an access hash that the chat list brings along. `@username` and chats outside the list behave as before. **Unverified against real Telegram** (no real login in the sandbox).
 - Web shell: service worker cache **v63**. Nothing to migrate. Existing tests changed: the fake Telegram client got `not_in_dialogs`/`entity_lookups`, and the flood-wait test for "looking up a named chat" now hides the chat from the chat list so it still exercises the `get_entity()` path.
 
+### Fixed - leftover previews of emptied chats, file kind in edit history
+
+- **Fix: chats emptied by automatic cleanup before the previous fix still showed their old preview.** The archiver now repairs such entries once at start (`queries.repair_stale_chat_summaries`, called from `retention.retention_loop`): chats with no messages left get no preview and no dates. A healthy archive is untouched. No migration.
+- **Fix: edit history names the file kind.** A version with no text (a caption removed by an edit) showed "(no text)" while the message itself says "Photo"; it now shows the same label. The kind is the message's current one; a file replaced by an edit is still not tracked.
+- Web shell: service worker cache **v65**.
+
 ### Added - backfill modes, file types, fixes found while testing them
 
 - **Backfill modes.** "What to fetch" in the start dialog (replaces the "also record files" tick) and `--mode all|text|media`: messages and files / text only (files recorded as `skipped`, a message with no text not saved) / only messages that carry a file. `POST /api/backfill/start` accepts `mode` (default `all`; anything else is 422). `full` is still accepted by the API and the command line.
