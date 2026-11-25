@@ -135,13 +135,13 @@ def telegram(archive, monkeypatch, tmp_path):
 
     monkeypatch.setattr(backfill, "_sleep_unless_cancelled", record_sleep)
 
-    def go(history: dict[int, list], chat_selector: str | None = None, *, force_full: bool = False, setup=None, channels: frozenset[int] = frozenset()):
+    def go(history: dict[int, list], chat_selector: str | None = None, *, force_full: bool = False, setup=None, channels: frozenset[int] = frozenset(), mode: str = "all"):
         """Run a whole backfill. `setup(fake)` may inject flood waits or hooks before it starts."""
         fake = FakeTelegram(history, channels)
         if setup:
             setup(fake)
         monkeypatch.setattr(backfill, "TelegramClient", lambda *args, **kwargs: fake)
-        asyncio.run(backfill.run(1, chat_selector, None, force_full))
+        asyncio.run(backfill.run(1, chat_selector, None, force_full, mode))
         return fake, json.loads(status_file.read_text())
 
     go.sleeps = sleeps  # type: ignore[attr-defined]

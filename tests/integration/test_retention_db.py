@@ -207,6 +207,20 @@ class TestPurge:
         assert remaining(chat) == [3, 4, 5]
         assert result["messages_deleted"] == 2
 
+    def test_the_chat_list_entry_follows_the_messages_that_are_left(self, chat):
+        """The counters trigger cannot know the new "last message": without a refresh the chat kept the preview of one that was purged."""
+        purge(chat)
+        row = chat.execute(sa.text("SELECT message_count, last_message_preview, first_message_at FROM chats WHERE chat_id = 42")).one()
+        assert (row[0], row[1]) == (3, "text 5")
+        assert row[2] == chat.execute(sa.text("SELECT MIN(date) FROM messages WHERE chat_id = 42")).scalar()
+
+    def test_a_chat_that_lost_every_message_has_no_preview_and_no_dates(self, chat):
+        for tg_id in (3, 4, 5):
+            age(chat, 42, tg_id, 300)
+        purge(chat)
+        row = chat.execute(sa.text("SELECT message_count, last_message_preview, first_message_at, last_message_at FROM chats WHERE chat_id = 42")).one()
+        assert tuple(row) == (0, None, None, None)
+
     def test_edit_history_and_deletion_snapshots_go_with_their_message_and_only_theirs(self, chat):
         q.record_edit(chat, tg_message_id=1, chat_id=42, new_text="changed")
         q.record_edit(chat, tg_message_id=3, chat_id=42, new_text="changed")
