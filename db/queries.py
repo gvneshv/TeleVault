@@ -28,7 +28,7 @@ Design rules followed here:
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -80,6 +80,45 @@ def _message_media_ready(conn: Connection) -> bool:
     if present:
         _archives_with_message_media.add(name)
     return present
+
+
+# The file-type policy (media_skipped_kinds), the 'skipped' media status and chats.media_walked_id all arrived in ONE migration (e2b7c4d9a613),
+# so one probe on the policy table answers for all three.
+# Probed like the tables above: quiet, positive answers cached per database.
+_archives_with_media_policy: set[str] = set()
+
+
+def media_policy_ready(conn: Connection) -> bool:
+    """True when this archive has the file-type policy (migration e2b7c4d9a613), which also brings the 'skipped' media status.
+    Quiet when it has not; once seen, never probed again for that database."""
+    name = conn.engine.url.database or ""
+    if name in _archives_with_media_policy:
+        return True
+    present = bool(conn.execute(sql_text("SELECT to_regclass('public.media_skipped_kinds') IS NOT NULL")).scalar())
+    if present:
+        _archives_with_media_policy.add(name)
+    return present
+
+
+def _kind_is_off_sql(conn: Connection) -> str:
+    """SQL condition (bind parameter :kind): the owner has switched this file type off.
+    Always FALSE on an archive without the policy."""
+    if not media_policy_ready(conn):
+        return "FALSE"
+    return "EXISTS (SELECT 1 FROM media_skipped_kinds WHERE kind = :kind)"
+
+
+def _initial_media_status_sql(conn: Connection) -> str:
+    """
+    The SQL expression that picks a NEW media row's status, using the bind parameters :kind and :skip.
+
+    'skipped' when the caller asked for it (:skip - a "text only" backfill records a file without fetching it) or the owner switched this file type off;
+    'pending' (queued for download) otherwise.
+    An archive without the policy migration has neither the table nor the 'skipped' status, so everything is 'pending' as before.
+    """
+    if not media_policy_ready(conn):
+        return "'pending'"
+    return f"CASE WHEN CAST(:skip AS boolean) OR {_kind_is_off_sql(conn)} THEN 'skipped' ELSE 'pending' END"
 
 
 # The read position column (chats.read_inbox_max_id) came with a later migration than the chats table, so an archive can lack it.
@@ -198,6 +237,54 @@ def record_backfill_covered_id(conn: Connection, chat_id: int, covered_id: int) 
             "WHERE chat_id = :chat_id AND (backfill_covered_id IS NULL OR backfill_covered_id < :covered_id)"
         ),
         {"chat_id": chat_id, "covered_id": covered_id},
+    )
+
+
+# How far a walk that also looked at FILES has covered a chat (chats.media_walked_id, migration e2b7c4d9a613); probed like the columns above.
+_archives_with_media_marker: set[str] = set()
+_media_marker_missing_warned = False
+
+
+def chats_have_media_marker(conn: Connection) -> bool:
+    """True when this archive has chats.media_walked_id (migration e2b7c4d9a613).
+    Quiet when it has not; once seen, never probed again for that database."""
+    return _chats_column_exists(conn, "media_walked_id", _archives_with_media_marker)
+
+
+def get_media_walked_id(conn: Connection, chat_id: int) -> int | None:
+    """
+    How far a backfill that also looked at files ("all" or "media" mode) has walked this chat; the file twin of get_backfill_covered_id().
+    None = "walk the whole chat": never walked that way, not in the archive yet, or the archive predates the column (one warning).
+
+    A separate number because a text-only walk passes messages whose files it ignored on purpose:
+    letting it move the same marker would make a later media backfill skip every file it passed.
+    """
+    global _media_marker_missing_warned
+    if not chats_have_media_marker(conn):
+        if not _media_marker_missing_warned:
+            _media_marker_missing_warned = True
+            logger.warning(
+                "This archive predates the file marker (chats.media_walked_id), so every backfill that looks at files walks each chat's whole history. "
+                "Run `python scripts/migrate_archives.py` (see RUNBOOK.md, 'Updating existing archives') to make them incremental."
+            )
+        return None
+    row = conn.execute(sql_text("SELECT media_walked_id FROM chats WHERE chat_id = :chat_id"), {"chat_id": chat_id}).first()
+    return row[0] if row and row[0] is not None else None
+
+
+def record_media_walked_id(conn: Connection, chat_id: int, walked_id: int) -> None:
+    """
+    Remember that a backfill which looked at files has now walked this chat up to `walked_id`.
+    Same rules as record_backfill_covered_id(): only moves forward, a no-op without the column, never commits (written in the batch it covers).
+    """
+    if not chats_have_media_marker(conn):
+        return
+    conn.execute(
+        sql_text(
+            "UPDATE chats SET media_walked_id = :walked_id "
+            "WHERE chat_id = :chat_id AND (media_walked_id IS NULL OR media_walked_id < :walked_id)"
+        ),
+        {"chat_id": chat_id, "walked_id": walked_id},
     )
 
 
@@ -900,17 +987,22 @@ def add_missing_media_row(
     kind: str,
     size_bytes: int | None,
     commit: bool = True,
+    skip: bool = False,
 ) -> bool:
     """
-    Give an ALREADY archived message its 'pending' message_media row when it has none, and say whether one was added.
+    Give an ALREADY archived message its message_media row when it has none, and say whether a row was added (or a 'skipped' one queued, see below).
 
     Why it exists: a message archived before media archiving existed (or while its chat was blocked from downloads) is a text-only row,
     and the archive never recorded that it also carried a file.
     A history walk that ignores the "already covered" marker (backfill.py --full) meets that message again, sees its file, and calls this.
     The message itself is NOT touched (no text, date or edit state is overwritten), and a row that exists - pending, stored or refused - is never reset
     (use requeue_media() for that, deliberately).
+    The one exception is a 'skipped' row (set aside by a "text only" backfill):
+    a later call that is not itself `skip` turns it 'pending' - unless the owner has switched that file type off -
+    because fetching those files is precisely what the second run is for.
     Does nothing for a message that is not in the archive (insert_message() is the way in) and on an archive without the message_media table.
 
+    `skip` records it as 'skipped' instead of 'pending', exactly as for insert_message().
     commit=False lets the backfill batch it with the messages around it, like insert_message().
     """
     if not _message_media_ready(conn):
@@ -919,11 +1011,22 @@ def add_missing_media_row(
     try:
         added = conn.execute(
             sql_text(
-                "INSERT INTO message_media (message_id, kind, size_bytes) "
-                "SELECT id, :kind, :size_bytes FROM messages WHERE tg_message_id = :tg_message_id AND chat_id = :chat_id "
-                "ON CONFLICT (message_id) DO NOTHING"
+                "INSERT INTO message_media (message_id, kind, size_bytes, status) "
+                f"SELECT id, :kind, :size_bytes, {_initial_media_status_sql(conn)} FROM messages "
+                "WHERE tg_message_id = :tg_message_id AND chat_id = :chat_id "
+                # A file a "text only" run set aside is exactly what a later "files" run is for:
+                # queue it, unless this run is itself text-only or the owner has switched the kind off.
+                # Every other existing row (pending, stored, refused) is left alone.
+                "ON CONFLICT (message_id) DO UPDATE SET status = 'pending' "
+                f"WHERE message_media.status = 'skipped' AND NOT CAST(:skip AS boolean) AND NOT {_kind_is_off_sql(conn)}"
             ),
-            {"kind": kind, "size_bytes": size_bytes, "tg_message_id": tg_message_id, "chat_id": resolve_chat_id(conn, chat_id)},
+            {
+                "kind": kind,
+                "size_bytes": size_bytes,
+                "skip": skip,
+                "tg_message_id": tg_message_id,
+                "chat_id": resolve_chat_id(conn, chat_id),
+            },
         ).rowcount
         if commit:
             _commit(conn)
@@ -931,6 +1034,55 @@ def add_missing_media_row(
         conn.rollback()
         raise
     return added > 0
+
+
+MEDIA_KINDS = ("photo", "video", "voice", "audio", "document")
+
+
+def get_media_policy(conn: Connection) -> dict[str, bool]:
+    """
+    Which file types this archive stores: {kind: True/False} for every kind (False = switched off in Settings -> Files).
+    An empty media_skipped_kinds table - the default - means everything is stored.
+
+    Raises ProgrammingError (undefined table) on an archive that predates the migration; the route turns that into 409 `archive_outdated`.
+    """
+    off = {row[0] for row in conn.execute(sql_text("SELECT kind FROM media_skipped_kinds"))}
+    return {kind: kind not in off for kind in MEDIA_KINDS}
+
+
+def save_media_policy(conn: Connection, enabled: Sequence[str]) -> dict[str, int]:
+    """
+    Store which file types to keep (`enabled`; every other kind is switched off) and bring the download queue in line AT ONCE, in one transaction:
+
+    * waiting ('pending') files of a switched-off kind become 'skipped' - the downloader would otherwise still fetch them;
+    * 'skipped' files of a kind that is on become 'pending' - switching a type back on is how the owner asks for the files that were withheld.
+      That includes files a "text only" backfill recorded, so one account-wide rule decides what is stored.
+    Files already 'stored' are never touched: switching a type off stops NEW downloads, it does not delete anything.
+
+    Returns {"skipped": n, "queued": m}: how many waiting files each change affected.
+    Raises ValueError for an unknown kind.
+    Raises ProgrammingError on an archive that predates the migration (see get_media_policy()).
+    """
+    wanted = tuple(dict.fromkeys(enabled))
+    unknown = [kind for kind in wanted if kind not in MEDIA_KINDS]
+    if unknown:
+        raise ValueError(f"Unknown file type {unknown!r}; allowed: {MEDIA_KINDS!r}")
+    off = [kind for kind in MEDIA_KINDS if kind not in wanted]
+    try:
+        conn.execute(sql_text("DELETE FROM media_skipped_kinds"))
+        if off:
+            conn.execute(sql_text("INSERT INTO media_skipped_kinds (kind) SELECT unnest(CAST(:off AS text[]))"), {"off": off})
+        skipped = conn.execute(
+            sql_text("UPDATE message_media SET status = 'skipped' WHERE status = 'pending' AND kind = ANY(:off)"), {"off": off}
+        ).rowcount
+        queued = conn.execute(
+            sql_text("UPDATE message_media SET status = 'pending' WHERE status = 'skipped' AND kind = ANY(:on)"), {"on": list(wanted)}
+        ).rowcount
+        _commit(conn)
+    except Exception:
+        conn.rollback()
+        raise
+    return {"skipped": skipped, "queued": queued}
 
 
 # The outcomes that can be tried again. 'unavailable' is deliberately absent: Telegram no longer has the file, so asking again only costs traffic.
@@ -1072,6 +1224,39 @@ def record_retention_run(conn: Connection, *, status: str, deleted: int, clear_c
         raise
 
 
+def refresh_chat_summaries(conn: Connection, chat_ids: Iterable[int]) -> None:
+    """
+    Recompute first_message_at, last_message_at and last_message_preview of the given chats from the messages that are LEFT.
+
+    The counters trigger keeps message_count/edited_count/deleted_count right when rows are deleted (chats_counters_ad) but cannot know the new "last message",
+    so after a purge a chat that lost every message still showed its old preview and sorted as recent - an empty chat with a last message in the list.
+    A chat with no messages left gets NULLs (the list sorts such chats last and shows no preview).
+    Commits itself; never raises (a stale preview must not turn a successful purge into a failed one) - it logs the exception type only.
+    """
+    ids = list(chat_ids)
+    if not ids:
+        return
+    try:
+        conn.execute(
+            sql_text(
+                """
+                UPDATE chats c SET
+                    first_message_at = (SELECT MIN(m.date) FROM messages m WHERE m.chat_id = c.chat_id),
+                    last_message_at = (SELECT MAX(m.date) FROM messages m WHERE m.chat_id = c.chat_id),
+                    last_message_preview = (
+                        SELECT SUBSTR(m.text, 1, 80) FROM messages m WHERE m.chat_id = c.chat_id ORDER BY m.date DESC, m.id DESC LIMIT 1
+                    )
+                WHERE c.chat_id = ANY(:ids)
+                """
+            ),
+            {"ids": ids},
+        )
+        _commit(conn)
+    except Exception as exc:
+        conn.rollback()
+        logger.error("Could not refresh the chat list entries after a purge (%s); previews may be out of date.", type(exc).__name__)
+
+
 def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: bool, limit: int) -> dict[str, Any]:
     """
     Delete messages sent before `cutoff`, in small batches (utils/validation.RETENTION_BATCH_SIZE), at most `limit` of them.
@@ -1097,53 +1282,63 @@ def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: 
     deleted_filter = "AND NOT is_deleted" if keep_deleted else ""
     label_guard = "AND NOT EXISTS (SELECT 1 FROM sender_display_names d WHERE d.sender_id = s.sender_id)" if has_labels else ""
     totals = {"messages_deleted": 0, "edits_deleted": 0, "deletions_deleted": 0, "senders_deleted": 0}
-    while totals["messages_deleted"] < limit:
-        batch = min(RETENTION_BATCH_SIZE, limit - totals["messages_deleted"])
-        try:
-            ids = [
-                row[0]
-                for row in conn.execute(
-                    sql_text(
-                        f"SELECT id FROM messages WHERE date < :cutoff {deleted_filter} ORDER BY date, id LIMIT :batch FOR UPDATE SKIP LOCKED"
-                    ),
-                    {"cutoff": cutoff, "batch": batch},
-                )
-            ]
-            if not ids:
-                conn.rollback()
-                break
-            params = {"ids": ids}
-            totals["deletions_deleted"] += conn.execute(sql_text("DELETE FROM message_deletions WHERE message_id = ANY(:ids)"), params).rowcount
-            totals["edits_deleted"] += conn.execute(sql_text("DELETE FROM message_edits WHERE message_id = ANY(:ids)"), params).rowcount
-            # Messages and the senders that became unreferenced, in ONE statement (same reasoning as purge_chat()): the sender foreign key is checked
-            # at the end of the statement, and `m.id <> ALL(:ids)` hides the rows this very statement deletes from the NOT EXISTS.
-            result = conn.execute(
-                sql_text(
-                    f"""
-                    WITH gone AS (
-                        DELETE FROM messages WHERE id = ANY(:ids) RETURNING sender_id
-                    ),
-                    candidates AS (
-                        SELECT DISTINCT sender_id FROM gone WHERE sender_id IS NOT NULL
-                    ),
-                    orphans AS (
-                        DELETE FROM senders s USING candidates c
-                        WHERE s.sender_id = c.sender_id
-                          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.sender_id = s.sender_id AND m.id <> ALL(:ids))
-                          {label_guard}
-                        RETURNING s.sender_id
+    # Chats that lost messages: their list entry (first/last date, preview) must be recomputed afterwards, see refresh_chat_summaries().
+    touched_chats: set[int] = set()
+    try:
+        while totals["messages_deleted"] < limit:
+            batch = min(RETENTION_BATCH_SIZE, limit - totals["messages_deleted"])
+            try:
+                ids = [
+                    row[0]
+                    for row in conn.execute(
+                        sql_text(
+                            f"SELECT id FROM messages WHERE date < :cutoff {deleted_filter} ORDER BY date, id LIMIT :batch FOR UPDATE SKIP LOCKED"
+                        ),
+                        {"cutoff": cutoff, "batch": batch},
                     )
-                    SELECT (SELECT COUNT(*) FROM gone), (SELECT COUNT(*) FROM orphans)
-                    """
-                ),
-                params,
-            ).one()
-            conn.commit()
-            totals["messages_deleted"] += int(result[0])
-            totals["senders_deleted"] += int(result[1])
-        except Exception:
-            conn.rollback()
-            raise
+                ]
+                if not ids:
+                    conn.rollback()
+                    break
+                params = {"ids": ids}
+                touched_chats.update(
+                    row[0] for row in conn.execute(sql_text("SELECT DISTINCT chat_id FROM messages WHERE id = ANY(:ids)"), params)
+                )
+                totals["deletions_deleted"] += conn.execute(sql_text("DELETE FROM message_deletions WHERE message_id = ANY(:ids)"), params).rowcount
+                totals["edits_deleted"] += conn.execute(sql_text("DELETE FROM message_edits WHERE message_id = ANY(:ids)"), params).rowcount
+                # Messages and the senders that became unreferenced, in ONE statement (same reasoning as purge_chat()): the sender foreign key is checked
+                # at the end of the statement, and `m.id <> ALL(:ids)` hides the rows this very statement deletes from the NOT EXISTS.
+                result = conn.execute(
+                    sql_text(
+                        f"""
+                        WITH gone AS (
+                            DELETE FROM messages WHERE id = ANY(:ids) RETURNING sender_id
+                        ),
+                        candidates AS (
+                            SELECT DISTINCT sender_id FROM gone WHERE sender_id IS NOT NULL
+                        ),
+                        orphans AS (
+                            DELETE FROM senders s USING candidates c
+                            WHERE s.sender_id = c.sender_id
+                              AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.sender_id = s.sender_id AND m.id <> ALL(:ids))
+                              {label_guard}
+                            RETURNING s.sender_id
+                        )
+                        SELECT (SELECT COUNT(*) FROM gone), (SELECT COUNT(*) FROM orphans)
+                        """
+                    ),
+                    params,
+                ).one()
+                conn.commit()
+                totals["messages_deleted"] += int(result[0])
+                totals["senders_deleted"] += int(result[1])
+            except Exception:
+                conn.rollback()
+                raise
+    finally:
+        # Also after a failed batch: the batches that DID commit have already removed messages, and a stale preview would outlive them.
+        if touched_chats:
+            refresh_chat_summaries(conn, touched_chats)
     return totals
 
 
@@ -1425,6 +1620,7 @@ def insert_message(
     commit: bool = True,
     media_kind: str | None = None,
     media_size: int | None = None,
+    media_skip: bool = False,
 ) -> int | None:
     """
     Store a new incoming or outgoing message.
@@ -1433,6 +1629,8 @@ def insert_message(
     When `media_kind` is given (one of handlers.media_filter.KINDS) a message_media row with status 'pending' is written in the SAME transaction as the message,
     so a message can never exist without the media row the download queue (and the chat view's "Photo" label) relies on.
     `media_size` is Telegram's declared size in bytes, or None when unknown.
+    The row starts 'pending' (queued for download), or 'skipped' when `media_skip` is true (a "text only" backfill records the file without fetching it)
+    or the owner switched this file type off (Settings -> Files, media_skipped_kinds).
     The media row is written only for a NEW message: a re-delivered one (ON CONFLICT) must not reset a row that may already be 'stored'.
 
     date (Telegram's send timestamp) is converted to local time before storage.
@@ -1514,10 +1712,11 @@ def insert_message(
         if row is not None and media_kind is not None and _message_media_ready(conn):
             conn.execute(
                 sql_text(
-                    "INSERT INTO message_media (message_id, kind, size_bytes) VALUES (:message_id, :kind, :size_bytes) "
+                    "INSERT INTO message_media (message_id, kind, size_bytes, status) "
+                    f"VALUES (:message_id, :kind, :size_bytes, {_initial_media_status_sql(conn)}) "
                     "ON CONFLICT (message_id) DO NOTHING"
                 ),
-                {"message_id": row[0], "kind": media_kind, "size_bytes": media_size},
+                {"message_id": row[0], "kind": media_kind, "size_bytes": media_size, "skip": media_skip},
             )
         if commit:
             _commit(conn)

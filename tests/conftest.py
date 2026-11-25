@@ -268,7 +268,7 @@ def pytest_sessionfinish(session, exitstatus):
 # Same for ingest_ignore_rule_chats, which cascades from ingest_ignore_rules.
 _ARCHIVE_TABLES = (
     "chats, senders, backfill_runs, chat_migrations, ingest_blocked_chats, archive_owner, sender_name_history, sender_display_names, "
-    "ingest_ignore_rules, ingest_ignore_rule_chats, retention_policy, message_media"
+    "ingest_ignore_rules, ingest_ignore_rule_chats, retention_policy, message_media, media_skipped_kinds"
 )
 
 

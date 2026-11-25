@@ -132,6 +132,9 @@ chats = Table(
     # NULL = never backfilled (or an archive from before this column): the next backfill walks the whole chat once.
     # Written in the same transaction as the messages it covers, only moves forward (db.queries.record_backfill_covered_id).
     Column("backfill_covered_id", BigInteger),
+    # The same idea for FILES (db.queries.record_media_walked_id): how far a walk that also looked at files has covered this chat.
+    # Separate from backfill_covered_id because a text-only backfill walks past messages whose files it deliberately ignored.
+    Column("media_walked_id", BigInteger),
     CheckConstraint(
         "chat_type IN ('group', 'supergroup', 'channel', 'private')",
         name="ck_chats_chat_type",
@@ -229,6 +232,8 @@ messages = Table(
 #
 # status records what became of the file, so the UI can say WHY a file is missing instead of silently showing nothing:
 #   pending     - recorded, not downloaded yet (waiting in the download queue);
+#   skipped     - deliberately not downloaded: the owner turned this file type off (media_skipped_kinds) or a "text only" backfill recorded it.
+#                 Turning the type on again queues these rows ('pending'); see db.queries.save_media_policy;
 #   stored      - the file is on disk at file_path;
 #   too_large   - over the per-file size cap, not downloaded;
 #   disk_full   - the account's disk limit was reached, not downloaded;
@@ -251,7 +256,7 @@ message_media = Table(
     Column("created_at", TIMESTAMP(timezone=True), server_default=func.now()),
     CheckConstraint("kind IN ('photo', 'video', 'voice', 'audio', 'document')", name="ck_message_media_kind"),
     CheckConstraint(
-        "status IN ('pending', 'stored', 'too_large', 'disk_full', 'unavailable', 'failed')",
+        "status IN ('pending', 'stored', 'too_large', 'disk_full', 'unavailable', 'failed', 'skipped')",
         name="ck_message_media_status",
     ),
     CheckConstraint("size_bytes IS NULL OR size_bytes >= 0", name="ck_message_media_size"),
@@ -443,6 +448,21 @@ archive_owner = Table(
     Column("owner_id", BigInteger, nullable=False, autoincrement=False),
     Column("recorded_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
     CheckConstraint("singleton", name="ck_archive_owner_singleton"),
+)
+
+
+# ---------------------------------------------------------------------------
+# media_skipped_kinds
+# ---------------------------------------------------------------------------
+# The owner's choice of which file types NOT to store (Settings -> Files): one row per switched-off kind, so an empty table means "store everything"
+# (the default for every archive, including one that never opened the card).
+# A setting, not archived content: kept when everything stored is cleared, like the blocklist.
+# Files of a switched-off kind are still RECORDED (message_media row, status 'skipped') so the chat view can show "Photo" - only the download is withheld.
+media_skipped_kinds = Table(
+    "media_skipped_kinds",
+    metadata,
+    Column("kind", Text, primary_key=True),
+    CheckConstraint("kind IN ('photo', 'video', 'voice', 'audio', 'document')", name="ck_media_skipped_kinds_kind"),
 )
 
 

@@ -100,7 +100,7 @@ class TestMigration:
         assert {n for n, _ in rows} == set(model)
         for name, definition in rows:
             # Postgres re-prints the expression (casts, parentheses), so compare the words that matter.
-            for word in ("photo", "video", "voice", "audio", "document", "pending", "stored", "too_large", "disk_full", "unavailable", "failed"):
+            for word in ("photo", "video", "voice", "audio", "document", "pending", "stored", "too_large", "disk_full", "unavailable", "failed", "skipped"):
                 assert (f"'{word}'" in model[name]) == (f"'{word}'" in definition)
 
     def test_downgrade_and_upgrade_round_trip(self, server_ready):
