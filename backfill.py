@@ -7,6 +7,7 @@ Run with (normally started for you by the web UI's Backfill tab - POST /api/back
     python backfill.py --user-id 1 --chat -1001234567890 # one chat by numeric ID
     python backfill.py --user-id 1 --chat @someusername --limit 500  # cap per chat, useful for testing
     python backfill.py --user-id 1 --full                # force a full re-walk of every chat, ignoring what's already archived
+    python backfill.py --user-id 1 --mode text           # message text only (no files);  --mode media = only messages that carry a file
 
 --user-id is the control-database id of the account (see the admin panel).
 The account's Telegram login and archive database are read from the control database - nothing Telegram-related lives in .env any more (see utils/account.py).
@@ -40,11 +41,25 @@ Cooldown - one backfill per period, for every chat:
     So is a run in which a chat was given up on after repeated flood waits: it is recorded as an error, not as completed.
     Enforced here (the one entry point, like the running-backfill check) and again by the web API, which can then say so before spawning anything.
 
-Files of already archived messages (--full):
+What to fetch (--mode):
+    all   - messages and their files (the default).
+    text  - message text only.
+            A file is still RECORDED (so the chat view can say "Photo") but as 'skipped', never queued; a message with no text is not stored.
+    media - only messages that carry a file; others are passed over.
+            The files go to the download queue.
+    Which FILE TYPES are downloaded is not a per-run choice: Settings -> Files decides it for the whole account (live archiver and every backfill alike),
+    and a type that is switched off is recorded as 'skipped' whatever the mode.
+    Each kind of walk has its own marker (_resume_min_id): text -> chats.backfill_covered_id, media -> chats.media_walked_id, "all" -> the lower of the two.
+    So a text-only run followed by a media run is two cheap walks, never one skipped by the other's progress.
+    "text" and "media" refuse to start on an archive without migration e2b7c4d9a613; "all" always works.
+
+Files of already archived messages:
     A message archived before media archiving existed is a text-only row: nothing recorded that it also carried a file.
-    The incremental walk never revisits it (it starts after the chat's marker), so `--full` does: when a message that is already archived turns out to carry a file,
-    it gets its 'pending' media row (db.queries.add_missing_media_row) and the live downloader fetches the file the next time the archiver runs.
+    The file marker starts empty for every chat after the migration, so the first "all" or "media" walk of a chat meets those messages again:
+    when one that is already archived carries a file it gets its media row (db.queries.add_missing_media_row)
+    and the live downloader fetches the file the next time the archiver runs.
     Nothing is downloaded here, and a media row that already exists is never reset.
+    (--full does the same walk on demand, ignoring both markers.)
 
 Flood waits (Telegram's "slow down, wait N seconds"):
     - Up to 60 s (flood_sleep_threshold, utils/telegram_client.py) Telethon sleeps by itself and carries on; nothing here sees it.
@@ -89,6 +104,7 @@ Incremental mode above is what makes repeat runs *cheap* too, not just safe - id
 
 import argparse
 import asyncio
+from collections import Counter
 import logging
 import json
 import os
@@ -296,6 +312,25 @@ def _refuse_if_cooling_down(conn) -> None:
         sys.exit(1)
 
 
+def _refuse_unsupported_mode(conn, mode: str) -> None:
+    """
+    "text" and "media" need the file-type migration (e2b7c4d9a613: the 'skipped' status and the file marker); on an archive without it they stop before touching anything.
+    "all" always works - it is the behaviour every archive had before modes existed.
+    """
+    if mode not in MODES:
+        logger.error("Unknown mode %r; choose one of: %s.", mode, ", ".join(MODES))
+    elif mode == "all" or db.queries.media_policy_ready(conn):
+        return
+    else:
+        logger.error(
+            "Mode %r needs a newer archive database. Run `python scripts/migrate_archives.py` (see RUNBOOK.md, 'Updating existing archives'). Nothing was fetched.",
+            mode,
+        )
+    conn.close()
+    db.close_db()
+    sys.exit(1)
+
+
 def _handle_sigterm(signum, frame) -> None:
     """
     Flip a flag rather than raising immediately - lets the current message finish and insert_message() own commit land cleanly before the run loop notices and exits,
@@ -308,11 +343,45 @@ def _handle_sigterm(signum, frame) -> None:
     )
 
 
+# What a backfill looks at (--mode / the Backfill tab's "What to fetch"):
+#   all   - messages and their files (the default);
+#   text  - message text only: files are recorded as 'skipped' (the chat view still says "Photo") and a message with no text at all is not stored;
+#   media - only messages that carry a file: a message without one is passed over, the files go to the download queue.
+MODES = ("all", "text", "media")
+
+
+def _resume_min_id(conn, chat_id: int, mode: str) -> int | None:
+    """
+    Where this mode's walk of a chat may resume from (None = the whole chat).
+
+    Each kind of walk has its own marker: text -> chats.backfill_covered_id, media -> chats.media_walked_id.
+    "all" does both jobs, so it can only skip what BOTH markers have covered: the lower of the two, and a full walk while either is unset
+    (after the file migration every chat starts unset, so the first "all" run re-checks old messages for files - exactly what that run is for).
+    """
+    covered = db.queries.get_backfill_covered_id(conn, chat_id) if mode != "media" else None
+    walked = db.queries.get_media_walked_id(conn, chat_id) if mode != "text" else None
+    if mode == "text":
+        return covered
+    if mode == "media":
+        return walked
+    return None if covered is None or walked is None else min(covered, walked)
+
+
+def _record_markers(conn, chat_id: int, last_seen_id: int, mode: str) -> None:
+    """Advance the marker(s) this mode is entitled to (see _resume_min_id).
+    Does not commit - the caller batches it with the rows it covers."""
+    if mode != "media":
+        db.queries.record_backfill_covered_id(conn, chat_id, last_seen_id)
+    if mode != "text":
+        db.queries.record_media_walked_id(conn, chat_id, last_seen_id)
+
+
 async def backfill_chat(
-    client: TelegramClient, conn, chat, limit: int | None, min_id: int | None = None
+    client: TelegramClient, conn, chat, limit: int | None, min_id: int | None = None, mode: str = "all"
 ) -> tuple[int, int]:
     """
     Archive a chat's history - either all of it, or (the default, see backfill.py's module docstring) only messages newer than min_id.
+    `mode` says what to fetch: "all", "text" or "media" (see MODES).
 
     Returns (stored, skipped).
     skipped covers both "already archived" (INSERT OR IGNORE no-op) and "nothing worth archiving" (media, stickers, unsupported service messages)
@@ -363,9 +432,13 @@ async def backfill_chat(
     # The retention policy's cutoff (None = no active policy): messages older than it would be deleted again by the archiver's next run,
     # so importing them is wasted work and would briefly bring back what the owner chose to forget.
     retention_cutoff = db.queries.active_retention_cutoff(conn)
+    if retention_cutoff is not None:
+        logger.info("  Automatic cleanup is ON: messages older than %s are not imported.", retention_cutoff.date().isoformat())
 
     stored = 0
     skipped = 0
+    # Why messages were skipped, for the end-of-chat log line: a bare "skipped: 111" cannot tell "already archived" from "all expired".
+    why: Counter[str] = Counter()
     processed = 0
     # The id of the last message this walk got past (stored or deliberately skipped) - what chats.backfill_covered_id records.
     # Messages are walked oldest -> newest, so everything at or below it has been dealt with.
@@ -399,24 +472,33 @@ async def backfill_chat(
         # A timer message that is still around when history is fetched is simply not yet expired; keeping it would keep it from disappearing.
         if is_self_destructing(message):
             skipped += 1
+            why['a self-destruct timer (auto-delete chat or view-once media)'] += 1
             continue
 
         # Same rule as the live handlers (handlers/ingest_filter.py): a plain-text message whose text matches an ignore rule is not archived.
         # Counted as skipped. Nothing about the message or the rule is logged.
         if matches_any(ignore_patterns, matchable_text(message)):
             skipped += 1
+            why['an ignore rule'] += 1
             continue
 
         if retention_cutoff is not None and message.date < retention_cutoff:
             skipped += 1
+            why['older than the retention cutoff (Settings -> automatic cleanup)'] += 1
             continue
 
         text = resolve_message_text(message)
         kind = media_kind(message)
         # Neither text nor a file we store (sticker, GIF, service message): nothing to archive.
-        # A media-only message (a photo without caption) is stored with text NULL and a 'pending' message_media row, like the live handler does.
+        # A media-only message (a photo without caption) is stored with text NULL and a message_media row, like the live handler does.
         if not text and kind is None:
             skipped += 1
+            why['nothing to store (sticker, GIF, service message...)'] += 1
+            continue
+        # The mode narrows that: "media" wants only messages with a file, "text" only messages with text (a captionless photo has none).
+        if (mode == "media" and kind is None) or (mode == "text" and not text):
+            skipped += 1
+            why['outside the chosen mode'] += 1
             continue
 
         if message.sender_id is not None:
@@ -445,6 +527,8 @@ async def backfill_chat(
             date=message.date,
             media_kind=kind,
             media_size=media_size(message) if kind else None,
+            # "text only" records the file without queueing it; the owner's file-type choice is applied inside insert_message().
+            media_skip=mode == "text",
             # Batched below, not per-row - see insert_message()'s docstring.
             commit=False,
         )
@@ -452,9 +536,10 @@ async def backfill_chat(
             stored += 1
         else:
             skipped += 1
+            why['already archived'] += 1
             # Already archived.
             # If it carries a file the archive never recorded (history from before media archiving), record it now - see "Files of already archived messages".
-            if kind:
+            if kind and mode != "text":
                 db.queries.add_missing_media_row(
                     conn,
                     tg_message_id=message.id,
@@ -467,18 +552,21 @@ async def backfill_chat(
         if processed % PROGRESS_INTERVAL == 0:
             # The marker goes in the same transaction as the rows it covers (it does not commit by itself), so it can never claim more than was stored.
             if last_seen_id:
-                db.queries.record_backfill_covered_id(conn, utils.get_peer_id(chat), last_seen_id)
+                _record_markers(conn, utils.get_peer_id(chat), last_seen_id, mode)
             conn.commit()
 
     # Also reached after a cancel: whatever was handled before the stop counts as covered, so the next run resumes from there.
     if last_seen_id:
-        db.queries.record_backfill_covered_id(conn, utils.get_peer_id(chat), last_seen_id)
+        _record_markers(conn, utils.get_peer_id(chat), last_seen_id, mode)
     conn.commit()  # flush whatever's left in the final partial batch
+    if skipped:
+        # Counts only, never text or names (the logging rules).
+        logger.info("  skipped %d: %s.", skipped, "; ".join(f"{n} {reason}" for reason, n in why.most_common()))
     return stored, skipped
 
 
 async def run(
-    user_id: int, chat_selector: str | None, limit: int | None, force_full: bool = False
+    user_id: int, chat_selector: str | None, limit: int | None, force_full: bool = False, mode: str = "all"
 ) -> None:
     try:
         account = load_account_context(user_id)
@@ -510,6 +598,7 @@ async def run(
         sys.exit(1)
 
     conn = db.get_connection()
+    _refuse_unsupported_mode(conn, mode)
     _refuse_if_cooling_down(conn)
 
     # A second, separate pooled connection dedicated to backfill_runs bookkeeping (the status row's start/finish, not the archived data itself)
@@ -656,16 +745,10 @@ async def run(
                 # - so a retry naturally resumes close to where it stopped instead of re-walking from scratch,
                 # with no special resume logic needed beyond recomputing this.
                 # (Not with --full: that deliberately ignores the marker, so a retry there starts over.)
-                chat_min_id = (
-                    None
-                    if force_full
-                    else db.queries.get_backfill_covered_id(
-                        conn, utils.get_peer_id(chat)
-                    )
-                )
+                chat_min_id = None if force_full else _resume_min_id(conn, utils.get_peer_id(chat), mode)
                 fetched_since_pause = True
                 stored, skipped = await backfill_chat(
-                    client, conn, chat, limit, min_id=chat_min_id
+                    client, conn, chat, limit, min_id=chat_min_id, mode=mode
                 )
                 break
             except FloodWaitError as e:
@@ -803,6 +886,15 @@ def main() -> None:
             "which is much faster and lighter on Telegram's API quota on repeat runs."
         ),
     )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default="all",
+        help=(
+            "What to fetch: 'all' (messages and their files, the default), 'text' (message text only - files are recorded but not downloaded) "
+            "or 'media' (only messages that carry a file). 'text' and 'media' need the archive to be migrated (scripts/migrate_archives.py)."
+        ),
+    )
     args = parser.parse_args()
 
     setup_logging(log_level=settings.log_level, log_file=settings.log_file)
@@ -812,7 +904,7 @@ def main() -> None:
     _refuse_if_conflicting(args.user_id)
 
     try:
-        asyncio.run(run(args.user_id, args.chat, args.limit, args.full))
+        asyncio.run(run(args.user_id, args.chat, args.limit, args.full, args.mode))
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
 

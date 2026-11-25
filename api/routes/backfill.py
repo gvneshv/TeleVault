@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 
 from math import ceil
 
@@ -75,6 +76,9 @@ class BackfillStartRequest(BaseModel):
     # Re-walk every chat from its first message instead of resuming after its marker (backfill.py --full).
     # It is how the files of messages archived before media archiving get recorded; heavier on Telegram's API, hence off by default.
     full: bool = False
+    # What to fetch (backfill.py --mode): messages and files, text only, or only messages that carry a file.
+    # Which file TYPES are downloaded is the account-wide Settings -> Files choice, not a per-run one.
+    mode: Literal["all", "text", "media"] = "all"
 
 
 def _telethon_is_running(user_id: int) -> bool:
@@ -161,6 +165,8 @@ def start_backfill(
         cmd += ["--limit", str(body.limit)]
     if body.full:
         cmd.append("--full")
+    if body.mode != "all":
+        cmd += ["--mode", body.mode]
     process = subprocess.Popen(cmd, cwd=_REPO_ROOT)
     _processes[user_id] = process
     return {"started": True, "pid": process.pid}
