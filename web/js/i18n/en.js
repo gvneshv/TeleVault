@@ -138,9 +138,12 @@ export const en = {
   "backfill.limitLabel": "Message limit per chat (optional)",
   "backfill.limitPlaceholder": "e.g. 500",
   "backfill.confirmStart": "Start",
-  "backfill.fullLabel": "Also record the files of messages already archived",
-  "backfill.fullHint":
-    "Walks every chat from its first message again, so it takes longer and asks Telegram for much more. Only needed once, to find the photos, videos and files of history archived before media was supported. The files themselves are downloaded later, by the live archiver. Without this, only new messages are fetched.",
+  "backfill.modeLabel": "What to fetch",
+  "backfill.modeAll": "Messages and files",
+  "backfill.modeText": "Text only",
+  "backfill.modeMedia": "Files only",
+  "backfill.modeHint":
+    '"Text only" saves the messages but no files. "Files only" fetches just the messages that carry a file. Which file types are saved at all is set under Settings -> Files. Choosing "Messages and files" for the first time after this update also looks through your older history once, so it takes longer and asks Telegram for more.',
   "backfill.cooldownWait":
     "A backfill finished recently. To go easy on Telegram, the next one can start in {time}.",
   "backfill.stateRunning": "Running",
@@ -305,6 +308,23 @@ export const en = {
     "Turned off. Nothing more will be deleted automatically.",
   "settings.retentionOutdated":
     "The archive changed: now {actual} messages would be deleted, more than you confirmed. Preview again.",
+  "settings.filesTitle": "Files",
+  "settings.filesIntro":
+    'Which kinds of files are saved on this server\'s disk - for new messages and for every backfill. A kind you switch off is still noted in the chat ("Photo") but its file is not downloaded. Switching a kind back on also downloads the files that were held back. Files already saved are never deleted by this.',
+  "settings.filesKind.photo": "Photos",
+  "settings.filesKind.video": "Videos",
+  "settings.filesKind.voice": "Voice messages",
+  "settings.filesKind.audio": "Audio and music",
+  "settings.filesKind.document": "Other files (documents)",
+  "settings.filesNone":
+    "Nothing is ticked: only the text of messages will be saved.",
+  "settings.filesSave": "Save",
+  "settings.filesSaving": "Saving…",
+  "settings.filesSaved": "Saved.",
+  "settings.filesSavedQueued":
+    "{n} files that were held back will now be downloaded.",
+  "settings.filesSavedSkipped":
+    "{n} files that were waiting will not be downloaded.",
   "settings.dataTitle": "Delete all stored data",
   "settings.dataIntro":
     "Empties the archive: every stored message (with edit history and deleted-message copies), every chat and the people seen. Kept: the list of chats not archived, your own names for people, and which account this archive belongs to. Messages that arrive later are stored again as usual. This cannot be undone. It does not delete your TeleVault account.",

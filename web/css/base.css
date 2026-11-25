@@ -1308,9 +1308,14 @@ Shared by the collapsed rail and the phone top bar below. */
 }
 
 /* The backfill dialog's chat picker: a long chat name must not push the dialog wider than the screen. */
+/* .blocklist-select is built for a ROW (flex: 1 1 200px = "grow from 200px wide").
+   Inside .modal__field, which stacks its children in a COLUMN, that same flex-basis becomes the HEIGHT - a 200px-tall dropdown.
+   flex: none restores the select's natural height, the same as the inputs around it. */
 .modal__field .blocklist-select {
+  flex: none;
   width: 100%;
   max-width: 100%;
+  font: inherit;
 }
 
 /* Settings -> "Ignore rules": same width as the blocklist card; its rows reuse .device-list / .device-row* like that card does. */
@@ -1529,6 +1534,14 @@ Shared by the collapsed rail and the phone top bar below. */
   font-size: 12.5px;
   color: var(--color-ink-muted);
   line-height: 1.4;
+}
+
+/* Files card: the file-type ticks stack, like the "keep deleted" tick above. */
+.files-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 12px;
 }
 
 .retention-result {
@@ -2171,7 +2184,8 @@ mark.legal-placeholder {
 .backfill-disclaimer__warning {
   margin: 12px 0 0;
   padding: 10px 12px;
-  border-left: 3px solid var(--color-patina);
+  /* A box on all four sides: a left bar alone read as an unfinished quote. */
+  border: 1px solid var(--color-patina);
   border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-ink);

@@ -19,6 +19,10 @@
  *      only then can the policy be switched on, and the previewed count is sent back as the confirmation (the server counts again and refuses a stale one).
  *      Changing the months or the checkbox throws the preview away.
  *      Off by default; messages deleted in Telegram are kept unless the owner unticks the box.
+ *   3c. "Files" (file-type policy, api/routes/media.py): which of photo / video / voice / audio / document are stored at all.
+ *      One account-wide choice for the live archiver and every backfill; everything on by default.
+ *      A type that is off is still recorded, just not downloaded.
+ *      Plain checkboxes plus one Save button (a click on a box changes nothing by itself); the server answers with how many waiting files the change re-sorted.
  *   4. "Telegram devices": the account's Telegram sessions (the same list as Telegram's own Settings -> Devices)
  *      with buttons to end one device or every device except TeleVault's own.
  *      Every link creates a new Telegram session and nothing used to end the old ones, so they piled up.
@@ -108,6 +112,26 @@ const settingsViewState = {
     notice: null,
     error: null,
     // {href, label} when the error is one the person can fix themselves (no archive database yet / not migrated), else null.
+    fix: null,
+  },
+  files: {
+    // null = not loaded (yet, or the load failed - see `error`), otherwise the answer of GET /api/media/policy ({photo, video, voice, audio, document}).
+    policy: null,
+    loading: false,
+    busy: false,
+    // The ticks, kept here so a re-render does not reset them.
+    // Seeded from the saved policy on every load.
+    form: {
+      photo: true,
+      video: true,
+      voice: true,
+      audio: true,
+      document: true,
+    },
+    // {skipped, queued} of the last save, or null: a one-line confirmation.
+    notice: null,
+    error: null,
+    // {href, label} when the error is one the person can fix themselves (not migrated yet), else null.
     fix: null,
   },
   data: {
@@ -369,12 +393,14 @@ function renderRoot(root) {
     ${renderBlocklistCard()}
     ${renderIgnoreCard()}
     ${renderRetentionCard()}
+    ${renderFilesCard()}
     ${renderDataCard()}
     ${renderDevicesCard()}
   `;
   attachBlocklistHandlers(root);
   attachIgnoreHandlers(root);
   attachRetentionHandlers(root);
+  attachFilesHandlers(root);
   attachDataHandlers(root);
   attachDevicesHandlers(root);
 }
@@ -1376,6 +1402,145 @@ function attachDevicesHandlers(root) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Files card (file-type policy)
+// ---------------------------------------------------------------------------
+
+const FILE_KINDS = ["photo", "video", "voice", "audio", "document"];
+
+/** The one-line confirmation after a save: always "Saved", plus what happened to files that were already waiting.
+ *  @returns {string} */
+function filesNoticeText() {
+  const n = settingsViewState.files.notice;
+  if (!n) return "";
+  let text = t("settings.filesSaved");
+  if (n.queued)
+    text +=
+      " " + t("settings.filesSavedQueued").replace("{n}", String(n.queued));
+  if (n.skipped)
+    text +=
+      " " + t("settings.filesSavedSkipped").replace("{n}", String(n.skipped));
+  return text;
+}
+
+function renderFilesCard() {
+  const s = settingsViewState.files;
+  const error = s.error
+    ? `<p class="settings-error" role="alert">${escapeHtml(s.error)}${
+        s.fix
+          ? ` <a href="${s.fix.href}" class="settings-fix-link">${escapeHtml(s.fix.label)}</a>`
+          : ""
+      }</p>`
+    : "";
+  let body =
+    s.loading && s.policy === null
+      ? `<p class="settings-help">${t("common.loading")}</p>`
+      : "";
+  if (s.policy !== null) {
+    const notice = filesNoticeText();
+    const none = FILE_KINDS.every((k) => !s.form[k]);
+    body = `
+      ${notice ? `<p class="settings-help retention-notice" role="status">${escapeHtml(notice)}</p>` : ""}
+      <div class="files-kinds">
+        ${FILE_KINDS.map(
+          (k) => `<label class="retention-keep">
+            <input type="checkbox" class="files-kind" data-kind="${k}" ${s.form[k] ? "checked" : ""} ${s.busy ? "disabled" : ""}>
+            ${t("settings.filesKind." + k)}
+          </label>`,
+        ).join("")}
+      </div>
+      ${none ? `<p class="settings-help">${t("settings.filesNone")}</p>` : ""}
+      <div class="settings-actions">
+        <button type="button" id="files-save" class="modal__btn modal__btn--primary" ${s.busy ? "disabled" : ""}>
+          ${s.busy ? t("settings.filesSaving") : t("settings.filesSave")}
+        </button>
+      </div>
+    `;
+  }
+  return `
+    <section class="settings-card settings-card--files" id="files-card">
+      <h2>${t("settings.filesTitle")}</h2>
+      <p class="settings-help">${t("settings.filesIntro")}</p>
+      ${error}
+      ${body}
+    </section>
+  `;
+}
+
+async function failFiles(res) {
+  const s = settingsViewState.files;
+  const body = await res.json().catch(() => ({}));
+  s.error = describeError(body.detail);
+  s.fix = archiveFixLink(body.detail);
+}
+
+/** (Re)load the saved choice into the ticks. Never throws; problems land in the card. @param {HTMLElement} root */
+async function loadFiles(root) {
+  const s = settingsViewState.files;
+  s.error = null;
+  s.fix = null;
+  s.loading = true;
+  renderRoot(root);
+  try {
+    const res = await apiFetch("/api/media/policy");
+    if (!res.ok) {
+      s.policy = null;
+      await failFiles(res);
+    } else {
+      s.policy = await res.json();
+      for (const k of FILE_KINDS) s.form[k] = !!s.policy[k];
+    }
+  } catch {
+    s.policy = null;
+    s.error = t("common.error");
+  }
+  s.loading = false;
+  renderRoot(root);
+}
+
+function attachFilesHandlers(root) {
+  const s = settingsViewState.files;
+  // Ticking only edits the form; nothing is saved (or re-rendered, so focus stays) until "Save".
+  root.querySelectorAll(".files-kind").forEach((box) =>
+    box.addEventListener("change", (e) => {
+      s.form[e.target.dataset.kind] = e.target.checked;
+      s.notice = null;
+      renderRoot(root);
+      root
+        .querySelector(`.files-kind[data-kind="${e.target.dataset.kind}"]`)
+        ?.focus();
+    }),
+  );
+  document.getElementById("files-save")?.addEventListener("click", async () => {
+    if (s.busy) return;
+    s.busy = true;
+    s.error = null;
+    s.fix = null;
+    s.notice = null;
+    renderRoot(root);
+    try {
+      const res = await apiFetch("/api/media/policy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          Object.fromEntries(FILE_KINDS.map((k) => [k, s.form[k]])),
+        ),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        s.policy = Object.fromEntries(FILE_KINDS.map((k) => [k, !!data[k]]));
+        s.notice = { skipped: data.skipped, queued: data.queued };
+      } else {
+        await failFiles(res);
+      }
+    } catch {
+      s.error = t("common.error");
+    }
+    s.busy = false;
+    renderRoot(root);
+  });
+}
+
 function initSettingsView() {
   const root = document.getElementById("settings-root");
   if (!root) return;
@@ -1386,6 +1551,7 @@ function initSettingsView() {
   loadBlocklist(root);
   loadIgnoreRules(root);
   loadRetention(root);
+  loadFiles(root);
 }
 
 export { initSettingsView };

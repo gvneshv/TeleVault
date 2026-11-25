@@ -242,12 +242,13 @@ function renderModal() {
           <input id="backfill-limit-input" type="number" min="1" placeholder="${t("backfill.limitPlaceholder")}" />
         </div>
         <div class="modal__field">
-          <label class="tv-checkbox" for="backfill-full-input">
-            <input id="backfill-full-input" type="checkbox" />
-            <span class="tv-checkbox__box"></span>
-            <span>${t("backfill.fullLabel")}</span>
-          </label>
-          <span>${t("backfill.fullHint")}</span>
+          <label for="backfill-mode-input">${t("backfill.modeLabel")}</label>
+          <select id="backfill-mode-input" class="blocklist-select">
+            <option value="all">${t("backfill.modeAll")}</option>
+            <option value="text">${t("backfill.modeText")}</option>
+            <option value="media">${t("backfill.modeMedia")}</option>
+          </select>
+          <span>${t("backfill.modeHint")}</span>
         </div>
         <div class="modal__actions">
           <button class="modal__btn" id="backfill-modal-cancel">${t("common.cancel")}</button>
@@ -413,7 +414,8 @@ async function openModal(root) {
         document.getElementById("backfill-chat-input").value.trim() || null;
       const limit =
         document.getElementById("backfill-limit-input").value || null;
-      const full = document.getElementById("backfill-full-input").checked;
+      // "all" | "text" | "media" - the server rejects anything else.
+      const mode = document.getElementById("backfill-mode-input").value;
       let started = false;
       try {
         const res = await apiFetch("/api/backfill/start", {
@@ -422,7 +424,7 @@ async function openModal(root) {
           body: JSON.stringify({
             chat,
             limit: limit ? Number(limit) : null,
-            full,
+            mode,
           }),
         });
         started = res.ok;
