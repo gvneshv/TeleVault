@@ -38,6 +38,7 @@ import logging
 import os
 from typing import Any, NamedTuple
 
+from sqlalchemy import text as sa_text
 from telethon.errors import FloodWaitError
 
 import db
@@ -45,6 +46,7 @@ import db.queries as queries
 from config import settings
 from handlers.ingest_filter import is_self_destructing
 from handlers.media_filter import media_kind, media_size
+from utils.media_files import sweep_orphans
 from utils.worker_paths import media_dir, media_relative_path
 
 logger = logging.getLogger(__name__)
@@ -198,6 +200,13 @@ async def process_next(
     return Outcome(status, used_telegram)
 
 
+def _sweep_orphans(user_id: int) -> int:
+    """Blocking: collect the ids of rows with a stored file and delete every other file of the account's media folder (utils.media_files.sweep_orphans)."""
+    with db.get_connection() as conn:
+        keep = {row[0] for row in conn.execute(sa_text("SELECT id FROM message_media WHERE file_path IS NOT NULL"))}
+    return sweep_orphans(user_id, keep)
+
+
 async def media_loop(client: Any, user_id: int, *, sleep=asyncio.sleep) -> None:
     """
     Work through the queue for as long as the archiver runs.
@@ -206,7 +215,19 @@ async def media_loop(client: Any, user_id: int, *, sleep=asyncio.sleep) -> None:
     Never raises for an ordinary problem: a database outage or an unexpected error only skips a pass,
     because archiving messages matters more than downloading their files (the jobs stay pending and are retried).
     `sleep` is injectable so tests do not wait.
+
+    Before the first download it sweeps files nothing refers to
+    (a crash between "row deleted" and "file deleted", a duplicate dropped while merging a migrated chat, a download cut short) - safe exactly now,
+    because this loop is the only thing that creates files and has not started yet.
     """
+    try:
+        swept = await asyncio.to_thread(_sweep_orphans, user_id)
+        if swept:
+            logger.info("Removed %d media file(s) that no archived message refers to.", swept)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.error("Media sweep skipped (%s).", type(exc).__name__)
     while True:
         try:
             outcome = await process_next(client, user_id)

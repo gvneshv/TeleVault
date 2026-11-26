@@ -229,7 +229,7 @@ async def main(user_id: int) -> None:
 
     # The retention policy (the owner's "delete messages older than N months", off until they save it): checked once a minute, applied at most daily.
     # Runs only while this archiver does; see retention.py for the safeguards.
-    retention_task = asyncio.create_task(retention.retention_loop())
+    retention_task = asyncio.create_task(retention.retention_loop(user_id))
 
     # The account's chat list, written to a small file for the backfill's chat picker in the web UI (dialog_catalog.py).
     # In the background and best effort: a failing chat list never stops archiving.

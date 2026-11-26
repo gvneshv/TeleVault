@@ -65,6 +65,7 @@ def throwaway(server_ready):
 class TestWhatGoes:
     def test_every_stored_thing_is_removed_and_the_counts_say_how_much(self, filled):
         result = q.clear_all_data(filled)
+        assert result.pop("media_paths") == []  # no files in this archive; the paths are the caller's business (test_media_removal_db.py)
         assert result == {
             "messages_deleted": 5, "edits_deleted": 2, "deletions_deleted": 1, "chats_deleted": 2,
             "senders_deleted": 2, "senders_kept": 1, "backfill_runs_deleted": 2,
@@ -78,7 +79,9 @@ class TestWhatGoes:
             assert scalar(filled, f"SELECT COUNT(*) FROM {table} WHERE {column} IS NOT NULL") == 0, (table, column)
 
     def test_an_empty_archive_clears_to_zeros(self, archive):
-        assert q.clear_all_data(archive.conn) == {k: 0 for k in (
+        result = q.clear_all_data(archive.conn)
+        assert result.pop("media_paths") == []
+        assert result == {k: 0 for k in (
             "messages_deleted", "edits_deleted", "deletions_deleted", "chats_deleted", "senders_deleted", "senders_kept", "backfill_runs_deleted")}
 
     def test_the_archive_works_normally_afterwards(self, filled):

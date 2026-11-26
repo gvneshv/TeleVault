@@ -39,6 +39,7 @@ from db.queries import clear_all_data, save_retention_policy
 from db.read_queries import count_retention_candidates, get_archive_owner, get_retention_policy
 from db.provisioning import ArchiveProvisioningError, provision_archive_database
 from utils.archive_login import encrypt_archive_password
+from utils.media_files import remove_media_files
 from utils.retention_rules import preview_is_stale
 from utils.security import DecodedAccessToken
 from utils.worker_paths import backfill_status_path
@@ -135,7 +136,11 @@ def clear_archive_data(
                 "reason": "backfill_running",
             },
         )
-    return clear_all_data(conn)
+    result = clear_all_data(conn)
+    # The database part is committed; now every downloaded file of the removed messages goes too.
+    # `media_paths` is dropped by the response model.
+    remove_media_files(current["user_id"], result["media_paths"])
+    return result
 
 
 # ---------------------------------------------------------------------------

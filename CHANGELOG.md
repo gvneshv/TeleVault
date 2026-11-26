@@ -27,6 +27,14 @@ Until step 1 is done nothing breaks: the archiver records no name history, ignor
 - **Fix in `backfill.py`:** `--chat <numeric id>` is now looked up in the account's chat list first, and only then by `get_entity()`. A fresh process has an empty entity cache, and Telegram resolves a bare group or channel id only with an access hash that the chat list brings along. `@username` and chats outside the list behave as before. **Unverified against real Telegram** (no real login in the sandbox).
 - Web shell: service worker cache **v63**. Nothing to migrate. Existing tests changed: the fake Telegram client got `not_in_dialogs`/`entity_lookups`, and the flood-wait test for "looking up a named chat" now hides the chat from the chat list so it still exercises the `get_entity()` path.
 
+### Added - downloaded files are deleted with the messages they belong to
+
+- **What removes files:** automatic cleanup, "Delete this chat" and "Delete all stored data". Each database function now also returns `media_paths` (the stored files of the rows it deleted, collected before the rows went); the caller deletes them AFTER the commit via the new `utils/media_files.py`, so a crash leaves at worst an unreferenced file, never a record pointing at a missing one. The paths are dropped by the response models and never sent to the client.
+- **Messages deleted in Telegram keep their files** (unchanged: that is what the archive is for).
+- **Start-up sweep:** before its first download the media downloader deletes files nothing refers to (crash between commit and delete, duplicates dropped while merging a migrated chat, half-finished `.partial` downloads). Safe at that moment because the downloader is the only creator of files and has not started.
+- **Safety:** only exact `users/<this account>/media/<number>` paths are removed (nothing from a corrupted row or another account); logs carry counts only.
+- `retention_loop`/`apply_policy_once` take the account id so a run can delete the files. No migration.
+
 ### Fixed - leftover previews of emptied chats, file kind in edit history
 
 - **Fix: chats emptied by automatic cleanup before the previous fix still showed their old preview.** The archiver now repairs such entries once at start (`queries.repair_stale_chat_summaries`, called from `retention.retention_loop`): chats with no messages left get no preview and no dates. A healthy archive is untouched. No migration.

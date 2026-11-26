@@ -30,6 +30,7 @@ from utils.validation import (
     TELEGRAM_CHAT_ID_MAX,
     TELEGRAM_CHAT_ID_MIN,
 )
+from utils.media_files import remove_media_files
 from db.queries import chats_have_unread_dismissal, dismiss_unread, purge_chat as purge_chat_data  # not `import db`: the older routes here name their connection parameter `db`
 from db.read_queries import get_chat, get_chats, get_chat_options, get_chat_messages, get_chat_window
 from utils.security import DecodedAccessToken
@@ -337,4 +338,7 @@ def purge_chat(
             status_code=404,
             detail={"message": f"Chat {chat_id} not found.", "reason": "chat_not_found"},
         )
+    # The database part is committed; now the downloaded files of those messages go too (counts only, see utils/media_files.py).
+    # response_model drops `media_paths`, so the stored paths never reach the client.
+    remove_media_files(current["user_id"], result["media_paths"])
     return result

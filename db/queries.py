@@ -1280,7 +1280,7 @@ def repair_stale_chat_summaries(conn: Connection) -> int:
 def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: bool, limit: int) -> dict[str, Any]:
     """
     Delete messages sent before `cutoff`, in small batches (utils/validation.RETENTION_BATCH_SIZE), at most `limit` of them.
-    Returns counts only.
+    Returns counts, plus `media_paths`: the stored files of the removed messages, for the CALLER to delete from the disk (utils.media_files).
 
     The caller has already decided the run is allowed (retention.py checks the limit against a count first); `limit` is the backstop that makes
     "more than allowed" impossible even if the data changes between that check and now.
@@ -1301,7 +1301,10 @@ def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: 
     has_labels = bool(conn.execute(sql_text("SELECT to_regclass('public.sender_display_names') IS NOT NULL")).scalar())
     deleted_filter = "AND NOT is_deleted" if keep_deleted else ""
     label_guard = "AND NOT EXISTS (SELECT 1 FROM sender_display_names d WHERE d.sender_id = s.sender_id)" if has_labels else ""
-    totals = {"messages_deleted": 0, "edits_deleted": 0, "deletions_deleted": 0, "senders_deleted": 0}
+    totals: dict[str, Any] = {"messages_deleted": 0, "edits_deleted": 0, "deletions_deleted": 0, "senders_deleted": 0}
+    # Stored files of the messages removed, for the caller to delete from the disk (utils.media_files) - only those whose batch COMMITTED.
+    media_paths: list[str] = []
+    totals["media_paths"] = media_paths
     # Chats that lost messages: their list entry (first/last date, preview) must be recomputed afterwards, see refresh_chat_summaries().
     touched_chats: set[int] = set()
     try:
@@ -1321,6 +1324,7 @@ def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: 
                     conn.rollback()
                     break
                 params = {"ids": ids}
+                batch_paths = _stored_media_paths(conn, "m.id = ANY(:ids)", params)
                 touched_chats.update(
                     row[0] for row in conn.execute(sql_text("SELECT DISTINCT chat_id FROM messages WHERE id = ANY(:ids)"), params)
                 )
@@ -1350,6 +1354,7 @@ def purge_expired_messages(conn: Connection, cutoff: datetime, *, keep_deleted: 
                     params,
                 ).one()
                 conn.commit()
+                media_paths.extend(batch_paths)
                 totals["messages_deleted"] += int(result[0])
                 totals["senders_deleted"] += int(result[1])
             except Exception:
@@ -2038,11 +2043,28 @@ def get_deletion_record(
 # ---------------------------------------------------------------------------
 
 
+def _stored_media_paths(conn: Connection, where: str = "TRUE", params: dict[str, Any] | None = None) -> list[str]:
+    """
+    The file_path of every STORED file among message_media rows joined to messages by `where` (SQL over `mm` = message_media, `m` = messages).
+    Called BEFORE the messages are deleted, in the same transaction, because the rows go with them (ON DELETE CASCADE) and the paths with the rows.
+    The caller removes the files only after its commit (utils.media_files.remove_media_files).
+    [] on an archive without media records.
+    """
+    if not _message_media_ready(conn):
+        return []
+    rows = conn.execute(
+        sql_text(f"SELECT mm.file_path FROM message_media mm JOIN messages m ON m.id = mm.message_id WHERE mm.file_path IS NOT NULL AND ({where})"),
+        params or {},
+    )
+    return [row[0] for row in rows]
+
+
 def clear_all_data(conn: Connection) -> dict[str, Any]:
     """
     Remove everything the archiver has STORED from the archive, in ONE transaction: all messages (with their edit history and deletion snapshots),
     all chats, the group-migration records and the backfill history, and every sender except those the owner has given a display name.
-    Returns the counts of what was removed.
+    Returns the counts of what was removed, plus `media_paths`: the stored files that belonged to those messages,
+    which the CALLER deletes from the disk once this has committed (this module never touches the file system).
     There is NO undo, and nothing here asks for confirmation - that belongs to the caller (the UI's typed confirmation).
 
     This is the "start from an empty archive" action (DELETE /api/archive/data); purge_chat() is its one-chat sibling.
@@ -2080,6 +2102,7 @@ def clear_all_data(conn: Connection) -> dict[str, Any]:
         has_labels = bool(conn.execute(sql_text("SELECT to_regclass('sender_display_names') IS NOT NULL")).scalar())
         has_history = bool(conn.execute(sql_text("SELECT to_regclass('sender_name_history') IS NOT NULL")).scalar())
 
+        media_paths = _stored_media_paths(conn)
         # Children first: message_edits and message_deletions point at messages.id with no ON DELETE CASCADE.
         deletions_deleted = conn.execute(sql_text("DELETE FROM message_deletions")).rowcount
         edits_deleted = conn.execute(sql_text("DELETE FROM message_edits")).rowcount
@@ -2116,6 +2139,8 @@ def clear_all_data(conn: Connection) -> dict[str, Any]:
         "senders_deleted": senders_deleted,
         "senders_kept": senders_kept,
         "backfill_runs_deleted": backfill_runs_deleted,
+        # For the caller to delete the files from the disk AFTER this commit (utils.media_files); never sent to the client.
+        "media_paths": media_paths,
     }
 
 
@@ -2178,6 +2203,7 @@ def purge_chat(conn: Connection, chat_id: int, *, also_unblock: bool = False) ->
                 block_rule_kept = conn.execute(sql_text("SELECT 1 FROM ingest_blocked_chats WHERE chat_id = :chat_id"), params).first() is not None
 
         messages_deleted = int(conn.execute(sql_text("SELECT COUNT(*) FROM messages WHERE chat_id = :chat_id"), params).scalar() or 0)
+        media_paths = _stored_media_paths(conn, "m.chat_id = :chat_id", params)
 
         # Children first: message_edits and message_deletions point at messages.id with no ON DELETE CASCADE.
         deletions_deleted = conn.execute(
@@ -2238,4 +2264,6 @@ def purge_chat(conn: Connection, chat_id: int, *, also_unblock: bool = False) ->
         "senders_deleted": senders_deleted,
         "backfill_runs_deleted": backfill_runs_deleted,
         "block_rule_kept": block_rule_kept,
+        # For the caller to delete the files from the disk AFTER this commit (utils.media_files); never sent to the client.
+        "media_paths": media_paths,
     }

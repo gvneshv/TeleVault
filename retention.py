@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import db
 import db.queries as queries
 import db.read_queries as read_queries
+from utils.media_files import remove_media_files
 from utils.retention_rules import run_is_due, run_limit
 from utils.validation import RETENTION_CHECK_INTERVAL_SECONDS
 
@@ -33,11 +34,12 @@ logger = logging.getLogger(__name__)
 _outdated_warned = False
 
 
-def apply_policy_once(conn, *, now: datetime | None = None) -> str | None:
+def apply_policy_once(conn, *, now: datetime | None = None, user_id: int | None = None) -> str | None:
     """
     Apply the policy if (and only if) a run is due. Returns the run's status ('ok', 'blocked', 'error') or None when nothing was due / nothing is configured.
 
     Blocking (database work): the loop calls it through asyncio.to_thread(). `now` exists for tests.
+    `user_id` lets it delete the downloaded files of the messages it removed; without it the files stay for the archiver's start-up sweep to collect.
     Never raises for a database problem inside the run: that becomes status 'error', recorded when the database allows it.
     """
     global _outdated_warned
@@ -75,9 +77,10 @@ def apply_policy_once(conn, *, now: datetime | None = None) -> str | None:
             return "blocked"
         result = queries.purge_expired_messages(conn, preview["cutoff"], keep_deleted=keep_deleted, limit=limit)
         queries.record_retention_run(conn, status="ok", deleted=result["messages_deleted"], clear_confirmation=True)
+        files_removed = remove_media_files(user_id, result["media_paths"]) if user_id is not None else 0
         logger.info(
-            "Retention run: %d messages, %d edits, %d deletion records, %d senders removed.",
-            result["messages_deleted"], result["edits_deleted"], result["deletions_deleted"], result["senders_deleted"],
+            "Retention run: %d messages, %d edits, %d deletion records, %d senders, %d files removed.",
+            result["messages_deleted"], result["edits_deleted"], result["deletions_deleted"], result["senders_deleted"], files_removed,
         )
         return "ok"
     except Exception as exc:
@@ -98,16 +101,17 @@ def _repair_summaries() -> None:
         logger.info("Repaired the list entry of %d emptied chat(s).", fixed)
 
 
-def _tick() -> None:
+def _tick(user_id: int | None = None) -> None:
     """One pass of the loop on its own connection (blocking)."""
     with db.get_connection() as conn:
-        apply_policy_once(conn)
+        apply_policy_once(conn, user_id=user_id)
 
 
-async def retention_loop() -> None:
+async def retention_loop(user_id: int | None = None) -> None:
     """
     Check once a minute whether the policy is due, for as long as the archiver runs.
     Cancelled by main.py on shutdown.
+    `user_id` is this archiver's account: it lets a run delete the downloaded files of the messages it removes.
     A database outage (Docker down) only skips a pass: archiving matters more than cleanup.
     """
     try:
@@ -118,7 +122,7 @@ async def retention_loop() -> None:
         logger.error("Chat list repair skipped (%s).", type(exc).__name__)
     while True:
         try:
-            await asyncio.to_thread(_tick)
+            await asyncio.to_thread(_tick, user_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
