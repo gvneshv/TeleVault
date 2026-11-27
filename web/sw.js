@@ -106,12 +106,16 @@
  * css/base.css (the picker's width) and i18n/{en,uk}.js; no file was added or removed.
  * v64 (backfill modes, file types): changed js/views/backfill.js
  * (the "also record files" tick becomes a "What to fetch" select: messages and files / text only / files only),
- * v65: changed js/views/chat-view.js (a version in the edit history that has no text now names the file kind, "Photo", instead of "(no text)"); no file added or removed.
  * js/views/settings.js (a "Files" card to choose which file types are stored), css/base.css (that card's tick list) and i18n/{en,uk}.js; no file was added or removed.
+ * v65: changed js/views/chat-view.js (a version in the edit history that has no text now names the file kind, "Photo", instead of "(no text)"); no file added or removed.
+ * v66 (file previews, call labels, centred "latest" button): ADDED js/lib/media-view.js (files shown in chat: photos load by themselves, other kinds on click)
+ * and js/lib/call-labels.js (call messages such as "[Voice call · 35 sec]" are translated when shown);
+ * changed js/views/chat-view.js, js/views/settings.js (disk usage bar, counts and a "Try again" button in the Files card), css/base.css and i18n/{en,uk}.js.
+ * Both new files are in SHELL_FILES below.
  * The four woff2 files are precached so the UI keeps its typefaces offline; the OFL-*.txt license texts next to them are not (nothing in the UI loads them).
  */
 
-const CACHE_NAME = "televault-shell-v65";
+const CACHE_NAME = "televault-shell-v66";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -137,6 +141,8 @@ const SHELL_FILES = [
   "/js/lib/archive-error.js",
   "/js/lib/refresh.js",
   "/js/lib/icons.js",
+  "/js/lib/media-view.js",
+  "/js/lib/call-labels.js",
   "/js/lib/router.js",
   "/js/archiver-toggle.js",
   "/js/page-icons.js",

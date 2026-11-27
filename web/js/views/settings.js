@@ -38,6 +38,7 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml } from "../lib/dom.js";
+import { formatBytes } from "../lib/media-view.js";
 import { apiFetch } from "../lib/auth.js";
 import { describeError, describeSessionError } from "../lib/errors.js";
 import { archiveFixLink } from "../lib/archive-error.js";
@@ -133,6 +134,12 @@ const settingsViewState = {
     error: null,
     // {href, label} when the error is one the person can fix themselves (not migrated yet), else null.
     fix: null,
+    // The answer of GET /api/media/usage (stored_bytes, limit_bytes, counts, ...), or null when not loaded / failed.
+    // Never blocks the ticks.
+    usage: null,
+    // True while the "Try again" request runs, and its one-line result ({requeued}) afterwards.
+    retrying: false,
+    retried: null,
   },
   data: {
     // True while DELETE /api/archive/data runs (it can take a while on a big archive); the button is disabled meanwhile.
@@ -1423,6 +1430,58 @@ function filesNoticeText() {
   return text;
 }
 
+/** Disk bar + counts + "Try again" for the files that were refused or failed.
+ *  Empty until the usage numbers arrive. */
+function renderFilesUsage() {
+  const s = settingsViewState.files;
+  const u = s.usage;
+  if (!u) return "";
+  const fill = (text, values) =>
+    text.replace(/\{(\w+)\}/g, (_, k) => String(values[k] ?? ""));
+  const percent =
+    u.limit_bytes > 0
+      ? Math.min(100, Math.round((u.stored_bytes / u.limit_bytes) * 100))
+      : 0;
+  const label = fill(t("settings.filesUsage"), {
+    used: formatBytes(u.stored_bytes),
+    limit: formatBytes(u.limit_bytes),
+  });
+  const refused =
+    (u.counts.too_large || 0) +
+    (u.counts.disk_full || 0) +
+    (u.counts.failed || 0);
+  const lines = [fill(t("settings.filesStored"), { n: u.stored_files })];
+  if (u.counts.pending)
+    lines.push(fill(t("settings.filesWaiting"), { n: u.counts.pending }));
+  if (refused)
+    lines.push(
+      fill(t("settings.filesRefused"), {
+        n: refused,
+        max: formatBytes(u.max_file_bytes),
+      }),
+    );
+  const retried =
+    s.retried !== null
+      ? `<p class="settings-help retention-notice" role="status">${escapeHtml(fill(t("settings.filesRetried"), { n: s.retried }))}</p>`
+      : "";
+  const retry = refused
+    ? `<div class="settings-actions">
+        <button type="button" id="files-retry" class="modal__btn" ${s.retrying ? "disabled" : ""}>${t(s.retrying ? "settings.filesRetrying" : "settings.filesRetry")}</button>
+      </div>
+      <p class="settings-help">${t("settings.filesRetryHelp")}</p>`
+    : "";
+  return `
+    <div class="files-usage">
+      <div class="files-usage__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="${escapeHtml(label)}">
+        <div class="files-usage__fill" style="width:${percent}%"></div>
+      </div>
+      <p class="settings-help">${escapeHtml(label)}</p>
+      <p class="settings-help">${escapeHtml(lines.join(" "))}</p>
+      ${retried}
+      ${retry}
+    </div>`;
+}
+
 function renderFilesCard() {
   const s = settingsViewState.files;
   const error = s.error
@@ -1450,6 +1509,7 @@ function renderFilesCard() {
         ).join("")}
       </div>
       ${none ? `<p class="settings-help">${t("settings.filesNone")}</p>` : ""}
+      ${renderFilesUsage()}
       <div class="settings-actions">
         <button type="button" id="files-save" class="modal__btn modal__btn--primary" ${s.busy ? "disabled" : ""}>
           ${s.busy ? t("settings.filesSaving") : t("settings.filesSave")}
@@ -1496,6 +1556,19 @@ async function loadFiles(root) {
   }
   s.loading = false;
   renderRoot(root);
+  await loadFilesUsage(root);
+}
+
+/** The disk numbers are a nicety: a failure here just leaves the bar out (the ticks above keep working). */
+async function loadFilesUsage(root) {
+  const s = settingsViewState.files;
+  try {
+    const res = await apiFetch("/api/media/usage");
+    s.usage = res.ok ? await res.json() : null;
+  } catch {
+    s.usage = null;
+  }
+  renderRoot(root);
 }
 
 function attachFilesHandlers(root) {
@@ -1511,6 +1584,28 @@ function attachFilesHandlers(root) {
         ?.focus();
     }),
   );
+  document
+    .getElementById("files-retry")
+    ?.addEventListener("click", async () => {
+      if (s.retrying) return;
+      s.retrying = true;
+      s.retried = null;
+      s.error = null;
+      renderRoot(root);
+      try {
+        const res = await apiFetch("/api/media/retry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (res.ok) s.retried = (await res.json()).requeued;
+        else await failFiles(res);
+      } catch {
+        s.error = t("common.error");
+      }
+      s.retrying = false;
+      await loadFilesUsage(root);
+    });
   document.getElementById("files-save")?.addEventListener("click", async () => {
     if (s.busy) return;
     s.busy = true;
