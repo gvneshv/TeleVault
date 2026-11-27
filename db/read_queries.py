@@ -112,6 +112,9 @@ def _shape_message_row(row: dict[str, Any], has_chat_columns: bool) -> dict[str,
         # Which kind of file the message carries (None for plain text).
         # A media-only message has text None and this set.
         "media_kind": row.get("media_kind"),
+        # The file's download state and size, so the chat view can say "waiting", "too large", ... or load it (GET /api/media/file/{id}).
+        "media_status": row.get("media_status"),
+        "media_size": row.get("media_size"),
     }
 
 
@@ -522,6 +525,29 @@ def _media_kind_column(conn: Connection) -> str:
     return "(SELECT mm.kind FROM message_media mm WHERE mm.message_id = m.id)"
 
 
+def _media_status_column(conn: Connection) -> str:
+    """Like _media_kind_column(), for the file's download state (pending, stored, too_large, disk_full, unavailable, failed, skipped)."""
+    if not _message_media_ready(conn):
+        return "CAST(NULL AS TEXT)"
+    return "(SELECT mm.status FROM message_media mm WHERE mm.message_id = m.id)"
+
+
+def _media_size_column(conn: Connection) -> str:
+    """Like _media_kind_column(), for the file's size in bytes (the real size once stored, Telegram's declared size before; NULL when unknown)."""
+    if not _message_media_ready(conn):
+        return "CAST(NULL AS BIGINT)"
+    return "(SELECT mm.size_bytes FROM message_media mm WHERE mm.message_id = m.id)"
+
+
+def _media_columns(conn: Connection) -> str:
+    """The three media columns every message list selects, as one SQL fragment (fixed strings only)."""
+    return (
+        f"{_media_kind_column(conn)} AS media_kind, "
+        f"{_media_status_column(conn)} AS media_status, "
+        f"{_media_size_column(conn)} AS media_size"
+    )
+
+
 def _base_message_select(conn: Connection) -> str:
     """
     Core SELECT joining messages -> senders.
@@ -545,7 +571,7 @@ def _base_message_select(conn: Connection) -> str:
             -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
             -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
             (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
-            {_media_kind_column(conn)} AS media_kind,
+            {_media_columns(conn)},
             -- sender fields prefixed to avoid collision with message columns
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
@@ -615,7 +641,7 @@ def get_messages(
             -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
             -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
             (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
-            {_media_kind_column(conn)} AS media_kind,
+            {_media_columns(conn)},
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
             s.first_name   AS sender_first_name,
@@ -955,7 +981,7 @@ def get_message_detail(
             -- How many times the message was edited. A correlated count served by idx_message_edits_message_id; a page is at most 200 rows,
             -- so this is at most 200 index lookups, and it saves the chat view one request per "Edited N times" chip.
             (SELECT COUNT(*) FROM message_edits e WHERE e.message_id = m.id) AS edit_count,
-            {_media_kind_column(conn)} AS media_kind,
+            {_media_columns(conn)},
             s.sender_id    AS sender_id,
             s.username     AS sender_username,
             s.first_name   AS sender_first_name,
@@ -1107,3 +1133,35 @@ def get_backfill_history(
         ORDER BY started_at DESC
     """
     return _paginate(sql, {}, conn, page, per_page)
+
+def get_media_usage(conn: Connection) -> dict[str, Any]:
+    """
+    What the account's downloaded files take and how the rest stand, for Settings -> Files:
+    {"stored_files", "stored_bytes", "counts": {status: n for every status}}.
+    Zeros on an archive without media records.
+    One grouped scan of message_media (an index-free table far smaller than messages).
+    """
+    statuses = ("pending", "stored", "too_large", "disk_full", "unavailable", "failed", "skipped")
+    counts = {status: 0 for status in statuses}
+    stored_bytes = 0
+    if _message_media_ready(conn):
+        for status, n, size in conn.execute(
+            sql_text("SELECT status, COUNT(*), COALESCE(SUM(size_bytes), 0) FROM message_media GROUP BY status")
+        ):
+            counts[status] = int(n)
+            if status == "stored":
+                stored_bytes = int(size)
+    conn.rollback()
+    return {"stored_files": counts["stored"], "stored_bytes": stored_bytes, "counts": counts}
+
+
+def get_media_file_record(conn: Connection, message_id: int) -> dict[str, Any] | None:
+    """The media row of one message (kind, status, file_path) or None when the message has no file record.
+    The route decides what to do with it."""
+    if not _message_media_ready(conn):
+        return None
+    row = conn.execute(
+        sql_text("SELECT kind, status, file_path FROM message_media WHERE message_id = :message_id"), {"message_id": message_id}
+    ).mappings().first()
+    conn.rollback()
+    return dict(row) if row else None

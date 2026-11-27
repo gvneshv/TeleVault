@@ -141,6 +141,11 @@ class MessageOut(BaseModel):
         None,
         description="Kind of file the message carries, None for plain text. A media-only message has `text` None and this set.",
     )
+    media_status: Literal["pending", "stored", "too_large", "disk_full", "unavailable", "failed", "skipped"] | None = Field(
+        None,
+        description="Download state of that file. Only 'stored' can be fetched (GET /api/media/file/{id}); the others explain why not.",
+    )
+    media_size: int | None = Field(None, description="Size of the file in bytes (Telegram's declared size until it is stored), None when unknown.")
 
     model_config = {"from_attributes": True}
 
