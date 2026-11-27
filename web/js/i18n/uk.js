@@ -44,6 +44,36 @@ export const uk = {
   "messages.media.voice": "Голосове повідомлення",
   "messages.media.audio": "Аудіо",
   "messages.media.document": "Файл",
+  "media.show.photo": "Показати фото",
+  "media.play.video": "Відтворити відео",
+  "media.play.voice": "Відтворити голосове повідомлення",
+  "media.play.audio": "Відтворити аудіо",
+  "media.download.document": "Відкрити файл",
+  "media.saveToDevice": "Зберегти на цей пристрій",
+  "media.loading": "Завантаження...",
+  "media.loadFailed":
+    "Не вдалося завантажити файл. Натисніть кнопку, щоб спробувати ще раз.",
+  "media.status.pending": "очікує збереження",
+  "media.status.skipped":
+    "не збережено (цей вид файлів вимкнено в налаштуваннях)",
+  "media.status.too_large": "завеликий для збереження",
+  "media.status.disk_full": "не збережено: досягнуто ліміт сховища",
+  "media.status.unavailable": "більше недоступний у Telegram",
+  "media.status.failed": "не вдалося зберегти",
+  "media.unit.B": "Б",
+  "media.unit.KB": "КБ",
+  "media.unit.MB": "МБ",
+  "media.unit.GB": "ГБ",
+  "settings.filesUsage": "Використано сховища: {used} з {limit}",
+  "settings.filesStored": "Збережено файлів: {n}.",
+  "settings.filesWaiting": "Очікують збереження: {n}.",
+  "settings.filesRefused":
+    "Не вдалося зберегти: {n} (завеликі, сховище заповнене або збій). Ліміт розміру одного файлу: {max}.",
+  "settings.filesRetry": "Спробувати ще раз",
+  "settings.filesRetrying": "Додаємо до черги...",
+  "settings.filesRetried": "Файлів повернуто в чергу: {n}.",
+  "settings.filesRetryHelp":
+    "Файли, які все ще перевищують ліміт, буде відхилено знову.",
   "messages.searchPlaceholder": "Пошук у тексті повідомлень…",
 
   "deleted.empty": "Видалених повідомлень не знайдено.",
@@ -696,4 +726,15 @@ export const uk = {
   "sender.noName": "(без імені)",
   "sender.noChanges":
     "Змін імені поки не помічено. Зміну видно, коли людина пише наступного разу, тож дата — це коли TeleVault її побачив, а не коли людина змінила ім’я.",
+  // Мітки дзвінків (js/lib/call-labels.js): в архіві вони зберігаються англійською; тут їхній вигляд в інтерфейсі.
+  "call.voice": "Голосовий дзвінок",
+  "call.video": "Відеодзвінок",
+  "call.generic": "Дзвінок",
+  "call.missed": "[Пропущений дзвінок]",
+  "call.declined": "[Відхилений дзвінок]",
+  "call.endedDisconnected": "[Дзвінок завершено (розрив зʼєднання)]",
+  "call.unknown": "невідомий результат",
+  "call.disconnected": "розрив зʼєднання",
+  "call.sec": "{n} с",
+  "call.minSec": "{m} хв {s} с",
 };

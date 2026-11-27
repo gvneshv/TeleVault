@@ -42,6 +42,8 @@
 
 import { t, getCurrentLang } from "../i18n.js";
 import { escapeHtml, highlightMatches } from "../lib/dom.js";
+import { localizeCallLabel } from "../lib/call-labels.js";
+import { renderMediaBlock, initMediaView } from "../lib/media-view.js";
 import { apiFetch } from "../lib/auth.js";
 import { describeError } from "../lib/errors.js";
 import { renderArchiveErrorState } from "../lib/archive-error.js";
@@ -356,7 +358,7 @@ function renderChatRow(chat) {
   // No preview text but messages exist: the newest message is media-only (a photo without caption), whose text is NULL.
   // Say so instead of "No messages yet", which would be wrong for a chat that has them.
   const preview = chat.last_message_preview
-    ? escapeHtml(chat.last_message_preview)
+    ? escapeHtml(localizeCallLabel(chat.last_message_preview, t))
     : `<span class="cv-row__empty">${escapeHtml(t(chat.message_count > 0 ? "chats.mediaPreview" : "chats.noPreview"))}</span>`;
   return `
     <li>
@@ -380,7 +382,10 @@ function renderChatRow(chat) {
 /** One row of the Messages / Deleted result list. */
 function renderResultRow(message) {
   const text = message.text
-    ? highlightMatches(escapeHtml(message.text), state.q.trim())
+    ? highlightMatches(
+        escapeHtml(localizeCallLabel(message.text, t)),
+        state.q.trim(),
+      )
     : `<span class="cv-row__empty">${escapeHtml(t("messages.noText"))}</span>`;
   const sender = senderName(message.sender);
   const chip =
@@ -885,7 +890,7 @@ function renderDetail(message) {
               <time>${escapeHtml(formatDateTime(v.at))}</time>
               ${label ? `<span class="info-badge">${escapeHtml(label)}</span>` : ""}
             </div>
-            <div class="cv-version__text">${v.text ? escapeHtml(v.text) : `<span class="cv-row__empty">${escapeHtml(t(mediaLabelKey(message.media_kind)))}</span>`}</div>
+            <div class="cv-version__text">${v.text ? escapeHtml(localizeCallLabel(v.text, t)) : `<span class="cv-row__empty">${escapeHtml(t(mediaLabelKey(message.media_kind)))}</span>`}</div>
           </li>`;
       })
       .join("");
@@ -1016,13 +1021,30 @@ function renderMessage(message) {
       ? `<a class="cv-context" href="${chatRouteHash(state.chat.chat_id, message.id)}">${escapeHtml(t("cv.showInContext"))}</a>`
       : "";
 
+  // The file (or why there is none) goes above the text, like a Telegram caption.
+  // A message with no text and a file box needs no "(Photo)" placeholder: the box says it.
+  // Without a box (an archive that does not report the file state) the plain kind label stays.
+  const mediaBlock = renderMediaBlock(message);
+  const shownText = message.text ? localizeCallLabel(message.text, t) : "";
+  let bodyHtml;
+  if (shownText) {
+    bodyHtml = state.cq.trim()
+      ? highlightMatches(escapeHtml(shownText), state.cq.trim())
+      : escapeHtml(shownText);
+  } else {
+    bodyHtml = mediaBlock
+      ? ""
+      : `<span class="cv-row__empty">${escapeHtml(t(mediaLabelKey(message.media_kind)))}</span>`;
+  }
+
   return `
     <li class="${classes}" data-id="${message.id}">
       <div class="cv-msg__meta">
         ${renderSenderName(message)}
         <span class="cv-msg__when"><time class="cv-msg__time" datetime="${escapeHtml(message.date ?? "")}">${escapeHtml(formatTime(message.date))}</time>${renderReceipt(message)}</span>
       </div>
-      <div class="cv-msg__text">${message.text ? (state.cq.trim() ? highlightMatches(escapeHtml(message.text), state.cq.trim()) : escapeHtml(message.text)) : `<span class="cv-row__empty">${escapeHtml(t(mediaLabelKey(message.media_kind)))}</span>`}</div>
+      ${mediaBlock}
+      ${bodyHtml ? `<div class="cv-msg__text">${bodyHtml}</div>` : ""}
       ${editedChip || deletedChip || contextLink ? `<div class="cv-msg__chips">${editedChip}${deletedChip}${contextLink}</div>` : ""}
       ${renderDetail(message)}
     </li>`;
@@ -1251,6 +1273,7 @@ function renderConversation() {
   updateBanner();
 
   const el = scroller();
+  initMediaView(conversationRoot());
   el?.addEventListener("scroll", onScroll, { passive: true });
   el?.addEventListener("click", onMessageClick);
   document.getElementById("cv-latest")?.addEventListener("click", () => {
