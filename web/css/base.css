@@ -1544,6 +1544,69 @@ Shared by the collapsed rail and the phone top bar below. */
   margin: 8px 0 12px;
 }
 
+/* Files card: disk usage bar. */
+.files-usage {
+  margin: 12px 0;
+}
+
+.files-usage__bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-track);
+  overflow: hidden;
+}
+
+.files-usage__fill {
+  height: 100%;
+  background: var(--color-patina);
+}
+
+/* Chat view: the file of a message.
+   Photos and players are capped so one file never fills the screen. */
+.cv-media {
+  margin: 4px 0;
+}
+
+.cv-media__open,
+.cv-media__download {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.cv-media__size,
+.cv-media__status,
+.cv-media--note {
+  opacity: 0.7;
+  font-size: 0.9em;
+}
+
+.cv-media__status--error {
+  display: block;
+  color: var(--color-seal);
+  opacity: 1;
+}
+
+.cv-media__img,
+.cv-media__video {
+  display: block;
+  max-width: min(100%, 420px);
+  max-height: 60vh;
+  border-radius: 8px;
+}
+
+.cv-media__audio {
+  width: min(100%, 320px);
+}
+
 .retention-result {
   margin: 12px 0 8px;
 }
@@ -3112,9 +3175,11 @@ Dimmed until hovered. */
   overflow-wrap: anywhere;
 }
 
+/* Centered over the conversation: at the right edge it sat on top of outgoing messages. */
 .cv-latest {
   position: absolute;
-  right: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 48px;
   display: inline-flex;
   align-items: center;
@@ -3509,7 +3574,4 @@ Its hit area is wider than what is drawn, so it is easy to grab. */
     padding: 6px 12px;
   }
 
-  .cv-latest {
-    right: 12px;
-  }
 }
