@@ -45,7 +45,7 @@ def run_js(labels: list[str]) -> dict[str, list[str]]:
         "uk": (web / "i18n" / "uk.js").as_uri(),
     }
     out = subprocess.run(
-        ["node", "--input-type=module", "-e", script, json.dumps(labels)], capture_output=True, text=True, check=True, timeout=60
+        ["node", "--input-type=module", "-e", script, json.dumps(labels)], capture_output=True, text=True, encoding="utf-8", check=True, timeout=60
     )
     return json.loads(out.stdout)
 

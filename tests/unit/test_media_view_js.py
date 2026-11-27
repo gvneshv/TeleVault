@@ -56,7 +56,7 @@ def js_dir(tmp_path_factory):
 
 
 def run(js_dir, messages):
-    done = subprocess.run(["node", str(js_dir / "run.mjs"), json.dumps(messages)], capture_output=True, text=True, check=True, timeout=60)
+    done = subprocess.run(["node", str(js_dir / "run.mjs"), json.dumps(messages)], capture_output=True, text=True, encoding="utf-8", check=True, timeout=60)
     return json.loads(done.stdout)
 
 
